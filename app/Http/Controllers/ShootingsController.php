@@ -1151,7 +1151,7 @@ if (ShootingRangeInterval::hasOverlap(
         $shootingRange->lanes()->where('id', $id)->update($validated);
 
         return redirect()->route('shooting.lanes.edit', ['id' => $shootingRange->id])
-            ->with('success', 'Oś została dodana');
+            ->with('success', 'Oś została zaktualizowana.');
     }
 
     //Zapis nowej osi strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy

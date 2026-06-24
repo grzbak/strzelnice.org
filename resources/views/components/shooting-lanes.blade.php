@@ -36,7 +36,7 @@
          window.addEventListener('DOMContentLoaded', () => {
              window.dispatchEvent(
                  new CustomEvent('open-modal', {
-                     detail: 'confirm-addLane'
+                     detail: @json(old('lane_form_modal', 'confirm-addLane'))
                  })
              )
          })

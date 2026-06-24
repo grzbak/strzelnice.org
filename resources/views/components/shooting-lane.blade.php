@@ -109,7 +109,7 @@
             </h2>
             <form method="POST" action="{{ route('shooting.lanes.update', $lane->id) }}">
                 @csrf
-                <x-form-lanes name="confirm-EditLane" :lane="$lane">
+                <x-form-lanes name="confirm-editLane-{{ $lane->id }}" :lane="$lane">
                 </x-form-lanes>
             </form>
         </div>
