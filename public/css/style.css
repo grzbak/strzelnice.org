@@ -1,0 +1,194 @@
+html,
+body {
+    height: 100%;
+}
+#app {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+#content {
+    flex: 1 0 auto;
+}
+
+footer {
+    flex-shrink: 0;
+}
+
+.row {
+    margin-left: 0px;
+    margin-right: 0px;
+}
+
+/* ----- HERO IMAGE ----- */
+.hero-section {
+    background: url("https://source.unsplash.com/1600x900/?travel,beach")
+        center/cover no-repeat;
+    height: 450px;
+}
+
+.hero-back {
+    background-image:
+        linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)),
+        /* 70% białe pokrycie */ url("../img/strzelnice_tlo_0406.jpeg");
+    background-size: cover;
+    background-attachment: fixed; /* tło nie przewija się */
+    position: relative;
+    padding: 50px;
+}
+
+.hero-search {
+    min-height: 520px;
+    background:
+        linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)),
+        url("../img/strzelnica_back.jpeg") center / cover no-repeat;
+}
+
+.search-box {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.search-box label {
+    font-size: 0.9rem;
+}
+
+.page-bg-2 {
+    position: fixed;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)),
+        url("../img/strzelnica_back.jpeg");
+
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center center;
+
+    z-index: -1;
+}
+
+.back-2 {
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.7)),
+        /* 70% białe pokrycie */ url("../img/strzelnica_back_2.jpg");
+    background-size: cover;
+    background-attachment: fixed; /* tło nie przewija się */
+    position: relative;
+}
+
+#map {
+    width: 100%;
+    min-height: 500px;
+}
+
+@media (max-width: 768px) {
+    .btn-md-md {
+        padding: 0.6rem 0.9rem;
+        font-size: 0.95rem;
+    }
+}
+
+.calendar-wrapper {
+    overflow-x: auto;
+}
+
+#calendar {
+    min-width: 720px; /* chroni przed zgniataniem */
+}
+
+.fc-timegrid-slot {
+    height: 45px;
+}
+
+@media (max-width: 768px) {
+    .fc-timegrid-slot {
+        height: 36px;
+    }
+}
+.fc-event {
+    font-size: 0.8rem;
+    padding: 2px 4px;
+}
+
+@media (max-width: 768px) {
+    .fc-event {
+        font-size: 0.7rem;
+        line-height: 1.2;
+    }
+}
+.fc-col-header-cell-cushion {
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+@media (max-width: 768px) {
+    .fc-col-header-cell-cushion {
+        font-size: 0.75rem;
+    }
+}
+
+/* start tooltip */
+.tooltip-card .tooltip-inner {
+    background-color: #fff;
+    color: #000;
+    padding: 0;
+    border-radius: 10px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    max-width: 250px;
+}
+
+.tooltip-card .tooltip-header {
+    padding: 8px 12px;
+    font-weight: 600;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tooltip-card .tooltip-body {
+    padding: 10px 12px;
+    font-size: 13px;
+}
+
+.tooltip-card.bs-tooltip-top .tooltip-arrow::before {
+    border-top-color: #fff;
+}
+.tooltip-card.bs-tooltip-bottom .tooltip-arrow::before {
+    border-bottom-color: #fff;
+}
+.tooltip-card.bs-tooltip-start .tooltip-arrow::before {
+    border-left-color: #fff;
+}
+.tooltip-card.bs-tooltip-end .tooltip-arrow::before {
+    border-right-color: #fff;
+}
+/* end tooltip */
+
+/*User lista uzytkownikow*/
+.user-avatar {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.action-icon {
+    cursor: pointer;
+    margin: 0 4px;
+    font-size: 18px;
+}
+.action-icon:hover {
+    transform: scale(1.2);
+}
+.status-icon {
+    margin-right: 5px;
+}
+.status-active {
+    color: #10b981;
+}
+.status-blocked {
+    color: #ef4444;
+}
+.status-online {
+    color: #3b82f6;
+}

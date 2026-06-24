@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+
+/* ---------- AVATAR ---------- */
+.avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* ---------- MOBILE USER BAR ---------- */
+.mobile-user-bar {
+    display: none;
+}
+
+@media (max-width: 991px) {
+    .mobile-user-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: .5rem 1rem;
+        border-bottom: 1px solid #ddd;
+    }
+}
+@tailwind utilities;
