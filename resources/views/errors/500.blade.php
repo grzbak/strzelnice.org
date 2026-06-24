@@ -1,0 +1,1 @@
+<x-error-page code="500" title="Coś poszło nie tak" message="Wystąpił błąd po naszej stronie. Spróbuj ponownie za chwilę, a jeśli problem wraca, zgłoś go administratorowi." icon="bi-tools" tone="danger" />

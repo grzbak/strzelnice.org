@@ -1,0 +1,1 @@
+<x-error-page code="403" title="Brak dostępu" message="Nie masz uprawnień do tej części serwisu. Jeśli to pomyłka, zaloguj się na właściwe konto albo skontaktuj się z administratorem." icon="bi-shield-lock" tone="warning" />
