@@ -791,6 +791,7 @@ if (ShootingRangeInterval::hasOverlap(
             $shootingRange->holidays()->delete();
             $shootingRange->invitations()->delete();
             $shootingRange->packages()->where('shooting_range_id', $shootingRange->id)->delete();
+            $shootingRange->employees()->detach();
             $shootingRange->lanes()->delete();
             $shootingRange->gallery?->delete();
             $shootingRange->delete();
