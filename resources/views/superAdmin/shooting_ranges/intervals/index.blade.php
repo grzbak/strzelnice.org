@@ -1,10 +1,7 @@
 <x-app-layout>
     <div class="container py-4">
         <h1>Przedziały aktywności: {{ $shootingRange->name }}</h1>
-
-        @if (session('success'))
-            <div class="alert alert-success">{{ session('success') }}</div>
-        @endif
+        <x-session-alerts />
 
         <form method="POST" action="{{ route('admin.shootings.intervals.store', $shootingRange) }}" class="mb-4">
             @csrf

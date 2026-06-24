@@ -1021,7 +1021,7 @@ if (ShootingRangeInterval::hasOverlap(
         $shootingRange->update($validated);
 
         return redirect()->route('shooting.edit', ['id' => $shootingRange->id])
-            ->with('success', 'Dane strzelnicy zostały zapisane');
+            ->with('success', 'Dane strzelnicy zostały zapisane.');
     }
     //===============================================================================================================================================
 

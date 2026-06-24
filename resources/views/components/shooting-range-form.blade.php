@@ -116,9 +116,8 @@
                     type="{{ $field['type'] ?? 'text' }}"
                     value="{{ $fieldValue($field['name']) }}"
                     @required($field['required'] ?? false)
-                    class="w-full border-gray-300 rounded-md focus:border-indigo-500 focus:ring-indigo-500"
+                    class="w-full border-gray-300 rounded-md focus:border-indigo-500 focus:ring-indigo-500 @error($field['name']) is-invalid @enderror"
                 >
-
                 <x-input-error :messages="$errors->get($field['name'])" class="mt-1"/>
             </div>
         @endforeach
@@ -137,7 +136,7 @@
             id="voivodeship"
             name="voivodeship"
             required
-            class="w-full border-gray-300 rounded-md"
+            class="w-full border-gray-300 rounded-md @error('voivodeship') is-invalid @enderror"
         >
             <option value="" disabled @selected(!$fieldValue('voivodeship'))>
                 Wybierz województwo
@@ -158,7 +157,7 @@
             Typ strzelnicy <span class="text-danger">*</span>
         </label>
 
-        <select id="type" name="type" required class="w-full border-gray-300 rounded-md">
+        <select id="type" name="type" required class="w-full border-gray-300 rounded-md @error('type') is-invalid @enderror">
             <option value="otwarta" @selected($fieldValue('type', 'otwarta') === 'otwarta')>Otwarta</option>
             <option value="kryta" @selected($fieldValue('type') === 'kryta')>Kryta</option>
         </select>
@@ -189,7 +188,7 @@
     name="description"
     id="mytextarea"
     rows="4"
-    class="w-full border-gray-300 rounded-md"
+    class="w-full border-gray-300 rounded-md @error('description') is-invalid @enderror"
 >{{ $fieldValue('description') }}</textarea>
 
 <x-input-error :messages="$errors->get('description')" class="mt-1"/>

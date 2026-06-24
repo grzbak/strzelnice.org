@@ -1,20 +1,3 @@
- @if (session('error'))
-     <script>
-         document.addEventListener('DOMContentLoaded', function() {
-             showToast(@json(session('error')), 'error');
-         });
-     </script>
- @endif
- @if (session('success'))
-     <script>
-         document.addEventListener('DOMContentLoaded', function() {
-             showToast(@json(session('success')), 'success');
-         });
-     </script>
- @endif
-
-
-
 
  <div class="py-5 row row-cols-1 row-cols-lg-3 align-items-stretch g-4">
      @php

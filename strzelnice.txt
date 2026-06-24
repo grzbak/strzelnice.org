@@ -1,0 +1,25 @@
+progreso:
+
+strzelnice => kb6igpsLq!KEZFH
+ftp: strzelnice_glowna, katalog: /strzelnice pass: 5Trzeln!ce
+
+
+baza:
+
+strzelnice_test
+
+
+
+ZAZAMCZE 1A
+33-200
+Dąbrowa Tarnowska
+
+
+
+lh:
+sztrzelnice
+c%C#vY&<x2M^Exp%
+
+
+GIT:
+1f5f4b2 Initial XAMPP project snapshot
