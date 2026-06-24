@@ -32,6 +32,7 @@ class ShootingRangeGalleryController extends Controller
         $shootingRange = ShootingRange::query()
             ->where('endpoint', $endpoint)
             ->where('is_visible', true)
+            ->where('is_archived', false)
             ->firstOrFail();
 
         $gallery = $shootingRange->gallery()

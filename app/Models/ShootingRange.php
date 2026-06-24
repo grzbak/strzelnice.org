@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\ShootingRangeOpeningHour;
@@ -40,6 +41,7 @@ class ShootingRange extends Model
         'brand_file_name',
         'is_visible',
         'is_public_access',
+        'is_archived',
         'endpoint',
     ];
 
@@ -48,11 +50,17 @@ class ShootingRange extends Model
         'lng' => 'float',
         'is_visible' => 'boolean',
         'is_public_access' => 'boolean',
+        'is_archived' => 'boolean',
     ];
 
-    public function lanes()
+    public function lanes(): HasMany
     {
         return $this->hasMany(Lane::class);
+    }
+
+    public function reservations(): HasMany
+    {
+        return $this->hasMany(Reservation::class);
     }
     /*
      |--------------------------------------------------------------------------

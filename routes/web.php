@@ -154,6 +154,10 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
         Route::get('/strzelnice/{id}/pakiety', [ShootingsController::class, 'packages'])->name('admin.shootings.packages');
         Route::patch('/strzelnice/{shootingRange}/widocznosc', [ShootingsController::class, 'toggleVisibility'])
         ->name('admin.shootings.visibility');
+        Route::delete('/strzelnice/{shootingRange}', [ShootingsController::class, 'destroyShootingRange'])
+            ->name('admin.shootings.destroy');
+        Route::post('/strzelnice/usun-zaznaczone', [ShootingsController::class, 'bulkDestroyShootingRanges'])
+            ->name('admin.shootings.bulk-destroy');
 
 
         Route::get('/strzelnice/{shootingRange}/przedzialy', [ShootingsController::class, 'intervals'])

@@ -81,6 +81,7 @@ class ShootingsController extends Controller
 
             $query = ShootingRange::query()
                 ->where('is_visible', true)
+                ->where('is_archived', false)
                 ->whereHas('intervals', function ($q) use ($date) {
                     $q->where('is_active', true)
                         ->whereDate('start_date', '<=', $date)
@@ -248,7 +249,9 @@ private function geocodeLocation(string $location): ?array
 
     public function maps()
     {
-        $shootings = ShootingRange::where('is_visible', true)->get();
+        $shootings = ShootingRange::where('is_visible', true)
+            ->where('is_archived', false)
+            ->get();
         return view('maps.index', compact('shootings'));
     }
 
@@ -281,6 +284,7 @@ private function geocodeLocation(string $location): ?array
 
         $shootings = ShootingRange::query()
             ->where('is_visible', true)
+            ->where('is_archived', false)
             ->when(
                 $selectedVoivodeship,
                 fn ($query) => $query->where('voivodeship', $selectedVoivodeship)
@@ -356,6 +360,7 @@ private function geocodeLocation(string $location): ?array
         $shootingRange = ShootingRange::query()
             ->where('endpoint', $endpoint)
             ->where('is_visible', true)
+            ->where('is_archived', false)
             ->with([
                 'lanes',
                 'openingHours',
@@ -483,10 +488,13 @@ if (ShootingRangeInterval::hasOverlap(
     //LISTA STRZELNIC W PANELU SUPERADMINA
     public function listSuperAdmin()
     {
-        $shootings = ShootingRange::with('activeInterval')
-        ->orderBy('name')
-        ->get();
-        //dd($shootings);
+        $shootings = ShootingRange::query()
+            ->where('is_archived', false)
+            ->with('activeInterval')
+            ->withCount('reservations')
+            ->orderBy('name')
+            ->get();
+
         return view('superAdmin.shooting_ranges.index', compact('shootings'));
     }
 
@@ -678,11 +686,119 @@ if (ShootingRangeInterval::hasOverlap(
     //ZMIANA STATUSU WIDOCZNOŚCI STRZELNICY NA STRONIE
     public function toggleVisibility(ShootingRange $shootingRange)
     {
+        if ($shootingRange->is_archived) {
+            return back()->with('error', 'Nie można zmienić widoczności zarchiwizowanej strzelnicy.');
+        }
+
         $shootingRange->update([
             'is_visible' => ! $shootingRange->is_visible,
         ]);
 
         return back()->with('success', 'Zmieniono status widoczności strzelnicy.');
+    }
+
+    public function destroyShootingRange(Request $request, ShootingRange $shootingRange)
+    {
+        return $this->removeShootingRanges(
+            collect([$shootingRange->id]),
+            $request->boolean('archive_with_reservations')
+        );
+    }
+
+    public function bulkDestroyShootingRanges(Request $request)
+    {
+        $validated = $request->validate([
+            'shooting_range_ids' => ['required', 'array', 'min:1'],
+            'shooting_range_ids.*' => ['integer', 'exists:shooting_ranges,id'],
+            'archive_with_reservations' => ['nullable', 'boolean'],
+        ]);
+
+        return $this->removeShootingRanges(
+            collect($validated['shooting_range_ids'])->unique()->values(),
+            $request->boolean('archive_with_reservations')
+        );
+    }
+
+    private function removeShootingRanges($ids, bool $archiveWithReservations)
+    {
+        $ranges = ShootingRange::query()
+            ->whereIn('id', $ids)
+            ->where('is_archived', false)
+            ->with(['gallery.photos'])
+            ->withCount('reservations')
+            ->get();
+
+        if ($ranges->isEmpty()) {
+            return back()->with('error', 'Nie wybrano aktywnych strzelnic do usunięcia.');
+        }
+
+        $deleted = 0;
+        $archived = 0;
+        $blocked = [];
+
+        foreach ($ranges as $range) {
+            if ($range->reservations_count > 0) {
+                if (! $archiveWithReservations) {
+                    $blocked[] = $range->name;
+                    continue;
+                }
+
+                $range->update([
+                    'is_archived' => true,
+                    'is_visible' => false,
+                ]);
+
+                $archived++;
+                continue;
+            }
+
+            $this->deleteShootingRangeWithoutReservations($range);
+            $deleted++;
+        }
+
+        if ($blocked) {
+            return back()->with(
+                'error',
+                'Nie usunięto strzelnic z rezerwacjami: ' . implode(', ', $blocked) . '. Potwierdź archiwizację, aby ustawić je jako archiwalne.'
+            );
+        }
+
+        $messages = [];
+
+        if ($deleted > 0) {
+            $messages[] = $deleted === 1
+                ? 'Usunięto 1 strzelnicę wraz z przedziałami, galerią, zdjęciami, godzinami pracy, dniami wolnymi i zaproszeniami.'
+                : 'Usunięto ' . $deleted . ' strzelnic wraz z przedziałami, galeriami, zdjęciami, godzinami pracy, dniami wolnymi i zaproszeniami.';
+        }
+
+        if ($archived > 0) {
+            $messages[] = $archived === 1
+                ? 'Zarchiwizowano 1 strzelnicę z istniejącymi rezerwacjami.'
+                : 'Zarchiwizowano ' . $archived . ' strzelnic z istniejącymi rezerwacjami.';
+        }
+
+        return back()->with('success', implode(' ', $messages));
+    }
+
+    private function deleteShootingRangeWithoutReservations(ShootingRange $shootingRange): void
+    {
+        $galleryFolder = $shootingRange->gallery?->folder_path;
+
+        DB::transaction(function () use ($shootingRange) {
+            $shootingRange->intervalArchives()->delete();
+            $shootingRange->intervals()->delete();
+            $shootingRange->openingHours()->delete();
+            $shootingRange->holidays()->delete();
+            $shootingRange->invitations()->delete();
+            $shootingRange->packages()->where('shooting_range_id', $shootingRange->id)->delete();
+            $shootingRange->lanes()->delete();
+            $shootingRange->gallery?->delete();
+            $shootingRange->delete();
+        });
+
+        if ($galleryFolder) {
+            File::deleteDirectory(public_path($galleryFolder));
+        }
     }
 
 

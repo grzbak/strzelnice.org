@@ -22,6 +22,7 @@ class ReservationsController extends Controller
     {
         $shootingRange = ShootingRange::query()
             ->where('is_visible', true)
+            ->where('is_archived', false)
             ->whereHas('employees', function ($query) {
                 $query
                     ->where('shooting_range_employee.role', 'admin')
@@ -187,6 +188,7 @@ class ReservationsController extends Controller
 
         $shootingRange = ShootingRange::query()
             ->where('is_visible', true)
+            ->where('is_archived', false)
             ->whereHas('employees', function ($query) {
                 $query
                     ->where('shooting_range_employee.role', 'admin')
