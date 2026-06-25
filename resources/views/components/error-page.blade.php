@@ -9,8 +9,8 @@
 <x-app-layout>
     <div class="page-bg-2"></div>
 
-    <section class="container py-5">
-        <div class="mx-auto text-center" style="max-width: 760px;">
+    <section class="flex flex-col items-center pt-6">
+        <div class="w-full px-6 py-4 mx-auto mt-6 overflow-hidden text-center bg-white shadow-md sm:max-w-md sm:rounded-lg" style="max-width: 760px;">
             <div class="mb-3">
                 <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-{{ $tone }} bg-opacity-10 text-{{ $tone }}" style="width: 76px; height: 76px;">
                     <i class="bi {{ $icon }} fs-1"></i>
@@ -29,7 +29,7 @@
                 {{ $message }}
             </p>
 
-            <div class="gap-2 d-flex flex-wrap justify-content-center">
+            <div class="flex-wrap gap-2 d-flex justify-content-center">
                 <a href="{{ url()->previous() !== url()->current() ? url()->previous() : route('index') }}" class="btn btn-outline-secondary">
                     <i class="bi bi-arrow-left me-1"></i>
                     Wróć

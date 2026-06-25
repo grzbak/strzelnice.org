@@ -24,3 +24,7 @@ c%C#vY&<x2M^Exp%
 GIT:
 1f5f4b2 Initial XAMPP project snapshot
 5eb6e98 Snapshot before fixing lane edit validation flow
+
+49b2a85 Add shooting range deletion and archival flow
+commit: 38fff50 Import File facade for gallery cleanup
+d20e85b Add friendly error pages and session expiry redirects

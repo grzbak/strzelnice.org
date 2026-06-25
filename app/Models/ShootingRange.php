@@ -201,9 +201,17 @@ class ShootingRange extends Model
 
     private static function endpointExists(string $endpoint, ?int $ignoreId = null): bool
     {
-        return static::query()
+        $shootingRangeExists = static::query()
             ->where('endpoint', $endpoint)
             ->when($ignoreId, fn ($query) => $query->where('id', '!=', $ignoreId))
+            ->exists();
+
+        if ($shootingRangeExists) {
+            return true;
+        }
+
+        return Page::query()
+            ->where('navigation_name', $endpoint)
             ->exists();
     }
 

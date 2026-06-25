@@ -6,6 +6,7 @@ use App\Http\Controllers\API\UserController;
 //use App\Http\Controllers\EmployeeDashboardController;
 //use App\Http\Controllers\ClientDashboardController;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\PageController;
 use App\Http\Controllers\ShootingsController;
 use App\Http\Controllers\ReservationsController;
 use App\Http\Controllers\ShootingRangePackageController;
@@ -144,6 +145,12 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
             return redirect()->route('index');
         })->name('admin.dashboard');
         Route::get('/uzytkownicy', [AdminDashboardController::class, 'userList'])->name('admin.users');
+        Route::patch('/strony/{page}/status', [PageController::class, 'toggleStatus'])
+            ->name('admin.pages.toggle-status');
+        Route::resource('/strony', PageController::class)
+            ->except(['show'])
+            ->parameters(['strony' => 'page'])
+            ->names('admin.pages');
         Route::get('/strzelnice', [ShootingsController::class, 'listSuperAdmin'])->name('admin.shootings'); //dla niezalogowanych ->listAll
 
         Route::get('/strzelnice/dodaj', [ShootingsController::class, 'createSuperAdmin'])->name('admin.shootings.create');
@@ -299,6 +306,6 @@ Route::post('/rezerwacje', [ReservationsController::class, 'store'])
 // -----------------------------------------------------------------------------
 require __DIR__ . '/auth.php';
 
-Route::get('/{endpoint}', [ShootingsController::class, 'publicShow'])
+Route::get('/{endpoint}', [PageController::class, 'showPublicOrShooting'])
     ->where('endpoint', '[a-z0-9_]+')
     ->name('shooting.public.show');
