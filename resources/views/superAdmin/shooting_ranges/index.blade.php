@@ -26,8 +26,8 @@
     @include('components.breadcrumb')
 
     <div class="container py-2">
-        <div class="mb-3 row">
-            <div class="col-md-4">
+        <div class="pt-2 mb-3 row bg-light">
+            <div class=" col-md-4">
                 <input type="text" id="search" class="form-control" placeholder="Szukaj...">
             </div>
 
@@ -56,22 +56,25 @@
                     <i class="bi bi-house-add-fill action-icon" data-bs-toggle="tooltip" data-bs-placement="top" title="Dodaj nową strzelnicę"></i>
                 </button>
             </div>
+            <div class="mt-2">
+                <form id="bulkDeleteForm" method="POST" action="{{ route('admin.shootings.bulk-destroy') }}" class="mb-2">
+                    @csrf
+                    <input type="hidden" name="archive_with_reservations" id="bulkArchiveWithReservations" value="0">
+                    <div id="bulkDeleteIds"></div>
+
+                    <button type="submit" class="btn btn-outline-danger btn-sm" id="bulkDeleteButton" disabled>
+                        <i class="bi bi-trash3 me-1"></i>
+                        Usuń zaznaczone
+                    </button>
+
+                    <small class="ms-2 text-muted">
+                        Usunięcie obejmuje przedziały czasowe, galerie, zdjęcia, godziny pracy, dni wolne i zaproszenia.
+                    </small>
+                </form>
+            </div>
         </div>
 
-        <form id="bulkDeleteForm" method="POST" action="{{ route('admin.shootings.bulk-destroy') }}" class="mb-2">
-            @csrf
-            <input type="hidden" name="archive_with_reservations" id="bulkArchiveWithReservations" value="0">
-            <div id="bulkDeleteIds"></div>
 
-            <button type="submit" class="btn btn-outline-danger btn-sm" id="bulkDeleteButton" disabled>
-                <i class="bi bi-trash3 me-1"></i>
-                Usuń zaznaczone
-            </button>
-
-            <small class="ms-2 text-muted">
-                Usunięcie obejmuje przedziały czasowe, galerie, zdjęcia, godziny pracy, dni wolne i zaproszenia.
-            </small>
-        </form>
 
         <table class="table bg-white shadow-sm table-hover">
             <thead class="table-light">

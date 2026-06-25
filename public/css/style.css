@@ -53,6 +53,15 @@ footer {
     font-size: 0.9rem;
 }
 
+.page-bg {
+    position: fixed;
+    inset: 0;
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center center;
+    z-index: -1;
+}
+
 .page-bg-2 {
     position: fixed;
     inset: 0;
@@ -63,7 +72,6 @@ footer {
     background-repeat: no-repeat;
     background-size: cover;
     background-position: center center;
-
     z-index: -1;
 }
 
