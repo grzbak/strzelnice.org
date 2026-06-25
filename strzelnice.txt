@@ -31,3 +31,4 @@ d20e85b Add friendly error pages and session expiry redirects
 9eec75c Add superadmin page management
 0809332 Refine page display background layout
 daafa2e Add standard background to admin views
+ef50377 Improve shooting range invitations workflow
