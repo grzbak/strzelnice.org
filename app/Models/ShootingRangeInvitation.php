@@ -23,6 +23,7 @@ class ShootingRangeInvitation extends Model
         'expires_at',
         'accepted_at',
         'revoked_at',
+        'expires_soon_notified_at',
         'invited_by',
     ];
 
@@ -30,6 +31,7 @@ class ShootingRangeInvitation extends Model
         'expires_at' => 'datetime',
         'accepted_at' => 'datetime',
         'revoked_at' => 'datetime',
+        'expires_soon_notified_at' => 'datetime',
     ];
 
     public function shootingRange()
@@ -47,9 +49,25 @@ class ShootingRangeInvitation extends Model
         return $this->belongsTo(User::class, 'invited_by');
     }
 
+    public function isAccepted(): bool
+    {
+        return $this->status === self::STATUS_ACCEPTED;
+    }
+
+    public function isRevoked(): bool
+    {
+        return $this->status === self::STATUS_REVOKED || $this->revoked_at !== null;
+    }
+
+    public function isExpired(): bool
+    {
+        return $this->status === self::STATUS_EXPIRED
+            || ($this->expires_at && $this->expires_at->isPast());
+    }
+
     public function isActive(): bool
     {
-        return $this->status === self::STATUS_ACCEPTED
+        return $this->isAccepted()
             && ! $this->revoked_at
             && (! $this->expires_at || $this->expires_at->isFuture());
     }

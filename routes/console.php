@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('shooting-ranges:expire-invitations')->hourly();
+Schedule::command('shooting-ranges:send-invitation-expiry-reminders --days=2')->dailyAt('08:00');
