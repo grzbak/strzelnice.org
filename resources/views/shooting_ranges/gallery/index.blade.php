@@ -1,4 +1,5 @@
 <x-app-layout>
+    <div class="page-bg-2"></div>
     <div class="container py-4">
 
 
@@ -146,7 +147,7 @@
             </div>
         @endif
 
-        <div class="pb-2 mb-4 border-bottom">
+        <div class="p-3 mb-4 bg-white rounded border-bottom">
             <h2 class="mb-1 h4">
                 <i class="bi bi-grid-3x3-gap-fill me-1"></i>
                 Zdjęcia
@@ -171,7 +172,7 @@
 
 
         @if ($gallery)
-            <div class="row g-3">
+            <div class="pb-2 bg-white rounded row g-3">
                 @forelse ($gallery->photos as $photo)
                     <div class="col-md-3">
                         <div class="card h-100">
