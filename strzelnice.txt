@@ -29,3 +29,4 @@ GIT:
 commit: 38fff50 Import File facade for gallery cleanup
 d20e85b Add friendly error pages and session expiry redirects
 9eec75c Add superadmin page management
+0809332 Refine page display background layout
