@@ -653,12 +653,15 @@ if (ShootingRangeInterval::hasOverlap(
     // ZAPIS ZMIAN PRZEZ SUPERADMINA
     public function updateSuperAdmin(Request $request, ShootingRange $shootingRange)
     {
+        $rules = $this->shootingRangeRules();
+        $rules['remove_brand'] = ['nullable', 'boolean'];
+
         $validated = $request->validate(
-            $this->shootingRangeRules(),
+            $rules,
             $this->shootingRangeValidationMessages()
         );
 
-        unset($validated['brand']);
+        unset($validated['brand'], $validated['remove_brand']);
 
         $validated['is_public_access'] = $request->boolean('is_public_access');
 
@@ -666,6 +669,11 @@ if (ShootingRangeInterval::hasOverlap(
             $this->deleteBrandFile($shootingRange);
 
             $validated = array_merge($validated, $brandData);
+        } elseif ($request->boolean('remove_brand')) {
+            $this->deleteBrandFile($shootingRange);
+
+            $validated['brand_original_name'] = null;
+            $validated['brand_file_name'] = null;
         }
 
         $shootingRange->update($validated);
@@ -1121,12 +1129,15 @@ if (ShootingRangeInterval::hasOverlap(
     //Zapis danych podstawowych strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
     public function update(Request $request, ShootingRange $shootingRange)
     {
+        $rules = $this->shootingRangeRules();
+        $rules['remove_brand'] = ['nullable', 'boolean'];
+
         $validated = $request->validate(
-            $this->shootingRangeRules(),
+            $rules,
             $this->shootingRangeValidationMessages()
         );
 
-        unset($validated['brand']);
+        unset($validated['brand'], $validated['remove_brand']);
 
         $validated['is_public_access'] = $request->boolean('is_public_access');
 
@@ -1134,6 +1145,11 @@ if (ShootingRangeInterval::hasOverlap(
             $this->deleteBrandFile($shootingRange);
 
             $validated = array_merge($validated, $brandData);
+        } elseif ($request->boolean('remove_brand')) {
+            $this->deleteBrandFile($shootingRange);
+
+            $validated['brand_original_name'] = null;
+            $validated['brand_file_name'] = null;
         }
 
         $shootingRange->update($validated);

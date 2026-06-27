@@ -79,6 +79,23 @@
         <div class="mt-1 text-sm text-muted">
             Aktualny plik: {{ $values['brand_original_name'] }}
         </div>
+
+        <input type="hidden" name="remove_brand" value="0">
+
+        <label class="inline-flex items-center gap-2 mt-3 text-sm">
+            <input
+                type="checkbox"
+                name="remove_brand"
+                value="1"
+                @checked(old('remove_brand'))
+                class="border-gray-300 rounded text-danger focus:ring-danger"
+            >
+            Usuń aktualne logo
+        </label>
+
+        <div class="mt-1 text-sm text-muted">
+            Logo zostanie usunięte po zapisaniu formularza.
+        </div>
     </div>
 @endif
 
