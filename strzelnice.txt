@@ -38,3 +38,4 @@ e9a4eaf Snapshot before reservation workflow overhaul
 33702fc Unify reservation rules and add guest bookings
 3d96fe3 Snapshot before reservation hardening
 29cd58d Harden reservation availability and dynamic shooting
+1566594 Add reservation details modal to staff calendar
