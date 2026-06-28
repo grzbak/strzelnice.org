@@ -15,11 +15,6 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
-    ->withSchedule(function ($schedule) {
-        $schedule->command('shooting-range:cleanup-expired')
-            //->dailyAt('14:09');
-            ->everyMinute();
-    })
     ->withMiddleware(function ($middleware) {
         $middleware->alias([
             'approved' => \App\Http\Middleware\ApprovedUser::class,

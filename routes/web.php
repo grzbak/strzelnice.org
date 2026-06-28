@@ -12,6 +12,7 @@ use App\Http\Controllers\ReservationsController;
 use App\Http\Controllers\ShootingRangePackageController;
 use App\Http\Controllers\ShootingRangeInvitationController;
 use App\Http\Controllers\ShootingRangeGalleryController;
+use App\Http\Controllers\SystemConfigurationController;
 use Illuminate\Support\Facades\Route;
 
 
@@ -21,6 +22,11 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [ShootingsController::class, 'index'])->name('index');
 Route::get('/lista-strzelnic', [ShootingsController::class, 'listAll'])->name('shootings.list');
 Route::get('/mapa-strzelnic', [ShootingsController::class, 'maps'])->name('maps'); // strzelnice na mapie
+Route::get('/kontakt', [SystemConfigurationController::class, 'contact'])
+    ->name('contact');
+Route::post('/kontakt', [SystemConfigurationController::class, 'sendContact'])
+    ->middleware('throttle:5,1')
+    ->name('contact.send');
 //Route::get('/s/{endpoint}', [ShootingsController::class, 'publicShow'])
     //->name('shooting.public.show');
 
@@ -151,6 +157,16 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
             ->except(['show'])
             ->parameters(['strony' => 'page'])
             ->names('admin.pages');
+        Route::get('/konfiguracja-systemu', [SystemConfigurationController::class, 'index'])
+            ->name('admin.system-configurations.index');
+        Route::get('/konfiguracja-systemu/{systemConfiguration}', [SystemConfigurationController::class, 'show'])
+            ->name('admin.system-configurations.show');
+        Route::get('/konfiguracja-systemu/{systemConfiguration}/edytuj', [SystemConfigurationController::class, 'edit'])
+            ->name('admin.system-configurations.edit');
+        Route::patch('/konfiguracja-systemu/{systemConfiguration}', [SystemConfigurationController::class, 'update'])
+            ->name('admin.system-configurations.update');
+        Route::patch('/konfiguracja-systemu/{systemConfiguration}/przywroc', [SystemConfigurationController::class, 'restore'])
+            ->name('admin.system-configurations.restore');
         Route::get('/strzelnice', [ShootingsController::class, 'listSuperAdmin'])->name('admin.shootings'); //dla niezalogowanych ->listAll
 
         Route::get('/strzelnice/dodaj', [ShootingsController::class, 'createSuperAdmin'])->name('admin.shootings.create');

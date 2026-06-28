@@ -199,6 +199,34 @@
     <x-input-error :messages="$errors->get('is_public_access')" class="mt-1"/>
 </div>
 
+<div class="mb-4">
+    @php
+        $globalBookingDays = \App\Models\SystemConfiguration::query()
+            ->active()
+            ->latest('id')
+            ->value('default_max_advance_booking_days') ?? 30;
+    @endphp
+
+    <label for="max_advance_booking_days" class="block mb-1 text-sm font-medium">
+        Maksymalny termin rezerwacji (dni)
+    </label>
+    <input
+        type="number"
+        id="max_advance_booking_days"
+        name="max_advance_booking_days"
+        value="{{ $fieldValue('max_advance_booking_days') }}"
+        min="0"
+        max="365"
+        placeholder="{{ $globalBookingDays }}"
+        class="w-full border-gray-300 rounded-md focus:border-indigo-500 focus:ring-indigo-500 @error('max_advance_booking_days') is-invalid @enderror"
+    >
+    <div class="mt-1 text-sm text-muted">
+        Pozostaw puste, aby użyć ustawienia globalnego: {{ $globalBookingDays }} dni.
+        Wartość 0 pozwala rezerwować tylko na dzisiaj.
+    </div>
+    <x-input-error :messages="$errors->get('max_advance_booking_days')" class="mt-1"/>
+</div>
+
 <h2 class="mt-6 mb-2 font-semibold">Opis</h2>
 
 <textarea

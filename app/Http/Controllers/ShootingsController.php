@@ -1503,6 +1503,7 @@ if (ShootingRangeInterval::hasOverlap(
 
             'type' => ['required', 'in:otwarta,kryta'],
             'is_public_access' => ['required', 'boolean'],
+            'max_advance_booking_days' => ['nullable', 'integer', 'min:0', 'max:365'],
 
             'description' => ['nullable', 'string', 'max:2000'],
         ];

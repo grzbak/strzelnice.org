@@ -22,7 +22,7 @@
                         <a href="/polityka-prywatnosci" class="px-2 nav-link text-secondary">Strefa strzelnic</a>
                     </li>
                     <li class="nav-item">
-                        <a href="/kontakt" class="px-2 nav-link text-secondary">Kontakt</a>
+                        <a href="{{ route('contact') }}" class="px-2 nav-link text-secondary">Kontakt</a>
                     </li>
                 </ul>
             </div>

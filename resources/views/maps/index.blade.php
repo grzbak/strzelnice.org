@@ -36,7 +36,7 @@
 
 
      <div class="py-3 bg-light" style="text-align: center; font-size: 3em;" onclick="window.location='{{ route('range.step1') }}'">
-        Zarządasz strzelnicą? <span style="color: red;">Sprawdź naszą ofertę!<span>
+        Zarządzasz strzelnicą? <span style="color: red;">Sprawdź naszą ofertę!<span>
     </div>
 
     <!--a href="{{ route('range.step1') }}" class="btn btn-outline-primary">

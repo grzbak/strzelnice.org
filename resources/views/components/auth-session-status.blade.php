@@ -10,7 +10,7 @@
         };
     @endphp
 
-    <div {{ $attributes->merge(['class' => 'rounded-md border px-4 py-3 text-sm font-medium ' . $classes]) }}>
+    <div {{ $attributes->merge(['class' => 'rounded-md border px-4 py-3 text-sm font-medium  text-amber-900 bg-amber-50 border-amber-300' . $classes]) }}>
         {{ $status }}
     </div>
 @endif

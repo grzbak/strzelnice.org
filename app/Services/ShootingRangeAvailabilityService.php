@@ -74,6 +74,12 @@ class ShootingRangeAvailabilityService
             return $basicResult;
         }
 
+        if (! $shootingRange->allowsReservationDate($date)) {
+            return $this->denied(
+                'Wybrana data znajduje się poza dozwolonym terminem rezerwacji.'
+            );
+        }
+
         if (! $this->hasActiveIntervalForDate($shootingRange, $date)) {
             return $this->denied(
                 'Strzelnica nie posiada aktywnego przedziału dla wybranej daty.'
@@ -165,6 +171,12 @@ class ShootingRangeAvailabilityService
         if (! $start->isSameDay($end)) {
             $this->throwError(
                 'Rezerwacja musi rozpoczynać się i kończyć tego samego dnia.'
+            );
+        }
+
+        if (! $shootingRange->allowsReservationDate($start)) {
+            $this->throwError(
+                'Wybrana data znajduje się poza dozwolonym terminem rezerwacji.'
             );
         }
 

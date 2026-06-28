@@ -19,9 +19,12 @@ class SendShootingRangeInvitationExpiryReminders extends Command
         $now = now();
         $expiresBefore = $now->copy()->addDays($days);
 
+        $this->info("Now: {$now}");
+        $this->info("expiresBefore: {$expiresBefore}");
+
         $invitations = ShootingRangeInvitation::query()
             ->with('shootingRange')
-            ->where('status', ShootingRangeInvitation::STATUS_PENDING)
+            ->where('status', ShootingRangeInvitation::STATUS_ACCEPTED)
             ->whereNotNull('token')
             ->whereNotNull('expires_at')
             ->whereNull('expires_soon_notified_at')

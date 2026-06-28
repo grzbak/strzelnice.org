@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 Schedule::command('shooting-ranges:expire-invitations')->hourly();
 Schedule::command('shooting-ranges:send-invitation-expiry-reminders --days=2')->dailyAt('00:24');
+Schedule::command('shooting-range:cleanup-expired')
+    ->dailyAt('00:00')
+    ->withoutOverlapping();

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use App\Models\ShootingRangeOpeningHour;
 use App\Models\ShootingRangeInterval;
 use App\Models\ShootingRangeIntervalArchive;
+use Carbon\Carbon;
 use Illuminate\Support\Str;
 
 class ShootingRange extends Model
@@ -41,6 +42,7 @@ class ShootingRange extends Model
         'brand_file_name',
         'is_visible',
         'is_public_access',
+        'max_advance_booking_days',
         'is_archived',
         'endpoint',
     ];
@@ -50,6 +52,7 @@ class ShootingRange extends Model
         'lng' => 'float',
         'is_visible' => 'boolean',
         'is_public_access' => 'boolean',
+        'max_advance_booking_days' => 'integer',
         'is_archived' => 'boolean',
     ];
 
@@ -218,6 +221,34 @@ class ShootingRange extends Model
     public function getPublicLinkAttribute(): string
     {
         return url('/s/' . $this->endpoint);
+    }
+
+    public function effectiveMaxAdvanceBookingDays(): int
+    {
+        if ($this->max_advance_booking_days !== null) {
+            return max(0, (int) $this->max_advance_booking_days);
+        }
+
+        return max(
+            0,
+            (int) (SystemConfiguration::query()
+                ->active()
+                ->latest('id')
+                ->value('default_max_advance_booking_days') ?? 30)
+        );
+    }
+
+    public function latestBookableDate(): Carbon
+    {
+        return today()->addDays($this->effectiveMaxAdvanceBookingDays());
+    }
+
+    public function allowsReservationDate(Carbon $date): bool
+    {
+        $date = $date->copy()->startOfDay();
+
+        return $date->greaterThanOrEqualTo(today())
+            && $date->lessThanOrEqualTo($this->latestBookableDate());
     }
 
     public function gallery(): HasOne

@@ -2,46 +2,61 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Models\ShootingRangeInterval;
-use Carbon\Carbon;
+use App\Models\ShootingRangeIntervalArchive;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CleanupExpiredShootingRangeIntervals extends Command
 {
-    protected $signature = 'shooting-range:cleanup-expired';
-    protected $description = 'Usuwa wygasłe zakresy strzelnic i obsługuje alerty przed wygaśnięciem';
+    protected $signature = 'shooting-range:cleanup-expired {--dry-run}';
 
-    public function handle()
-{
-    \Log::info('Cleanup running: '.now());
+    protected $description = 'Usuwa wygasłe aktywne przedziały i dezaktywuje ich wpisy archiwalne.';
 
-    $deleted = \App\Models\ShootingRangeInterval::where('end_date', '<', now())->delete();
+    public function handle(): int
+    {
+        $today = today()->toDateString();
 
-    \Log::warning("Deleted rows: ".$deleted);
+        $expiredIntervals = ShootingRangeInterval::query()
+            ->where('is_active', true)
+            ->whereDate('end_date', '<', $today);
 
-    return self::SUCCESS;
+        $expiredArchives = ShootingRangeIntervalArchive::query()
+            ->where('is_active', true)
+            ->whereDate('end_date', '<', $today);
+
+        $intervalsCount = (clone $expiredIntervals)->count();
+        $archivesCount = (clone $expiredArchives)->count();
+
+        if ($this->option('dry-run')) {
+            $this->info("Aktywne przedziały do usunięcia: {$intervalsCount}");
+            $this->info("Wpisy archiwalne do dezaktywacji: {$archivesCount}");
+
+            return self::SUCCESS;
+        }
+
+        [$deletedIntervals, $deactivatedArchives] = DB::transaction(
+            function () use ($expiredIntervals, $expiredArchives): array {
+                $deactivatedArchives = $expiredArchives->update([
+                    'is_active' => false,
+                ]);
+
+                $deletedIntervals = $expiredIntervals->delete();
+
+                return [$deletedIntervals, $deactivatedArchives];
+            }
+        );
+
+        Log::info('Expired shooting range intervals cleanup completed.', [
+            'date' => $today,
+            'deleted_intervals' => $deletedIntervals,
+            'deactivated_archives' => $deactivatedArchives,
+        ]);
+
+        $this->info("Usunięte aktywne przedziały: {$deletedIntervals}");
+        $this->info("Dezaktywowane wpisy archiwalne: {$deactivatedArchives}");
+
+        return self::SUCCESS;
+    }
 }
-}
-
-/*
-|--------------------------------------------------------------------------
-| MODYFIKACJE MODELU ShootingRangeInterval
-|--------------------------------------------------------------------------
-*/
-
-
-
-
-/*
-|--------------------------------------------------------------------------
-| SCHEDULER (app/Console/Kernel.php)
-|--------------------------------------------------------------------------
-*/
-
-/*
-protected function schedule(Schedule $schedule)
-{
-    $schedule->command('shooting-range:cleanup-expired')
-        ->dailyAt('02:00');
-}
-*/

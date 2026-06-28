@@ -37,7 +37,24 @@ class ReservationsController extends Controller
             ])
             ->findOrFail($id);
 
-        $calendarDate = request('date', now()->format('Y-m-d'));
+        $maxAdvanceBookingDays = $shootingRange->effectiveMaxAdvanceBookingDays();
+        $maxBookingDate = $shootingRange->latestBookableDate();
+        $requestedDate = Carbon::parse(
+            request('date', now()->format('Y-m-d'))
+        )->startOfDay();
+
+        if ($requestedDate->lt(today())) {
+            $requestedDate = today();
+            session()->flash('error', 'Nie można rezerwować terminów z przeszłości.');
+        } elseif ($requestedDate->gt($maxBookingDate)) {
+            $requestedDate = $maxBookingDate->copy();
+            session()->flash(
+                'error',
+                "Rezerwacji można dokonać maksymalnie {$maxAdvanceBookingDays} dni do przodu."
+            );
+        }
+
+        $calendarDate = $requestedDate->format('Y-m-d');
 
         $reservations = Reservation::query()
             ->where('shooting_range_id', $shootingRange->id)
@@ -61,7 +78,9 @@ class ReservationsController extends Controller
         return view('reservation.calendar-day-test', compact(
             'shootingRange',
             'calendarDate',
-            'reservations'
+            'reservations',
+            'maxAdvanceBookingDays',
+            'maxBookingDate'
         ));
     }
 
@@ -209,6 +228,23 @@ class ReservationsController extends Controller
         $start = Carbon::parse($validated['date'] . ' ' . $validated['start_time']);
         $end = Carbon::parse($validated['date'] . ' ' . $validated['end_time']);
         $date = $start->copy()->startOfDay();
+
+        if (! $shootingRange->allowsReservationDate($start)) {
+            if ($start->lt(today())) {
+                return back()
+                    ->withInput()
+                    ->with('error', 'Nie można rezerwować terminów z przeszłości.');
+            }
+
+            $maxAdvanceBookingDays = $shootingRange->effectiveMaxAdvanceBookingDays();
+
+            return back()
+                ->withInput()
+                ->with(
+                    'error',
+                    "Rezerwacji można dokonać maksymalnie {$maxAdvanceBookingDays} dni do przodu."
+                );
+        }
 
         $hasValidInterval = $shootingRange->intervals()
             ->where('is_active', true)

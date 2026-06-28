@@ -1,7 +1,7 @@
 @php
     use Carbon\Carbon;
 
-    $calendarDate = request('date', $calendarDate ?? now()->format('Y-m-d'));
+    $calendarDate = $calendarDate ?? now()->format('Y-m-d');
 
     $calendarAxes = $shootingRange->lanes->map(fn ($lane) => [
         'id' => $lane->id,
@@ -77,6 +77,8 @@
                     class="form-control"
                     value="{{ $calendarDate }}"
                     min="{{ now()->format('Y-m-d') }}"
+                    max="{{ $maxBookingDate->format('Y-m-d') }}"
+                    title="Rezerwacje są dostępne maksymalnie {{ $maxAdvanceBookingDays }} dni do przodu"
                 >
 
                 <button type="button" id="nextDay" class="icon-button" title="Następny dzień">
@@ -212,6 +214,11 @@
 
         .icon-button:hover {
             background: #f4f6f5;
+        }
+
+        .icon-button:disabled {
+            cursor: not-allowed;
+            opacity: .45;
         }
 
         .availability-legend {
@@ -410,6 +417,9 @@
             intervals: @json($activeIntervals),
             reservations: @json($reservations ?? []),
             initialDate: @json($calendarDate),
+            minDate: @json(now()->format('Y-m-d')),
+            maxDate: @json($maxBookingDate->format('Y-m-d')),
+            maxAdvanceDays: @json($maxAdvanceBookingDays),
             slotMinutes: 30
         };
 
@@ -455,6 +465,13 @@
 
             if (dateString < formatDate(new Date())) {
                 return { isOpen: false, reason: 'Wybrany dzień już minął' };
+            }
+
+            if (dateString > bookingConfig.maxDate) {
+                return {
+                    isOpen: false,
+                    reason: `Rezerwacje są dostępne maksymalnie ${bookingConfig.maxAdvanceDays} dni do przodu`
+                };
             }
 
             const hasInterval = bookingConfig.intervals.some(interval => {
@@ -550,6 +567,8 @@
             const lanes = document.getElementById('lanesList');
 
             document.getElementById('selectedDate').value = dateString;
+            document.getElementById('previousDay').disabled = dateString <= bookingConfig.minDate;
+            document.getElementById('nextDay').disabled = dateString >= bookingConfig.maxDate;
             lanes.innerHTML = '';
             summary.classList.toggle('is-closed', !availability.isOpen);
 
@@ -695,11 +714,19 @@
             renderDay();
 
             document.getElementById('previousDay').addEventListener('click', () => {
+                if (formatDate(currentDate) <= bookingConfig.minDate) {
+                    return;
+                }
+
                 currentDate.setDate(currentDate.getDate() - 1);
                 renderDay();
             });
 
             document.getElementById('nextDay').addEventListener('click', () => {
+                if (formatDate(currentDate) >= bookingConfig.maxDate) {
+                    return;
+                }
+
                 currentDate.setDate(currentDate.getDate() + 1);
                 renderDay();
             });
