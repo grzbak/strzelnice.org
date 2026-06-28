@@ -1578,16 +1578,27 @@
                     completed: ['completed'],
                     no_show: ['no_show']
                 };
-                const availableAfterStart = {
+                const availableDuringReservation = {
+                    pending: ['pending'],
+                    approved: ['approved'],
+                    cancelled: ['cancelled'],
+                    completed: ['completed'],
+                    no_show: ['no_show']
+                };
+                const availableAfterEnd = {
                     pending: ['pending', 'completed', 'no_show'],
                     approved: ['approved', 'completed', 'no_show'],
                     cancelled: ['cancelled'],
                     completed: ['completed'],
                     no_show: ['no_show']
                 };
-                const availableStatuses = reservation.has_started
-                    ? availableAfterStart
-                    : availableBeforeStart;
+                const availableStatuses = reservation.has_ended
+                    ? availableAfterEnd
+                    : (
+                        reservation.has_started
+                            ? availableDuringReservation
+                            : availableBeforeStart
+                    );
 
                 [...statusSelect.options].forEach(option => {
                     option.disabled = ! availableStatuses[reservation.status]?.includes(

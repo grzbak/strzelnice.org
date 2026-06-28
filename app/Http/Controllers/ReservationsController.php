@@ -422,6 +422,7 @@ class ReservationsController extends Controller
                 'finalized_at' => $reservation->finalized_at?->format('d.m.Y H:i'),
                 'finalized_by_name' => $reservation->finalizer?->name,
                 'has_started' => $reservation->start->lessThanOrEqualTo(now()),
+                'has_ended' => $reservation->end->lessThanOrEqualTo(now()),
                 'can_edit' => $reservation->canBeEdited(),
             ])
             ->values();
@@ -755,10 +756,10 @@ class ReservationsController extends Controller
             Reservation::STATUS_NO_SHOW,
         ], true);
 
-        if ($isFinalStatus && $reservation->start->isFuture()) {
+        if ($isFinalStatus && $reservation->end->isFuture()) {
             return back()->with(
                 'error',
-                'Status realizacji można ustawić dopiero po rozpoczęciu rezerwacji.'
+                'Status realizacji można ustawić dopiero po zakończeniu rezerwacji.'
             );
         }
 

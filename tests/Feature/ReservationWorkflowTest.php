@@ -609,6 +609,26 @@ class ReservationWorkflowTest extends TestCase
             ->assertSee(route('rezerwacje.edit', $reservationId));
     }
 
+    public function test_staff_account_can_access_its_own_customer_reservations(): void
+    {
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $reservationId = $this->insertReservation(
+            $admin,
+            $rangeId,
+            $laneId,
+            '10:00',
+            '10:30',
+            1,
+            Reservation::STATUS_PENDING
+        );
+
+        $this->actingAs($admin)
+            ->get(route('rezerwacje.mine'))
+            ->assertOk()
+            ->assertSee('Moje rezerwacje')
+            ->assertSee(route('rezerwacje.edit', $reservationId));
+    }
+
     public function test_customer_cannot_edit_non_pending_or_started_reservation(): void
     {
         [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
@@ -659,7 +679,6 @@ class ReservationWorkflowTest extends TestCase
             1,
             Reservation::STATUS_APPROVED
         );
-
         $this->actingAs($admin)
             ->patch(route('admin.reservations.update', $reservationId), [
                 'shooting_range_id' => $rangeId,
@@ -690,7 +709,7 @@ class ReservationWorkflowTest extends TestCase
         ]);
     }
 
-    public function test_completion_status_is_available_only_after_reservation_starts(): void
+    public function test_completion_status_is_available_only_after_reservation_ends(): void
     {
         [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
         $futureId = $this->insertReservation(
@@ -706,6 +725,15 @@ class ReservationWorkflowTest extends TestCase
             $admin,
             $rangeId,
             $laneId,
+            '06:30',
+            '07:30',
+            1,
+            Reservation::STATUS_APPROVED
+        );
+        $ongoingId = $this->insertReservation(
+            $admin,
+            $rangeId,
+            $laneId,
             '07:30',
             '08:30',
             1,
@@ -718,7 +746,16 @@ class ReservationWorkflowTest extends TestCase
             ])
             ->assertSessionHas(
                 'error',
-                'Status realizacji można ustawić dopiero po rozpoczęciu rezerwacji.'
+                'Status realizacji można ustawić dopiero po zakończeniu rezerwacji.'
+            );
+
+        $this->actingAs($admin)
+            ->patch(route('admin.reservations.status', $ongoingId), [
+                'status' => Reservation::STATUS_NO_SHOW,
+            ])
+            ->assertSessionHas(
+                'error',
+                'Status realizacji można ustawić dopiero po zakończeniu rezerwacji.'
             );
 
         $this->actingAs($admin)
