@@ -130,10 +130,15 @@
                                 <option value="account">Użytkownik z kontem</option>
                                 <option value="guest">Gość bez konta</option>
                             </select>
+                            <input
+                                type="hidden"
+                                name="customer_user_id"
+                                id="staffCustomerUserId"
+                            >
                         </div>
 
-                        <div class="col-md-6 guest-name-field d-none">
-                            <label for="staffCustomerName" class="form-label">Imię i nazwisko gościa</label>
+                        <div class="col-md-6">
+                            <label for="staffCustomerName" class="form-label">Imię i nazwisko</label>
                             <input
                                 type="text"
                                 name="customer_name"
@@ -141,6 +146,9 @@
                                 class="form-control"
                                 maxlength="255"
                             >
+                            <div class="form-text account-search-help">
+                                Wpisz co najmniej 2 znaki, aby wyszukać konto.
+                            </div>
                         </div>
 
                         <div class="col-md-6">
@@ -150,11 +158,7 @@
                                 name="customer_email"
                                 id="staffCustomerEmail"
                                 class="form-control"
-                                required
                             >
-                            <div class="form-text account-email-help">
-                                Podaj adres e-mail istniejącego użytkownika.
-                            </div>
                         </div>
 
                         <div class="col-md-6">
@@ -166,6 +170,10 @@
                                 class="form-control"
                                 maxlength="50"
                             >
+                        </div>
+
+                        <div class="col-12 d-none" id="customerSuggestions">
+                            <div class="list-group"></div>
                         </div>
 
                         <div class="col-md-4">
@@ -184,33 +192,33 @@
 
                         <div class="col-md-4">
                             <label for="staffStartTime" class="form-label">Od</label>
-                            <input
-                                type="time"
+                            <select
                                 name="start_time"
                                 id="staffStartTime"
-                                class="form-control"
-                                step="1800"
+                                class="form-select"
                                 required
-                            >
+                            ></select>
                         </div>
 
                         <div class="col-md-4">
                             <label for="staffEndTime" class="form-label">Do</label>
-                            <input
-                                type="time"
+                            <select
                                 name="end_time"
                                 id="staffEndTime"
-                                class="form-control"
-                                step="1800"
+                                class="form-select"
                                 required
-                            >
+                            ></select>
                         </div>
 
                         <div class="col-md-8">
                             <label for="staffLane" class="form-label">Oś</label>
                             <select name="line_id" id="staffLane" class="form-select" required>
                                 @foreach ($shootingRange->lanes as $lane)
-                                    <option value="{{ $lane->id }}">
+                                    <option
+                                        value="{{ $lane->id }}"
+                                        data-positions="{{ $lane->numberOfPositions }}"
+                                        data-dynamic="{{ $lane->allows_dynamic_shooting ? '1' : '0' }}"
+                                    >
                                         {{ $lane->name }} · {{ $lane->length }} m
                                     </option>
                                 @endforeach
@@ -219,15 +227,32 @@
 
                         <div class="col-md-4">
                             <label for="staffPositions" class="form-label">Stanowiska</label>
-                            <input
-                                type="number"
+                            <select
                                 name="positions_count"
                                 id="staffPositions"
-                                class="form-control"
-                                min="1"
-                                value="1"
+                                class="form-select"
                                 required
-                            >
+                            ></select>
+                        </div>
+
+                        <div class="col-12 d-none" id="staffDynamicField">
+                            <input type="hidden" name="is_dynamic_shooting" value="0">
+                            <div class="form-check">
+                                <input
+                                    type="checkbox"
+                                    name="is_dynamic_shooting"
+                                    id="staffDynamicShooting"
+                                    class="form-check-input"
+                                    value="1"
+                                >
+                                <label for="staffDynamicShooting" class="form-check-label">
+                                    Strzelanie dynamiczne - rezerwacja całej osi
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <div id="staffAvailability" class="small text-muted" role="status"></div>
                         </div>
 
                         <div class="col-12">
@@ -245,7 +270,7 @@
 
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Anuluj</button>
-                    <button type="submit" class="btn btn-success">
+                    <button type="submit" id="staffReservationSubmit" class="btn btn-success">
                         <i class="bi bi-check-lg me-1"></i>
                         Zapisz rezerwację
                     </button>
@@ -660,6 +685,8 @@
             reservations: @json($reservations),
             openingHours: @json($openingHours),
             shootingRangeId: @json($shootingRange->id),
+            customerSearchUrl: @json(route('admin.reservations.customers.search')),
+            availabilityUrl: @json(route('rezerwacje.availability', $shootingRange->id)),
             statusRouteTemplate: @json(route('admin.reservations.status', ['reservation' => '__ID__']))
         };
 
@@ -739,7 +766,11 @@
                 </div>
                 <div class="reservation-lane">
                     <strong>${escapeHtml(reservation.lane_name)}</strong>
-                    <span>${reservation.lane_length ? `${escapeHtml(reservation.lane_length)} m · ` : ''}${escapeHtml(reservation.positions_count)} stanowisk</span>
+                    <span>
+                        ${reservation.lane_length ? `${escapeHtml(reservation.lane_length)} m · ` : ''}
+                        ${escapeHtml(reservation.positions_count)} stanowisk
+                        ${reservation.is_dynamic_shooting ? ' · dynamiczne' : ''}
+                    </span>
                 </div>
                 <button
                     type="button"
@@ -935,18 +966,356 @@
 
             const customerType = document.getElementById('staffCustomerType');
             const customerName = document.getElementById('staffCustomerName');
-            const guestNameField = document.querySelector('.guest-name-field');
-            const accountEmailHelp = document.querySelector('.account-email-help');
+            const customerEmail = document.getElementById('staffCustomerEmail');
+            const customerPhone = document.getElementById('staffCustomerPhone');
+            const customerUserId = document.getElementById('staffCustomerUserId');
+            const customerSuggestions = document.getElementById('customerSuggestions');
+            const accountSearchHelp = document.querySelector('.account-search-help');
+            let customerSearchTimer = null;
+            let fillingCustomer = false;
+
+            function selectCustomer(user) {
+                fillingCustomer = true;
+                customerUserId.value = user.id;
+                customerName.value = user.name ?? '';
+                customerEmail.value = user.email ?? '';
+                customerPhone.value = user.telephone ?? '';
+                customerSuggestions.classList.add('d-none');
+                fillingCustomer = false;
+            }
+
+            function renderCustomerSuggestions(users, searchedValue) {
+                const list = customerSuggestions.querySelector('.list-group');
+                list.innerHTML = '';
+
+                if (!users.length) {
+                    customerSuggestions.classList.add('d-none');
+                    return;
+                }
+
+                const normalized = searchedValue.trim().toLowerCase();
+                const exact = users.find(user => {
+                    return [user.name, user.email, user.telephone]
+                        .filter(Boolean)
+                        .some(value => String(value).toLowerCase() === normalized);
+                });
+
+                if (exact || users.length === 1) {
+                    selectCustomer(exact ?? users[0]);
+                    return;
+                }
+
+                users.forEach(user => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'list-group-item list-group-item-action';
+                    button.innerHTML = `
+                        <strong>${escapeHtml(user.name)}</strong>
+                        <span class="d-block small text-muted">
+                            ${escapeHtml(user.email)}
+                            ${user.telephone ? ` · ${escapeHtml(user.telephone)}` : ''}
+                        </span>
+                    `;
+                    button.addEventListener('click', () => selectCustomer(user));
+                    list.appendChild(button);
+                });
+                customerSuggestions.classList.remove('d-none');
+            }
+
+            async function searchCustomer(value) {
+                const url = new URL(
+                    adminCalendar.customerSearchUrl,
+                    window.location.origin
+                );
+                url.searchParams.set(
+                    'shooting_range_id',
+                    adminCalendar.shootingRangeId
+                );
+                url.searchParams.set('q', value);
+
+                const response = await fetch(url, {
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    customerSuggestions.classList.add('d-none');
+                    return;
+                }
+
+                const result = await response.json();
+                renderCustomerSuggestions(result.users ?? [], value);
+            }
+
+            function handleCustomerInput(event) {
+                if (fillingCustomer || customerType.value !== 'account') {
+                    return;
+                }
+
+                customerUserId.value = '';
+                customerSuggestions.classList.add('d-none');
+                clearTimeout(customerSearchTimer);
+                const value = event.target.value.trim();
+
+                if (value.length < 2) {
+                    return;
+                }
+
+                customerSearchTimer = setTimeout(
+                    () => searchCustomer(value),
+                    300
+                );
+            }
 
             function updateCustomerFields() {
                 const isGuest = customerType.value === 'guest';
-                guestNameField.classList.toggle('d-none', !isGuest);
                 customerName.required = isGuest;
-                accountEmailHelp.classList.toggle('d-none', isGuest);
+                customerUserId.value = '';
+                customerName.value = '';
+                customerEmail.value = '';
+                customerPhone.value = '';
+                customerSuggestions.classList.add('d-none');
+                accountSearchHelp.classList.toggle('d-none', isGuest);
             }
 
+            [customerName, customerEmail, customerPhone].forEach(input => {
+                input.addEventListener('input', handleCustomerInput);
+            });
             customerType.addEventListener('change', updateCustomerFields);
             updateCustomerFields();
+
+            const staffDate = document.getElementById('staffReservationDate');
+            const staffStart = document.getElementById('staffStartTime');
+            const staffEnd = document.getElementById('staffEndTime');
+            const staffLane = document.getElementById('staffLane');
+            const staffPositions = document.getElementById('staffPositions');
+            const staffDynamic = document.getElementById('staffDynamicShooting');
+            const staffDynamicField = document.getElementById('staffDynamicField');
+            const staffAvailability = document.getElementById('staffAvailability');
+            const staffSubmit = document.getElementById('staffReservationSubmit');
+            const staffModal = document.getElementById('staffReservationModal');
+            let staffReservations = [];
+            let staffAvailabilityLoading = false;
+            let staffAvailabilityError = null;
+
+            function addTimeOption(select, minutes) {
+                const option = document.createElement('option');
+                const value = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+                option.value = value;
+                option.textContent = value;
+                select.appendChild(option);
+            }
+
+            function timeMinutes(value) {
+                const [hours, minutes] = value.split(':').map(Number);
+                return (hours * 60) + minutes;
+            }
+
+            function updateStaffEndTimes() {
+                const date = parseDate(staffDate.value);
+                const isoDay = date.getDay() === 0 ? 7 : date.getDay();
+                const hours = adminCalendar.openingHours[isoDay];
+                const previous = staffEnd.value;
+                staffEnd.innerHTML = '';
+
+                if (!hours || !staffStart.value) {
+                    return;
+                }
+
+                const closing = timeMinutes(hours.closes_at);
+
+                for (
+                    let minutes = timeMinutes(staffStart.value) + 30;
+                    minutes <= closing;
+                    minutes += 30
+                ) {
+                    addTimeOption(staffEnd, minutes);
+                }
+
+                if ([...staffEnd.options].some(option => option.value === previous)) {
+                    staffEnd.value = previous;
+                }
+
+                updateStaffPositions();
+            }
+
+            function updateStaffTimeOptions() {
+                const date = parseDate(staffDate.value);
+                const isoDay = date.getDay() === 0 ? 7 : date.getDay();
+                const hours = adminCalendar.openingHours[isoDay];
+                staffStart.innerHTML = '';
+                staffEnd.innerHTML = '';
+
+                if (!hours) {
+                    return;
+                }
+
+                const now = new Date();
+                const isToday = formatDate(date) === formatDate(now);
+                const currentMinutes = (now.getHours() * 60) + now.getMinutes();
+                const opening = timeMinutes(hours.opens_at);
+                const closing = timeMinutes(hours.closes_at);
+
+                for (
+                    let minutes = opening;
+                    minutes < closing;
+                    minutes += 30
+                ) {
+                    if (!isToday || minutes > currentMinutes) {
+                        addTimeOption(staffStart, minutes);
+                    }
+                }
+
+                updateStaffEndTimes();
+            }
+
+            function overlappingReservationPositions() {
+                if (!staffStart.value || !staffEnd.value || !staffLane.value) {
+                    return null;
+                }
+
+                const start = timeMinutes(staffStart.value);
+                const end = timeMinutes(staffEnd.value);
+                let maximumOccupied = 0;
+
+                for (let slot = start; slot < end; slot += 30) {
+                    const occupied = staffReservations
+                        .filter(reservation => (
+                            String(reservation.line_id) === staffLane.value
+                            && timeMinutes(reservation.start_time) < slot + 30
+                            && timeMinutes(reservation.end_time) > slot
+                        ))
+                        .reduce(
+                            (sum, reservation) => sum + Number(reservation.positions_count),
+                            0
+                        );
+
+                    maximumOccupied = Math.max(maximumOccupied, occupied);
+                }
+
+                return maximumOccupied;
+            }
+
+            function updateStaffPositions() {
+                const option = staffLane.selectedOptions[0];
+                const capacity = Number(option?.dataset.positions ?? 0);
+                const allowsDynamic = option?.dataset.dynamic === '1';
+                const occupied = overlappingReservationPositions();
+                const available = occupied === null
+                    ? 0
+                    : Math.max(0, capacity - occupied);
+                staffDynamicField.classList.toggle('d-none', !allowsDynamic);
+
+                if (!allowsDynamic) {
+                    staffDynamic.checked = false;
+                }
+
+                staffPositions.innerHTML = '';
+                staffAvailability.className = 'small text-muted';
+
+                if (staffAvailabilityLoading) {
+                    staffAvailability.textContent = 'Sprawdzanie dostępności...';
+                    staffSubmit.disabled = true;
+                    return;
+                }
+
+                if (staffAvailabilityError) {
+                    staffAvailability.className = 'small text-danger';
+                    staffAvailability.textContent = staffAvailabilityError;
+                    staffSubmit.disabled = true;
+                    return;
+                }
+
+                if (occupied === null) {
+                    staffAvailability.textContent = 'Wybierz oś i zakres godzin.';
+                    staffSubmit.disabled = true;
+                    return;
+                }
+
+                if (staffDynamic.checked) {
+                    const position = document.createElement('option');
+                    position.value = capacity;
+                    position.textContent = `${capacity} - cała oś`;
+                    staffPositions.appendChild(position);
+                    const dynamicAvailable = available === capacity;
+                    staffAvailability.className = dynamicAvailable
+                        ? 'small text-success'
+                        : 'small text-danger';
+                    staffAvailability.textContent = dynamicAvailable
+                        ? 'Cała oś jest dostępna w wybranym czasie.'
+                        : 'Strzelanie dynamiczne wymaga dostępności wszystkich stanowisk osi.';
+                    staffSubmit.disabled = !dynamicAvailable;
+                    return;
+                }
+
+                for (let number = 1; number <= available; number++) {
+                    const position = document.createElement('option');
+                    position.value = number;
+                    position.textContent = number;
+                    staffPositions.appendChild(position);
+                }
+
+                staffAvailability.className = available > 0
+                    ? 'small text-success'
+                    : 'small text-danger';
+                staffAvailability.textContent = available > 0
+                    ? `Dostępne stanowiska w całym przedziale: ${available}.`
+                    : 'Brak wolnych stanowisk w wybranym czasie.';
+                staffSubmit.disabled = available === 0;
+            }
+
+            async function loadStaffAvailability() {
+                if (!staffDate.value) {
+                    staffReservations = [];
+                    staffAvailabilityError = null;
+                    updateStaffPositions();
+                    return;
+                }
+
+                staffAvailabilityLoading = true;
+                staffAvailabilityError = null;
+                updateStaffPositions();
+
+                try {
+                    const url = new URL(
+                        adminCalendar.availabilityUrl,
+                        window.location.origin
+                    );
+                    url.searchParams.set('date', staffDate.value);
+
+                    const response = await fetch(url, {
+                        headers: { Accept: 'application/json' }
+                    });
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(
+                            result.message ?? 'Nie udało się sprawdzić dostępności.'
+                        );
+                    }
+
+                    staffReservations = result.reservations ?? [];
+                } catch (error) {
+                    staffReservations = [];
+                    staffAvailabilityError = error.message;
+                } finally {
+                    staffAvailabilityLoading = false;
+                    updateStaffPositions();
+                }
+            }
+
+            staffDate.addEventListener('change', () => {
+                updateStaffTimeOptions();
+                loadStaffAvailability();
+            });
+            staffStart.addEventListener('change', updateStaffEndTimes);
+            staffEnd.addEventListener('change', updateStaffPositions);
+            staffLane.addEventListener('change', updateStaffPositions);
+            staffDynamic.addEventListener('change', updateStaffPositions);
+            staffModal.addEventListener('shown.bs.modal', loadStaffAvailability);
+            updateStaffTimeOptions();
+            loadStaffAvailability();
 
             const statusModal = document.getElementById('reservationStatusModal');
             const statusForm = document.getElementById('reservationStatusForm');

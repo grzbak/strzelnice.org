@@ -73,6 +73,8 @@ class ReservationWorkflowTest extends TestCase
             $table->string('name');
             $table->unsignedInteger('length')->default(25);
             $table->unsignedInteger('numberOfPositions')->default(1);
+            $table->boolean('allows_dynamic_shooting')->default(false);
+            $table->boolean('is_archived')->default(false);
             $table->timestamps();
         });
 
@@ -108,10 +110,16 @@ class ReservationWorkflowTest extends TestCase
             $table->id();
             $table->foreignId('shooting_range_id');
             $table->foreignId('user_id')->nullable();
+            $table->string('first_name')->nullable();
+            $table->string('last_name')->nullable();
             $table->string('email');
+            $table->string('token')->nullable();
             $table->string('status');
             $table->timestamp('expires_at')->nullable();
+            $table->timestamp('accepted_at')->nullable();
             $table->timestamp('revoked_at')->nullable();
+            $table->timestamp('expires_soon_notified_at')->nullable();
+            $table->foreignId('invited_by')->nullable();
             $table->timestamps();
         });
 
@@ -130,6 +138,7 @@ class ReservationWorkflowTest extends TestCase
             $table->dateTime('start');
             $table->dateTime('end');
             $table->unsignedInteger('positions_count')->default(1);
+            $table->boolean('is_dynamic_shooting')->default(false);
             $table->string('status');
             $table->foreignId('approved_by_user_id')->nullable();
             $table->timestamp('approved_at')->nullable();
@@ -273,6 +282,267 @@ class ReservationWorkflowTest extends TestCase
         ]);
     }
 
+    public function test_dynamic_reservation_uses_all_lane_positions(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        $this->actingAs($client)
+            ->post(route('rezerwacje.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '12:00',
+                'end_time' => '12:30',
+                'positions_count' => 1,
+                'is_dynamic_shooting' => true,
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reservations', [
+            'line_id' => $laneId,
+            'positions_count' => 2,
+            'is_dynamic_shooting' => true,
+        ]);
+    }
+
+    public function test_cancelled_dynamic_reservation_cannot_be_reactivated_when_lane_is_partly_taken(): void
+    {
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $cancelledId = $this->insertReservation(
+            $admin,
+            $rangeId,
+            $laneId,
+            '14:00',
+            '14:30',
+            2,
+            Reservation::STATUS_CANCELLED,
+            true
+        );
+        $this->insertReservation(
+            $admin,
+            $rangeId,
+            $laneId,
+            '14:00',
+            '14:30',
+            1,
+            Reservation::STATUS_APPROVED
+        );
+
+        $this->actingAs($admin)
+            ->patch(route('admin.reservations.status', $cancelledId), [
+                'status' => Reservation::STATUS_APPROVED,
+            ])
+            ->assertSessionHas(
+                'error',
+                'W wybranym czasie nie ma wystarczającej liczby wolnych stanowisk.'
+            );
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $cancelledId,
+            'status' => Reservation::STATUS_CANCELLED,
+        ]);
+    }
+
+    public function test_availability_endpoint_returns_reservations_for_requested_distant_date(): void
+    {
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $date = today()->addDays(20);
+        $this->insertReservation(
+            $admin,
+            $rangeId,
+            $laneId,
+            '10:00',
+            '10:30',
+            1,
+            Reservation::STATUS_APPROVED,
+            false,
+            $date
+        );
+
+        $this->getJson(route('rezerwacje.availability', [
+            'id' => $rangeId,
+            'date' => $date->toDateString(),
+        ]))
+            ->assertOk()
+            ->assertJsonCount(1, 'reservations')
+            ->assertJsonPath('reservations.0.line_id', $laneId);
+    }
+
+    public function test_invitation_cannot_be_accepted_by_account_with_different_email(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        $client = User::factory()->create([
+            'email' => 'inne-konto@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        DB::table('shooting_range_invitations')->insert([
+            'shooting_range_id' => $rangeId,
+            'email' => 'zaproszony@example.test',
+            'token' => 'test-token',
+            'status' => 'pending',
+            'expires_at' => today()->addDays(2),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($client)
+            ->get(route('shooting.invitations.accept', 'test-token'))
+            ->assertForbidden();
+    }
+
+    public function test_staff_customer_search_finds_user_by_phone(): void
+    {
+        [$admin, $rangeId] = $this->createBookableRange('admin', true);
+        $customer = User::factory()->create([
+            'telephone' => '501 502 503',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->getJson(route('admin.reservations.customers.search', [
+                'shooting_range_id' => $rangeId,
+                'q' => '501 502',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('users.0.id', $customer->id)
+            ->assertJsonPath('users.0.email', $customer->email);
+    }
+
+    public function test_staff_can_book_for_selected_existing_account(): void
+    {
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $customer = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.reservations.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '16:00',
+                'end_time' => '16:30',
+                'positions_count' => 1,
+                'customer_type' => 'account',
+                'customer_user_id' => $customer->id,
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reservations', [
+            'customer_user_id' => $customer->id,
+            'customer_email' => $customer->email,
+            'source' => Reservation::SOURCE_STAFF_ACCOUNT,
+            'status' => Reservation::STATUS_APPROVED,
+        ]);
+    }
+
+    public function test_dynamic_booking_is_rejected_on_lane_without_dynamic_support(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        DB::table('lanes')
+            ->where('id', $laneId)
+            ->update(['allows_dynamic_shooting' => false]);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        $this->actingAs($client)
+            ->post(route('rezerwacje.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '17:00',
+                'end_time' => '17:30',
+                'positions_count' => 1,
+                'is_dynamic_shooting' => true,
+            ])
+            ->assertSessionHas(
+                'error',
+                'Wybrana oś nie jest przystosowana do strzelania dynamicznego.'
+            );
+    }
+
+    public function test_login_continues_pending_invitation_acceptance(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        $client = User::factory()->create([
+            'email' => 'zaproszony@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        DB::table('shooting_range_invitations')->insert([
+            'shooting_range_id' => $rangeId,
+            'email' => $client->email,
+            'token' => 'pending-login-token',
+            'status' => 'pending',
+            'expires_at' => today()->addDays(2),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->withSession([
+            'pending_invitation_token' => 'pending-login-token',
+        ])->post('/login', [
+            'email' => $client->email,
+            'password' => 'password',
+        ])->assertRedirect(route(
+            'shooting.invitations.accept',
+            'pending-login-token'
+        ));
+
+        $this->get(route(
+            'shooting.invitations.accept',
+            'pending-login-token'
+        ))->assertRedirect(route('index'));
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'token' => 'pending-login-token',
+            'user_id' => $client->id,
+            'status' => 'accepted',
+        ]);
+    }
+
+    public function test_lane_with_reservations_is_archived_instead_of_deleted(): void
+    {
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        DB::table('lanes')->insert([
+            'shooting_range_id' => $rangeId,
+            'name' => 'Oś zapasowa',
+            'length' => 25,
+            'numberOfPositions' => 1,
+            'allows_dynamic_shooting' => false,
+            'is_archived' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->insertReservation(
+            $admin,
+            $rangeId,
+            $laneId,
+            '15:00',
+            '15:30',
+            1,
+            Reservation::STATUS_APPROVED
+        );
+
+        $this->actingAs($admin)
+            ->delete(route('shooting.lanes.destroy', $laneId))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('lanes', [
+            'id' => $laneId,
+            'is_archived' => true,
+        ]);
+    }
+
     private function createBookableRange(
         string $staffRole,
         bool $isPublic
@@ -318,6 +588,8 @@ class ReservationWorkflowTest extends TestCase
             'name' => 'Oś 25 m',
             'length' => 25,
             'numberOfPositions' => 2,
+            'allows_dynamic_shooting' => true,
+            'is_archived' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -349,5 +621,39 @@ class ReservationWorkflowTest extends TestCase
         ]);
 
         return [$staff, $rangeId, $laneId];
+    }
+
+    private function insertReservation(
+        User $customer,
+        int $rangeId,
+        int $laneId,
+        string $startTime,
+        string $endTime,
+        int $positions,
+        string $status,
+        bool $dynamic = false,
+        ?Carbon $date = null
+    ): int {
+        $date ??= today();
+
+        return DB::table('reservations')->insertGetId([
+            'user_id' => $customer->id,
+            'mod_id' => $customer->id,
+            'customer_user_id' => $customer->id,
+            'customer_name' => $customer->name,
+            'customer_email' => $customer->email,
+            'customer_phone' => $customer->telephone,
+            'created_by_user_id' => $customer->id,
+            'source' => Reservation::SOURCE_ONLINE_ACCOUNT,
+            'shooting_range_id' => $rangeId,
+            'line_id' => $laneId,
+            'start' => $date->toDateString().' '.$startTime,
+            'end' => $date->toDateString().' '.$endTime,
+            'positions_count' => $positions,
+            'is_dynamic_shooting' => $dynamic,
+            'status' => $status,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }

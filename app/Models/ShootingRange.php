@@ -2,14 +2,11 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Eloquent\Model;
-use App\Models\ShootingRangeOpeningHour;
-use App\Models\ShootingRangeInterval;
-use App\Models\ShootingRangeIntervalArchive;
-use Carbon\Carbon;
 use Illuminate\Support\Str;
 
 class ShootingRange extends Model
@@ -58,6 +55,12 @@ class ShootingRange extends Model
 
     public function lanes(): HasMany
     {
+        return $this->hasMany(Lane::class)
+            ->where('is_archived', false);
+    }
+
+    public function allLanes(): HasMany
+    {
         return $this->hasMany(Lane::class);
     }
 
@@ -74,8 +77,8 @@ class ShootingRange extends Model
     public function getFullAddressAttribute(): string
     {
         return trim(
-            "{$this->street} {$this->houseNumber}" .
-                ($this->apartamentNumber ? "/{$this->apartamentNumber}" : '') .
+            "{$this->street} {$this->houseNumber}".
+                ($this->apartamentNumber ? "/{$this->apartamentNumber}" : '').
                 ", {$this->zipCode} {$this->town}"
         );
     }
@@ -83,7 +86,7 @@ class ShootingRange extends Model
     public function getBrandUrlAttribute(): ?string
     {
         return $this->brand_file_name
-            ? asset('files/brands/' . $this->brand_file_name)
+            ? asset('files/brands/'.$this->brand_file_name)
             : null;
     }
 
@@ -174,7 +177,7 @@ class ShootingRange extends Model
         }
 
         if ($town) {
-            $endpoint = $base . '_' . static::normalizeEndpoint($town);
+            $endpoint = $base.'_'.static::normalizeEndpoint($town);
 
             if (! static::endpointExists($endpoint, $ignoreId)) {
                 return $endpoint;
@@ -184,7 +187,7 @@ class ShootingRange extends Model
         $counter = 2;
 
         do {
-            $endpoint = $base . '_' . $counter;
+            $endpoint = $base.'_'.$counter;
             $counter++;
         } while (static::endpointExists($endpoint, $ignoreId));
 
@@ -220,7 +223,7 @@ class ShootingRange extends Model
 
     public function getPublicLinkAttribute(): string
     {
-        return url('/s/' . $this->endpoint);
+        return url('/s/'.$this->endpoint);
     }
 
     public function effectiveMaxAdvanceBookingDays(): int

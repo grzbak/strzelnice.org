@@ -26,6 +26,8 @@ Route::get('/kontakt', [SystemConfigurationController::class, 'contact'])
 Route::post('/kontakt', [SystemConfigurationController::class, 'sendContact'])
     ->middleware('throttle:5,1')
     ->name('contact.send');
+Route::get('/zaproszenia/{token}', [ShootingRangeInvitationController::class, 'accept'])
+    ->name('shooting.invitations.accept');
 // Route::get('/s/{endpoint}', [ShootingsController::class, 'publicShow'])
 // ->name('shooting.public.show');
 
@@ -128,6 +130,8 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
     Route::middleware('role:superadmin,admin,pracownik')->group(function () {
         Route::get('/panel/rezerwacje', [ReservationsController::class, 'adminCalendar'])
             ->name('admin.reservations.calendar');
+        Route::get('/panel/rezerwacje/uzytkownicy/szukaj', [ReservationsController::class, 'searchCustomers'])
+            ->name('admin.reservations.customers.search');
         Route::post('/panel/rezerwacje', [ReservationsController::class, 'storeByStaff'])
             ->name('admin.reservations.store');
         Route::patch('/panel/rezerwacje/{reservation}/status', [ReservationsController::class, 'updateStatus'])
@@ -234,8 +238,6 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
         Route::post('/strzelnica/zaproszenia/bulk', [ShootingRangeInvitationController::class, 'bulk'])
             ->name('shooting.invitations.bulk');
 
-        Route::get('/zaproszenia/{token}', [ShootingRangeInvitationController::class, 'accept'])
-            ->name('shooting.invitations.accept');
     });
 
     // ROLE DASHBOARD: PRACOWNIK
@@ -268,32 +270,9 @@ Route::get('/dashboard', function () {
     return view('dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
-Route::get('/rezerwacje/events', function () {
-
-    return [
-        [
-            'title' => 'Oś 1 (5/5 wolnych)',
-            'start' => '2026-02-01T10:00:00',
-            'end' => '2026-02-01T10:30:00',
-            'color' => '#198754', // zielony
-            'tooltip' => 'Oś 1 — wszystkie stanowiska wolne',
-        ],
-        [
-            'title' => 'Oś 2 (2/5 wolne)',
-            'start' => '2026-02-01T10:00:00',
-            'end' => '2026-02-01T10:30:00',
-            'color' => '#ffc107', // żółty
-            'tooltip' => 'Oś 2 — częściowo zajęta',
-        ],
-        [
-            'title' => 'Oś 3 (brak)',
-            'start' => '2026-02-01T10:00:00',
-            'end' => '2026-02-01T10:30:00',
-            'color' => '#dc3545', // czerwony
-            'tooltip' => 'Brak wolnych stanowisk',
-        ],
-    ];
-})->name('rezerwacje.events');
+Route::get('/rezerwacje/{id}/dostepnosc', [ReservationsController::class, 'availability'])
+    ->whereNumber('id')
+    ->name('rezerwacje.availability');
 
 Route::get('/rezerwacje/{id}', [ReservationsController::class, 'callendar'])
     ->whereNumber('id')

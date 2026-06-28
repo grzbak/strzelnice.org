@@ -1,13 +1,16 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement('ALTER TABLE users MODIFY is_approved TINYINT(1) NOT NULL DEFAULT 1');
+        Schema::table('users', function (Blueprint $table) {
+            $table->boolean('is_approved')->default(true)->change();
+        });
 
         DB::table('users')->update([
             'is_approved' => 1,
@@ -16,7 +19,9 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::statement('ALTER TABLE users MODIFY is_approved TINYINT(1) NOT NULL DEFAULT 0');
+        Schema::table('users', function (Blueprint $table) {
+            $table->boolean('is_approved')->default(false)->change();
+        });
 
         DB::table('users')->update([
             'is_approved' => 0,

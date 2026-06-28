@@ -181,6 +181,7 @@ class ShootingRangeInvitationController extends Controller
             if ($validated['action'] === 'generate') {
                 if ($invitation->isAccepted()) {
                     $skipped++;
+
                     continue;
                 }
 
@@ -191,6 +192,7 @@ class ShootingRangeInvitationController extends Controller
             if ($validated['action'] === 'send') {
                 if ($invitation->isAccepted()) {
                     $skipped++;
+
                     continue;
                 }
 
@@ -202,6 +204,7 @@ class ShootingRangeInvitationController extends Controller
             if ($validated['action'] === 'revoke') {
                 if ($invitation->isRevoked()) {
                     $skipped++;
+
                     continue;
                 }
 
@@ -250,6 +253,16 @@ class ShootingRangeInvitationController extends Controller
 
             return redirect()->route('login')
                 ->with('success', 'Zaloguj się, aby zaakceptować zaproszenie.');
+        }
+
+        if (
+            mb_strtolower((string) auth()->user()->email)
+            !== mb_strtolower((string) $invitation->email)
+        ) {
+            abort(
+                403,
+                'Zaproszenie zostało wystawione dla innego adresu e-mail.'
+            );
         }
 
         $invitation->update([

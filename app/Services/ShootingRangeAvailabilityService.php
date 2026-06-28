@@ -70,19 +70,29 @@ class ShootingRangeAvailabilityService
             return $this->denied('Strzelnica jest nieczynna w wybranym dniu tygodnia.');
         }
 
-        $hasFreeSlot = $shootingRange->lanes()
-            ->when(
-                $minimumLaneLength > 0,
-                fn ($query) => $query->where('length', '>=', $minimumLaneLength)
+        $lanes = $shootingRange->relationLoaded('lanes')
+            ? $shootingRange->lanes
+            : $shootingRange->lanes()->get();
+        $lanes = $lanes->when(
+            $minimumLaneLength > 0,
+            fn (Collection $items) => $items->where(
+                'length',
+                '>=',
+                $minimumLaneLength
             )
-            ->get()
-            ->contains(
-                fn (Lane $lane) => $this->maximumAvailablePositionsForDate(
+        );
+        $hasFreeSlot = $lanes->contains(
+            function (Lane $lane) use ($shootingRange, $date) {
+                $available = $this->maximumAvailablePositionsForDate(
                     $lane,
                     $shootingRange,
                     $date
-                ) > 0
-            );
+                );
+                $lane->search_available_positions = $available;
+
+                return $available > 0;
+            }
+        );
 
         return $hasFreeSlot
             ? $this->allowed()
@@ -96,7 +106,9 @@ class ShootingRangeAvailabilityService
         Carbon $start,
         Carbon $end,
         int $positionsCount,
-        bool $createdByStaff = false
+        bool $createdByStaff = false,
+        bool $isDynamicShooting = false,
+        ?int $ignoreReservationId = null
     ): void {
         if ((int) $lane->shooting_range_id !== (int) $shootingRange->id) {
             $this->throwError('Wybrana oś nie należy do tej strzelnicy.');
@@ -106,8 +118,19 @@ class ShootingRangeAvailabilityService
             $this->throwError('Nie masz uprawnień do zarządzania rezerwacjami tej strzelnicy.');
         }
 
-        if (! $createdByStaff && ! $this->canUserAccessRange($shootingRange, $actor, $start)) {
-            $this->throwError('Ta strzelnica wymaga aktywnego i zaakceptowanego zaproszenia.');
+        if ($isDynamicShooting && ! $lane->allows_dynamic_shooting) {
+            $this->throwError(
+                'Wybrana oś nie jest przystosowana do strzelania dynamicznego.'
+            );
+        }
+
+        if (
+            $isDynamicShooting
+            && $positionsCount !== (int) $lane->numberOfPositions
+        ) {
+            $this->throwError(
+                'Strzelanie dynamiczne wymaga rezerwacji wszystkich stanowisk osi.'
+            );
         }
 
         if ($positionsCount < 1 || $positionsCount > (int) $lane->numberOfPositions) {
@@ -139,6 +162,10 @@ class ShootingRangeAvailabilityService
             $this->throwError($basicResult['reason']);
         }
 
+        if (! $createdByStaff && ! $this->canUserAccessRange($shootingRange, $actor, $start)) {
+            $this->throwError('Ta strzelnica wymaga aktywnego i zaakceptowanego zaproszenia.');
+        }
+
         if ($this->isHoliday($shootingRange, $start)) {
             $this->throwError('Wybrany dzień jest dniem wolnym.');
         }
@@ -147,7 +174,14 @@ class ShootingRangeAvailabilityService
             $this->throwError('Rezerwacja nie mieści się w godzinach pracy strzelnicy.');
         }
 
-        if ($this->availablePositions($lane, $start, $end) < $positionsCount) {
+        if (
+            $this->availablePositions(
+                $lane,
+                $start,
+                $end,
+                $ignoreReservationId
+            ) < $positionsCount
+        ) {
             $this->throwError('W wybranym czasie nie ma wystarczającej liczby wolnych stanowisk.');
         }
     }
@@ -162,6 +196,10 @@ class ShootingRangeAvailabilityService
         }
 
         if (! $user) {
+            return false;
+        }
+
+        if (! $user->is_approved) {
             return false;
         }
 
@@ -189,7 +227,8 @@ class ShootingRangeAvailabilityService
     public function availablePositions(
         Lane $lane,
         Carbon $start,
-        Carbon $end
+        Carbon $end,
+        ?int $ignoreReservationId = null
     ): int {
         $minimumAvailable = (int) $lane->numberOfPositions;
         $slotStart = $start->copy();
@@ -202,6 +241,10 @@ class ShootingRangeAvailabilityService
                     Reservation::STATUS_PENDING,
                     Reservation::STATUS_APPROVED,
                 ])
+                ->when(
+                    $ignoreReservationId,
+                    fn ($query) => $query->where('id', '!=', $ignoreReservationId)
+                )
                 ->where('start', '<', $slotEnd)
                 ->where('end', '>', $slotStart)
                 ->sum('positions_count');
@@ -221,19 +264,34 @@ class ShootingRangeAvailabilityService
         ShootingRange $shootingRange,
         Carbon $date
     ): int {
+        $reservations = Reservation::query()
+            ->where('line_id', $lane->id)
+            ->whereIn('status', [
+                Reservation::STATUS_PENDING,
+                Reservation::STATUS_APPROVED,
+            ])
+            ->whereDate('start', $date)
+            ->get(['start', 'end', 'positions_count']);
+
         return $this->openingHoursForDate($shootingRange, $date)
-            ->map(function ($openingHour) use ($lane, $date) {
+            ->map(function ($openingHour) use ($lane, $date, $reservations) {
                 $slotStart = $this->combineDateAndTime($date, $openingHour->opens_at);
                 $closing = $this->combineDateAndTime($date, $openingHour->closes_at);
                 $maximum = 0;
 
                 while ($slotStart->copy()->addMinutes(30)->lessThanOrEqualTo($closing)) {
+                    $slotEnd = $slotStart->copy()->addMinutes(30);
+                    $reserved = (int) $reservations
+                        ->filter(
+                            fn (Reservation $reservation) => $reservation->start->lt($slotEnd)
+                                && $reservation->end->gt($slotStart)
+                        )
+                        ->sum('positions_count');
                     $maximum = max(
                         $maximum,
-                        $this->availablePositions(
-                            $lane,
-                            $slotStart,
-                            $slotStart->copy()->addMinutes(30)
+                        max(
+                            0,
+                            (int) $lane->numberOfPositions - $reserved
                         )
                     );
                     $slotStart->addMinutes(30);
@@ -284,6 +342,12 @@ class ShootingRangeAvailabilityService
         ShootingRange $shootingRange,
         Carbon $date
     ): Collection {
+        if ($shootingRange->relationLoaded('openingHours')) {
+            return $shootingRange->openingHours
+                ->where('day_of_week', $date->isoWeekday())
+                ->values();
+        }
+
         return $shootingRange->openingHours()
             ->where('day_of_week', $date->isoWeekday())
             ->get();

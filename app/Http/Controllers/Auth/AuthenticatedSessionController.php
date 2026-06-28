@@ -29,6 +29,15 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         $user = $request->user();
+        $pendingInvitationToken = $request->session()
+            ->pull('pending_invitation_token');
+
+        if ($pendingInvitationToken) {
+            return redirect()->route(
+                'shooting.invitations.accept',
+                $pendingInvitationToken
+            );
+        }
 
         if ($user->isSuperAdmin()) {
             return redirect()->intended('/superAdmin');
@@ -44,7 +53,7 @@ class AuthenticatedSessionController extends Controller
 
         return redirect()->intended('/klient');
 
-        //return redirect()->intended(route('dashboard', absolute: false));
+        // return redirect()->intended(route('dashboard', absolute: false));
     }
 
     /**

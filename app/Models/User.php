@@ -82,8 +82,16 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function managesShootingRange(ShootingRange $shootingRange): bool
     {
+        if (! $this->is_approved) {
+            return false;
+        }
+
         if ($this->isSuperAdmin()) {
             return true;
+        }
+
+        if (! $this->isAdmin() && ! $this->isEmployee()) {
+            return false;
         }
 
         return $this->shootingRanges()

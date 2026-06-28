@@ -79,6 +79,8 @@ class SystemConfigurationTest extends TestCase
             $table->string('name');
             $table->unsignedInteger('length')->default(25);
             $table->unsignedInteger('numberOfPositions')->default(1);
+            $table->boolean('allows_dynamic_shooting')->default(false);
+            $table->boolean('is_archived')->default(false);
             $table->timestamps();
         });
 

@@ -80,6 +80,8 @@ class ShootingsController extends Controller
             $location = trim($validated['location'] ?? '');
             $voivodeshipKey = $this->detectVoivodeshipKey($location, $voivodeships);
             $isVoivodeshipSearch = $voivodeshipKey !== null;
+            $locationMode = $validated['location_mode']
+                ?? ($isVoivodeshipSearch ? 'voivodeship' : null);
 
             $date = Carbon::parse($validated['date'] ?? now()->format('Y-m-d'));
             $dayOfWeek = $date->isoWeekday();
@@ -118,7 +120,7 @@ class ShootingsController extends Controller
                     }
                 });
 
-            if ($location && $isVoivodeshipSearch) {
+            if ($location && $locationMode === 'voivodeship') {
                 if (! $voivodeshipKey) {
                     $query->whereRaw('1 = 0');
                 } else {
@@ -126,6 +128,7 @@ class ShootingsController extends Controller
                 }
             } elseif (
                 $location
+                && $locationMode !== 'voivodeship'
                 && $request->filled('radius_km')
                 && $request->filled('lat')
                 && $request->filled('lng')
@@ -141,7 +144,11 @@ class ShootingsController extends Controller
                     )
                     ->having('distance', '<=', $radius)
                     ->orderBy('distance');
-            } elseif ($location && $request->filled('radius_km')) {
+            } elseif (
+                $location
+                && $locationMode !== 'voivodeship'
+                && $request->filled('radius_km')
+            ) {
                 $coordinates = $this->geocodeLocation($location);
 
                 if ($coordinates) {
@@ -171,11 +178,14 @@ class ShootingsController extends Controller
 
             $user = $request->user();
             $shootings = $query
-                ->with(['lanes' => function ($q) use ($laneLength) {
-                    if ($laneLength > 0) {
-                        $q->where('length', '>=', $laneLength);
-                    }
-                }])
+                ->with([
+                    'openingHours',
+                    'lanes' => function ($q) use ($laneLength) {
+                        if ($laneLength > 0) {
+                            $q->where('length', '>=', $laneLength);
+                        }
+                    },
+                ])
                 ->get()
                 ->filter(function (ShootingRange $shootingRange) use ($date, $laneLength, $user) {
                     return $this->availability->availableForSearch(
@@ -188,12 +198,13 @@ class ShootingsController extends Controller
                 ->map(function (ShootingRange $shootingRange) use ($date) {
                     $shootingRange->available_lanes = $shootingRange->lanes
                         ->map(function (Lane $lane) use ($shootingRange, $date) {
-                            $available = $this->availability
-                                ->maximumAvailablePositionsForDate(
-                                    $lane,
-                                    $shootingRange,
-                                    $date
-                                );
+                            $available = $lane->search_available_positions
+                                ?? $this->availability
+                                    ->maximumAvailablePositionsForDate(
+                                        $lane,
+                                        $shootingRange,
+                                        $date
+                                    );
                             $lane->reservations_count = max(
                                 0,
                                 (int) $lane->numberOfPositions - $available
@@ -410,6 +421,23 @@ class ShootingsController extends Controller
             ])
             ->firstOrFail();
 
+        if (! $this->availability->canUserAccessRange(
+            $shootingRange,
+            auth()->user(),
+            $today
+        )) {
+            if (! auth()->check()) {
+                return redirect()
+                    ->route('login')
+                    ->with(
+                        'error',
+                        'Zaloguj się, aby uzyskać dostęp do tej strzelnicy.'
+                    );
+            }
+
+            abort(403, 'Nie posiadasz aktywnego zaproszenia do tej strzelnicy.');
+        }
+
         $hasActiveAdmin = $shootingRange->employees->contains(function (User $employee) {
             return $employee->pivot->role === 'admin'
                 && (bool) $employee->pivot->is_approved
@@ -476,9 +504,11 @@ class ShootingsController extends Controller
     public function destroyLane(string $id)
     {
         $user = auth()->user();
-        $lane = Lane::where('id', $id)->firstOrFail();
+        $lane = Lane::query()
+            ->where('is_archived', false)
+            ->findOrFail($id);
 
-        if (! $lane->shootingRange->employees->contains($user->id)) {
+        if (! $user->managesShootingRange($lane->shootingRange)) {
             abort(403); // brak dostępu
         }
 
@@ -487,6 +517,17 @@ class ShootingsController extends Controller
             return redirect()
                 ->route('shooting.lanes.edit')
                 ->with('error', 'Musi pozostać przynajmniej jedna oś!');
+        }
+
+        if ($lane->reservations()->exists()) {
+            $lane->update(['is_archived' => true]);
+
+            return redirect()
+                ->route('shooting.lanes.edit')
+                ->with(
+                    'success',
+                    'Oś posiada historię rezerwacji, dlatego została zarchiwizowana.'
+                );
         }
 
         $lane->delete();

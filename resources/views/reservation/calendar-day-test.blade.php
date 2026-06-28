@@ -8,6 +8,7 @@
         'name' => $lane->name,
         'length' => $lane->length,
         'positions' => $lane->numberOfPositions,
+        'allows_dynamic_shooting' => (bool) $lane->allows_dynamic_shooting,
         'description' => $lane->description,
     ])->values();
 
@@ -140,6 +141,22 @@
                         <div class="col-12">
                             <label for="positionsCount" class="form-label">Liczba stanowisk</label>
                             <select name="positions_count" id="positionsCount" class="form-select" required></select>
+                        </div>
+
+                        <div class="col-12 d-none" id="dynamicShootingField">
+                            <input type="hidden" name="is_dynamic_shooting" value="0">
+                            <div class="form-check">
+                                <input
+                                    type="checkbox"
+                                    name="is_dynamic_shooting"
+                                    id="dynamicShooting"
+                                    class="form-check-input"
+                                    value="1"
+                                >
+                                <label for="dynamicShooting" class="form-check-label">
+                                    Strzelanie dynamiczne - rezerwacja całej osi
+                                </label>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -420,7 +437,10 @@
             holidays: @json($holidays),
             intervals: @json($activeIntervals),
             reservations: @json($reservations ?? []),
+            availabilityUrl: @json(route('rezerwacje.availability', $shootingRange->id)),
             initialDate: @json($calendarDate),
+            loadedDate: @json($calendarDate),
+            loadError: null,
             minDate: @json(now()->format('Y-m-d')),
             maxDate: @json($maxBookingDate->format('Y-m-d')),
             maxAdvanceDays: @json($maxAdvanceBookingDays),
@@ -467,6 +487,16 @@
         function getAvailability(date) {
             const dateString = formatDate(date);
 
+            if (
+                bookingConfig.loadError
+                && bookingConfig.loadedDate === dateString
+            ) {
+                return {
+                    isOpen: false,
+                    reason: bookingConfig.loadError
+                };
+            }
+
             if (dateString < formatDate(new Date())) {
                 return { isOpen: false, reason: 'Wybrany dzień już minął' };
             }
@@ -506,6 +536,45 @@
 
         function getAxis(axisId) {
             return bookingConfig.axes.find(axis => Number(axis.id) === Number(axisId));
+        }
+
+        async function loadReservationsForDate(dateString) {
+            const url = new URL(
+                bookingConfig.availabilityUrl,
+                window.location.origin
+            );
+            url.searchParams.set('date', dateString);
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                const result = await response.json();
+                bookingConfig.loadedDate = dateString;
+
+                if (!response.ok) {
+                    bookingConfig.reservations = [];
+                    bookingConfig.loadError = result.message
+                        ?? 'Nie udało się pobrać dostępności.';
+                    return;
+                }
+
+                bookingConfig.reservations = result.reservations ?? [];
+                bookingConfig.loadError = null;
+            } catch (error) {
+                bookingConfig.loadedDate = dateString;
+                bookingConfig.reservations = [];
+                bookingConfig.loadError =
+                    'Nie udało się pobrać aktualnej dostępności.';
+            }
+        }
+
+        async function selectCalendarDate(date) {
+            currentDate = date;
+            await loadReservationsForDate(formatDate(currentDate));
+            renderDay();
         }
 
         function getFreePositions(axis, dateString, startTime, endTime) {
@@ -555,13 +624,31 @@
             return minimum;
         }
 
+        function isPastSlot(dateString, startTime) {
+            const now = new Date();
+
+            if (dateString !== formatDate(now)) {
+                return false;
+            }
+
+            const slotStart = parseDate(dateString);
+            const [hours, minutes] = startTime.split(':').map(Number);
+            slotStart.setHours(hours, minutes, 0, 0);
+
+            return slotStart <= now;
+        }
+
         function createSlot(axis, dateString, startTime, endTime) {
             const free = getFreePositions(axis, dateString, startTime, endTime);
+            const isPast = isPastSlot(dateString, startTime);
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'time-slot';
 
-            if (free === Number(axis.positions)) {
+            if (isPast) {
+                button.classList.add('is-full');
+                button.disabled = true;
+            } else if (free === Number(axis.positions)) {
                 button.classList.add('is-free');
             } else if (free > 0) {
                 button.classList.add('is-limited');
@@ -572,10 +659,10 @@
 
             button.innerHTML = `
                 <strong>${startTime}</strong>
-                <span>${free > 0 ? `${free} wolnych` : 'brak miejsc'}</span>
+                <span>${isPast ? 'termin minął' : (free > 0 ? `${free} wolnych` : 'brak miejsc')}</span>
             `;
 
-            if (free > 0) {
+            if (free > 0 && !isPast) {
                 button.addEventListener('click', () => openModal(axis, dateString, startTime));
             }
 
@@ -697,6 +784,7 @@
             const message = document.getElementById('modalAvailability');
             const positions = document.getElementById('positionsCount');
             const submit = document.getElementById('submitReservation');
+            const dynamicShooting = document.getElementById('dynamicShooting');
 
             positions.innerHTML = '';
 
@@ -709,15 +797,31 @@
 
             const free = getMinimumFree(axis, date, start, end);
 
-            for (let number = 1; number <= free; number++) {
-                addOption(positions, number);
+            if (dynamicShooting.checked) {
+                if (free === Number(axis.positions)) {
+                    addOption(positions, axis.positions);
+                }
+            } else {
+                for (let number = 1; number <= free; number++) {
+                    addOption(positions, number);
+                }
             }
 
-            message.classList.toggle('is-unavailable', free < 1);
+            const isAvailable = dynamicShooting.checked
+                ? free === Number(axis.positions)
+                : free > 0;
+
+            message.classList.toggle('is-unavailable', !isAvailable);
             message.innerHTML = free > 0
                 ? `<strong>${free}</strong> stanowisk dostępnych przez cały wybrany czas.`
                 : 'Brak wolnych stanowisk w wybranym czasie.';
-            submit.disabled = free < 1;
+            if (dynamicShooting.checked) {
+                message.textContent = isAvailable
+                    ? `Cała oś (${axis.positions} stanowisk) jest dostępna.`
+                    : 'Strzelanie dynamiczne wymaga dostępności całej osi.';
+            }
+
+            submit.disabled = !isAvailable;
         }
 
         function openModal(axis, date, start) {
@@ -727,6 +831,13 @@
             document.getElementById('modalHeading').textContent = `${axis.name} · ${date}`;
             document.getElementById('lineId').value = axis.id;
             document.getElementById('reservationDate').value = date;
+            const dynamicField = document.getElementById('dynamicShootingField');
+            const dynamicShooting = document.getElementById('dynamicShooting');
+            dynamicShooting.checked = false;
+            dynamicField.classList.toggle(
+                'd-none',
+                !axis.allows_dynamic_shooting
+            );
             updateStartTimes(start, end);
             updateModalAvailability();
             bootstrap.Modal.getOrCreateInstance(document.getElementById('reservationModal')).show();
@@ -735,35 +846,48 @@
         document.addEventListener('DOMContentLoaded', () => {
             renderDay();
 
-            document.getElementById('previousDay').addEventListener('click', () => {
+            document.getElementById('previousDay').addEventListener('click', async () => {
                 if (formatDate(currentDate) <= bookingConfig.minDate) {
                     return;
                 }
 
-                currentDate.setDate(currentDate.getDate() - 1);
-                renderDay();
+                const date = new Date(currentDate);
+                date.setDate(date.getDate() - 1);
+                await selectCalendarDate(date);
             });
 
-            document.getElementById('nextDay').addEventListener('click', () => {
+            document.getElementById('nextDay').addEventListener('click', async () => {
                 if (formatDate(currentDate) >= bookingConfig.maxDate) {
                     return;
                 }
 
-                currentDate.setDate(currentDate.getDate() + 1);
-                renderDay();
+                const date = new Date(currentDate);
+                date.setDate(date.getDate() + 1);
+                await selectCalendarDate(date);
             });
 
-            document.getElementById('selectedDate').addEventListener('change', event => {
-                currentDate = parseDate(event.target.value);
-                renderDay();
+            document.getElementById('selectedDate').addEventListener('change', async event => {
+                await selectCalendarDate(parseDate(event.target.value));
             });
 
-            document.getElementById('lineId').addEventListener('change', updateModalAvailability);
+            document.getElementById('lineId').addEventListener('change', () => {
+                const axis = getAxis(document.getElementById('lineId').value);
+                const dynamicShooting = document.getElementById('dynamicShooting');
+                dynamicShooting.checked = false;
+                document.getElementById('dynamicShootingField')
+                    .classList.toggle(
+                        'd-none',
+                        !axis?.allows_dynamic_shooting
+                    );
+                updateModalAvailability();
+            });
             document.getElementById('startTime').addEventListener('change', () => {
                 updateEndTimes();
                 updateModalAvailability();
             });
             document.getElementById('endTime').addEventListener('change', updateModalAvailability);
+            document.getElementById('dynamicShooting')
+                .addEventListener('change', updateModalAvailability);
         });
     </script>
 </x-app-layout>

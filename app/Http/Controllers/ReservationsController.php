@@ -8,6 +8,7 @@ use App\Models\ShootingRange;
 use App\Models\User;
 use App\Services\ShootingRangeAvailabilityService;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -74,19 +75,11 @@ class ReservationsController extends Controller
                 Reservation::STATUS_PENDING,
                 Reservation::STATUS_APPROVED,
             ])
-            ->whereDate('start', '>=', $requestedDate->copy()->subDays(7))
-            ->whereDate('start', '<=', $requestedDate->copy()->addDays(14))
+            ->whereDate('start', $requestedDate)
             ->get()
-            ->map(fn (Reservation $reservation) => [
-                'id' => $reservation->id,
-                'line_id' => $reservation->line_id,
-                'start_date' => $reservation->start->format('Y-m-d'),
-                'start_time' => $reservation->start->format('H:i'),
-                'end_time' => $reservation->end->format('H:i'),
-                'status' => $reservation->status,
-                'positions_count' => $reservation->positions_count ?? 1,
-                'title' => 'Rezerwacja',
-            ]);
+            ->map(fn (Reservation $reservation) => $this->publicReservationData(
+                $reservation
+            ));
 
         return view('reservation.calendar-day-test', compact(
             'shootingRange',
@@ -95,6 +88,102 @@ class ReservationsController extends Controller
             'maxAdvanceBookingDays',
             'maxBookingDate'
         ));
+    }
+
+    public function availability(Request $request, int $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'date' => ['required', 'date_format:Y-m-d'],
+        ]);
+        $date = Carbon::createFromFormat('Y-m-d', $validated['date'])
+            ->startOfDay();
+        $shootingRange = ShootingRange::query()
+            ->where('is_visible', true)
+            ->where('is_archived', false)
+            ->findOrFail($id);
+
+        if (! $shootingRange->allowsReservationDate($date)) {
+            return response()->json([
+                'message' => 'Wybrana data znajduje się poza dozwolonym terminem rezerwacji.',
+            ], 422);
+        }
+
+        if (! $this->availability->canUserAccessRange(
+            $shootingRange,
+            $request->user(),
+            $date
+        )) {
+            return response()->json([
+                'message' => 'Nie posiadasz dostępu do tej strzelnicy.',
+            ], 403);
+        }
+
+        $requirements = $this->availability->basicRequirements(
+            $shootingRange,
+            $date
+        );
+
+        if (! $requirements['allowed']) {
+            return response()->json([
+                'message' => $requirements['reason'],
+            ], 422);
+        }
+
+        $reservations = Reservation::query()
+            ->where('shooting_range_id', $shootingRange->id)
+            ->whereIn('status', [
+                Reservation::STATUS_PENDING,
+                Reservation::STATUS_APPROVED,
+            ])
+            ->whereDate('start', $date)
+            ->get()
+            ->map(fn (Reservation $reservation) => $this->publicReservationData(
+                $reservation
+            ))
+            ->values();
+
+        return response()->json([
+            'reservations' => $reservations,
+        ]);
+    }
+
+    public function searchCustomers(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'shooting_range_id' => [
+                'required',
+                'integer',
+                'exists:shooting_ranges,id',
+            ],
+            'q' => ['required', 'string', 'min:2', 'max:255'],
+        ]);
+        $shootingRange = ShootingRange::findOrFail(
+            $validated['shooting_range_id']
+        );
+
+        abort_unless(
+            $request->user()->managesShootingRange($shootingRange),
+            403
+        );
+
+        $term = mb_strtolower(trim($validated['q']));
+        $users = User::query()
+            ->where('is_approved', true)
+            ->whereNotNull('email_verified_at')
+            ->where(function ($query) use ($term) {
+                $like = '%'.$term.'%';
+                $query
+                    ->whereRaw('LOWER(name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(email) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(COALESCE(telephone, \'\')) LIKE ?', [$like]);
+            })
+            ->orderBy('name')
+            ->limit(8)
+            ->get(['id', 'name', 'email', 'telephone']);
+
+        return response()->json([
+            'users' => $users,
+        ]);
     }
 
     public function adminCalendar(Request $request): View
@@ -160,6 +249,7 @@ class ReservationsController extends Controller
                     ?? $reservation->customer?->telephone
                     ?? $reservation->user?->telephone,
                 'source' => $reservation->source,
+                'line_id' => $reservation->line_id,
                 'lane_name' => $reservation->lane?->name ?? 'Usunięta oś',
                 'lane_length' => $reservation->lane?->length,
                 'start' => $reservation->start->format('Y-m-d H:i'),
@@ -168,6 +258,7 @@ class ReservationsController extends Controller
                 'start_time' => $reservation->start->format('H:i'),
                 'end_time' => $reservation->end->format('H:i'),
                 'positions_count' => $reservation->positions_count,
+                'is_dynamic_shooting' => $reservation->is_dynamic_shooting,
                 'status' => $reservation->status,
             ])
             ->values();
@@ -205,9 +296,18 @@ class ReservationsController extends Controller
                 );
                 $lane = Lane::query()
                     ->where('shooting_range_id', $shootingRange->id)
+                    ->where('is_archived', false)
                     ->lockForUpdate()
                     ->findOrFail($validated['line_id']);
                 [$start, $end] = $this->reservationPeriod($validated);
+                $isDynamicShooting = (bool) (
+                    $validated['is_dynamic_shooting'] ?? false
+                );
+                $positionsCount = $this->requestedPositions(
+                    $lane,
+                    (int) $validated['positions_count'],
+                    $isDynamicShooting
+                );
 
                 $this->availability->validateReservation(
                     $shootingRange,
@@ -215,7 +315,9 @@ class ReservationsController extends Controller
                     $actor,
                     $start,
                     $end,
-                    (int) $validated['positions_count']
+                    $positionsCount,
+                    false,
+                    $isDynamicShooting
                 );
 
                 Reservation::create([
@@ -231,7 +333,8 @@ class ReservationsController extends Controller
                     'line_id' => $lane->id,
                     'start' => $start,
                     'end' => $end,
-                    'positions_count' => $validated['positions_count'],
+                    'positions_count' => $positionsCount,
+                    'is_dynamic_shooting' => $isDynamicShooting,
                     'status' => Reservation::STATUS_PENDING,
                 ]);
             });
@@ -244,18 +347,30 @@ class ReservationsController extends Controller
 
     public function storeByStaff(Request $request): RedirectResponse
     {
-        $customerEmailRules = ['required', 'email', 'max:255'];
+        $customerEmailRules = ['nullable', 'email', 'max:255'];
+        $customerPhoneRules = ['nullable', 'string', 'max:50'];
 
-        if ($request->input('customer_type') === 'account') {
-            $customerEmailRules[] = Rule::exists('users', 'email');
+        if ($request->input('customer_type') === 'guest') {
+            array_unshift($customerEmailRules, 'required_without:customer_phone');
+            array_unshift($customerPhoneRules, 'required_without:customer_email');
         }
 
         $validated = $request->validate([
             ...$this->reservationRules(),
             'customer_type' => ['required', Rule::in(['account', 'guest'])],
-            'customer_name' => ['required_if:customer_type,guest', 'nullable', 'string', 'max:255'],
+            'customer_user_id' => [
+                'required_if:customer_type,account',
+                'nullable',
+                Rule::exists('users', 'id')->where('is_approved', true),
+            ],
+            'customer_name' => [
+                'required_if:customer_type,guest',
+                'nullable',
+                'string',
+                'max:255',
+            ],
             'customer_email' => $customerEmailRules,
-            'customer_phone' => ['nullable', 'string', 'max:50'],
+            'customer_phone' => $customerPhoneRules,
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
@@ -268,9 +383,18 @@ class ReservationsController extends Controller
                 );
                 $lane = Lane::query()
                     ->where('shooting_range_id', $shootingRange->id)
+                    ->where('is_archived', false)
                     ->lockForUpdate()
                     ->findOrFail($validated['line_id']);
                 [$start, $end] = $this->reservationPeriod($validated);
+                $isDynamicShooting = (bool) (
+                    $validated['is_dynamic_shooting'] ?? false
+                );
+                $positionsCount = $this->requestedPositions(
+                    $lane,
+                    (int) $validated['positions_count'],
+                    $isDynamicShooting
+                );
 
                 $this->availability->validateReservation(
                     $shootingRange,
@@ -278,12 +402,15 @@ class ReservationsController extends Controller
                     $actor,
                     $start,
                     $end,
-                    (int) $validated['positions_count'],
-                    true
+                    $positionsCount,
+                    true,
+                    $isDynamicShooting
                 );
 
                 $customer = $validated['customer_type'] === 'account'
-                    ? User::where('email', $validated['customer_email'])->firstOrFail()
+                    ? User::query()
+                        ->where('is_approved', true)
+                        ->findOrFail($validated['customer_user_id'])
                     : null;
                 $isGuest = $customer === null;
 
@@ -306,7 +433,8 @@ class ReservationsController extends Controller
                     'line_id' => $lane->id,
                     'start' => $start,
                     'end' => $end,
-                    'positions_count' => $validated['positions_count'],
+                    'positions_count' => $positionsCount,
+                    'is_dynamic_shooting' => $isDynamicShooting,
                     'status' => Reservation::STATUS_APPROVED,
                     'approved_by_user_id' => $actor->id,
                     'approved_at' => now(),
@@ -343,36 +471,102 @@ class ReservationsController extends Controller
             ],
         ]);
 
-        $attributes = [
-            'status' => $validated['status'],
-            'mod_id' => $request->user()->id,
+        $allowedTransitions = [
+            Reservation::STATUS_PENDING => [
+                Reservation::STATUS_APPROVED,
+                Reservation::STATUS_CANCELLED,
+            ],
+            Reservation::STATUS_APPROVED => [
+                Reservation::STATUS_CANCELLED,
+            ],
+            Reservation::STATUS_CANCELLED => [
+                Reservation::STATUS_PENDING,
+                Reservation::STATUS_APPROVED,
+            ],
         ];
 
-        if ($validated['status'] === Reservation::STATUS_APPROVED) {
-            $attributes += [
-                'approved_by_user_id' => $request->user()->id,
-                'approved_at' => now(),
-                'cancelled_by_user_id' => null,
-                'cancelled_at' => null,
-                'cancellation_reason' => null,
-            ];
-        } elseif ($validated['status'] === Reservation::STATUS_CANCELLED) {
-            $attributes += [
-                'cancelled_by_user_id' => $request->user()->id,
-                'cancelled_at' => now(),
-                'cancellation_reason' => $validated['cancellation_reason'],
-            ];
-        } else {
-            $attributes += [
-                'approved_by_user_id' => null,
-                'approved_at' => null,
-                'cancelled_by_user_id' => null,
-                'cancelled_at' => null,
-                'cancellation_reason' => null,
-            ];
+        if ($validated['status'] === $reservation->status) {
+            return back()->with('success', 'Status rezerwacji nie wymagał zmiany.');
         }
 
-        $reservation->update($attributes);
+        if (! in_array(
+            $validated['status'],
+            $allowedTransitions[$reservation->status] ?? [],
+            true
+        )) {
+            return back()->with(
+                'error',
+                'Ta zmiana statusu rezerwacji jest niedozwolona.'
+            );
+        }
+
+        try {
+            DB::transaction(function () use (
+                $request,
+                $reservation,
+                $validated
+            ) {
+                $lockedReservation = Reservation::query()
+                    ->whereKey($reservation->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if (in_array($validated['status'], [
+                    Reservation::STATUS_PENDING,
+                    Reservation::STATUS_APPROVED,
+                ], true)) {
+                    $lane = Lane::query()
+                        ->where('is_archived', false)
+                        ->lockForUpdate()
+                        ->findOrFail($lockedReservation->line_id);
+
+                    $this->availability->validateReservation(
+                        $lockedReservation->shootingRange,
+                        $lane,
+                        $request->user(),
+                        $lockedReservation->start,
+                        $lockedReservation->end,
+                        $lockedReservation->positions_count,
+                        true,
+                        $lockedReservation->is_dynamic_shooting,
+                        $lockedReservation->id
+                    );
+                }
+
+                $attributes = [
+                    'status' => $validated['status'],
+                    'mod_id' => $request->user()->id,
+                ];
+
+                if ($validated['status'] === Reservation::STATUS_APPROVED) {
+                    $attributes += [
+                        'approved_by_user_id' => $request->user()->id,
+                        'approved_at' => now(),
+                        'cancelled_by_user_id' => null,
+                        'cancelled_at' => null,
+                        'cancellation_reason' => null,
+                    ];
+                } elseif ($validated['status'] === Reservation::STATUS_CANCELLED) {
+                    $attributes += [
+                        'cancelled_by_user_id' => $request->user()->id,
+                        'cancelled_at' => now(),
+                        'cancellation_reason' => $validated['cancellation_reason'],
+                    ];
+                } else {
+                    $attributes += [
+                        'approved_by_user_id' => null,
+                        'approved_at' => null,
+                        'cancelled_by_user_id' => null,
+                        'cancelled_at' => null,
+                        'cancellation_reason' => null,
+                    ];
+                }
+
+                $lockedReservation->update($attributes);
+            });
+        } catch (ValidationException $exception) {
+            return $this->reservationValidationRedirect($exception);
+        }
 
         return back()->with('success', 'Status rezerwacji został zmieniony.');
     }
@@ -402,6 +596,33 @@ class ReservationsController extends Controller
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
             'positions_count' => ['required', 'integer', 'min:1'],
+            'is_dynamic_shooting' => ['nullable', 'boolean'],
+        ];
+    }
+
+    private function requestedPositions(
+        Lane $lane,
+        int $positionsCount,
+        bool $isDynamicShooting
+    ): int {
+        return $isDynamicShooting
+            ? (int) $lane->numberOfPositions
+            : $positionsCount;
+    }
+
+    private function publicReservationData(
+        Reservation $reservation
+    ): array {
+        return [
+            'id' => $reservation->id,
+            'line_id' => $reservation->line_id,
+            'start_date' => $reservation->start->format('Y-m-d'),
+            'start_time' => $reservation->start->format('H:i'),
+            'end_time' => $reservation->end->format('H:i'),
+            'status' => $reservation->status,
+            'positions_count' => $reservation->positions_count ?? 1,
+            'is_dynamic_shooting' => $reservation->is_dynamic_shooting,
+            'title' => 'Rezerwacja',
         ];
     }
 

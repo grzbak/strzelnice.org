@@ -34,6 +34,7 @@ class Reservation extends Model
         'start',
         'end',
         'positions_count',
+        'is_dynamic_shooting',
         'status',
         'approved_by_user_id',
         'approved_at',
@@ -47,6 +48,7 @@ class Reservation extends Model
         'start' => 'datetime',
         'end' => 'datetime',
         'positions_count' => 'integer',
+        'is_dynamic_shooting' => 'boolean',
         'approved_at' => 'datetime',
         'cancelled_at' => 'datetime',
     ];

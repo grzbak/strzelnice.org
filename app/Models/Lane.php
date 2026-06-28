@@ -12,12 +12,19 @@ class Lane extends Model
         'length',
         'numberOfPositions',
         'allows_dynamic_shooting',
+        'is_archived',
         'description',
     ];
 
     protected $casts = [
         'allows_dynamic_shooting' => 'boolean',
+        'is_archived' => 'boolean',
     ];
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_archived', false);
+    }
 
     public function shootingRange()
     {
