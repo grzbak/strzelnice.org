@@ -34,3 +34,4 @@ daafa2e Add standard background to admin views
 ef50377 Improve shooting range invitations workflow
 7813a2e Adjust invitation reminder schedule time
 5265373 Add shooting range logo removal
+e9a4eaf Snapshot before reservation workflow overhaul
