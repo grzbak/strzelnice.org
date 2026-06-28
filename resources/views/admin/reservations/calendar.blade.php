@@ -4,6 +4,8 @@
     @include('components.breadcrumb')
 
     <main class="container py-4 admin-reservations">
+        <x-session-alerts />
+
         <section class="calendar-header">
             <div>
                 <span class="calendar-eyebrow">Panel strzelnicy</span>
@@ -12,6 +14,38 @@
             </div>
 
             <div class="calendar-navigation">
+                @if ($managedRanges->count() > 1)
+                    <form method="GET" action="{{ route('admin.reservations.calendar') }}">
+                        <input type="hidden" name="view" value="{{ $viewMode }}">
+                        <input type="hidden" name="date" value="{{ $selectedDate }}">
+                        <select
+                            name="shooting_range_id"
+                            class="form-select"
+                            onchange="this.form.submit()"
+                            aria-label="Wybierz strzelnicę"
+                        >
+                            @foreach ($managedRanges as $range)
+                                <option
+                                    value="{{ $range->id }}"
+                                    @selected($range->id === $shootingRange->id)
+                                >
+                                    {{ $range->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </form>
+                @endif
+
+                <button
+                    type="button"
+                    class="btn btn-success"
+                    data-bs-toggle="modal"
+                    data-bs-target="#staffReservationModal"
+                >
+                    <i class="bi bi-calendar-plus me-1"></i>
+                    Dodaj rezerwację
+                </button>
+
                 <div class="btn-group" role="group" aria-label="Nawigacja po kalendarzu">
                     <button type="button" id="previousPeriod" class="btn btn-light" title="Poprzedni okres">
                         <i class="bi bi-chevron-left"></i>
@@ -73,6 +107,191 @@
         <section id="calendarTitle" class="period-title"></section>
         <section id="calendarContent"></section>
     </main>
+
+    <div class="modal fade" id="staffReservationModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <form method="POST" action="{{ route('admin.reservations.store') }}" class="modal-content">
+                @csrf
+                <input type="hidden" name="shooting_range_id" value="{{ $shootingRange->id }}">
+
+                <div class="modal-header">
+                    <div>
+                        <span class="calendar-eyebrow">Panel strzelnicy</span>
+                        <h2 class="modal-title fs-5">Nowa rezerwacja</h2>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="staffCustomerType" class="form-label">Rodzaj klienta</label>
+                            <select name="customer_type" id="staffCustomerType" class="form-select" required>
+                                <option value="account">Użytkownik z kontem</option>
+                                <option value="guest">Gość bez konta</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6 guest-name-field d-none">
+                            <label for="staffCustomerName" class="form-label">Imię i nazwisko gościa</label>
+                            <input
+                                type="text"
+                                name="customer_name"
+                                id="staffCustomerName"
+                                class="form-control"
+                                maxlength="255"
+                            >
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="staffCustomerEmail" class="form-label">E-mail</label>
+                            <input
+                                type="email"
+                                name="customer_email"
+                                id="staffCustomerEmail"
+                                class="form-control"
+                                required
+                            >
+                            <div class="form-text account-email-help">
+                                Podaj adres e-mail istniejącego użytkownika.
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="staffCustomerPhone" class="form-label">Telefon</label>
+                            <input
+                                type="tel"
+                                name="customer_phone"
+                                id="staffCustomerPhone"
+                                class="form-control"
+                                maxlength="50"
+                            >
+                        </div>
+
+                        <div class="col-md-4">
+                            <label for="staffReservationDate" class="form-label">Data</label>
+                            <input
+                                type="date"
+                                name="date"
+                                id="staffReservationDate"
+                                class="form-control"
+                                value="{{ $selectedDate }}"
+                                min="{{ today()->format('Y-m-d') }}"
+                                max="{{ $maxBookingDate->format('Y-m-d') }}"
+                                required
+                            >
+                        </div>
+
+                        <div class="col-md-4">
+                            <label for="staffStartTime" class="form-label">Od</label>
+                            <input
+                                type="time"
+                                name="start_time"
+                                id="staffStartTime"
+                                class="form-control"
+                                step="1800"
+                                required
+                            >
+                        </div>
+
+                        <div class="col-md-4">
+                            <label for="staffEndTime" class="form-label">Do</label>
+                            <input
+                                type="time"
+                                name="end_time"
+                                id="staffEndTime"
+                                class="form-control"
+                                step="1800"
+                                required
+                            >
+                        </div>
+
+                        <div class="col-md-8">
+                            <label for="staffLane" class="form-label">Oś</label>
+                            <select name="line_id" id="staffLane" class="form-select" required>
+                                @foreach ($shootingRange->lanes as $lane)
+                                    <option value="{{ $lane->id }}">
+                                        {{ $lane->name }} · {{ $lane->length }} m
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label for="staffPositions" class="form-label">Stanowiska</label>
+                            <input
+                                type="number"
+                                name="positions_count"
+                                id="staffPositions"
+                                class="form-control"
+                                min="1"
+                                value="1"
+                                required
+                            >
+                        </div>
+
+                        <div class="col-12">
+                            <label for="staffNotes" class="form-label">Notatka wewnętrzna</label>
+                            <textarea
+                                name="notes"
+                                id="staffNotes"
+                                class="form-control"
+                                rows="2"
+                                maxlength="2000"
+                            ></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Anuluj</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-lg me-1"></i>
+                        Zapisz rezerwację
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal fade" id="reservationStatusModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <form method="POST" action="" class="modal-content" id="reservationStatusForm">
+                @csrf
+                @method('PATCH')
+
+                <div class="modal-header">
+                    <h2 class="modal-title fs-5">Zmień status rezerwacji</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <label for="reservationStatus" class="form-label">Status</label>
+                    <select name="status" id="reservationStatus" class="form-select" required>
+                        <option value="pending">Oczekująca</option>
+                        <option value="approved">Zatwierdzona</option>
+                        <option value="cancelled">Anulowana</option>
+                    </select>
+
+                    <div class="mt-3 d-none" id="cancellationReasonField">
+                        <label for="cancellationReason" class="form-label">Powód anulowania</label>
+                        <textarea
+                            name="cancellation_reason"
+                            id="cancellationReason"
+                            class="form-control"
+                            rows="3"
+                            maxlength="500"
+                        ></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Anuluj</button>
+                    <button type="submit" class="btn btn-success">Zapisz status</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <style>
         .admin-reservations {
@@ -277,8 +496,10 @@
             font-size: .65rem;
             font-weight: 700;
             text-transform: uppercase;
+            background: transparent;
             border: 1px solid currentColor;
             border-radius: 4px;
+            cursor: pointer;
         }
 
         .week-grid,
@@ -437,7 +658,9 @@
             periodStart: @json($periodStart),
             periodEnd: @json($periodEnd),
             reservations: @json($reservations),
-            openingHours: @json($openingHours)
+            openingHours: @json($openingHours),
+            shootingRangeId: @json($shootingRange->id),
+            statusRouteTemplate: @json(route('admin.reservations.status', ['reservation' => '__ID__']))
         };
 
         const statusLabels = {
@@ -469,7 +692,14 @@
             const url = new URL(adminCalendar.route, window.location.origin);
             url.searchParams.set('view', view);
             url.searchParams.set('date', date);
+            url.searchParams.set('shooting_range_id', adminCalendar.shootingRangeId);
             window.location.href = url.toString();
+        }
+
+        function escapeHtml(value) {
+            const element = document.createElement('div');
+            element.textContent = value ?? '';
+            return element.innerHTML;
         }
 
         function filteredReservations() {
@@ -504,14 +734,24 @@
             card.className = `reservation-card ${reservation.status}`;
             card.innerHTML = `
                 <div>
-                    <strong>${reservation.start_time}–${reservation.end_time} · ${reservation.user_name}</strong>
-                    <span>${reservation.user_phone ?? reservation.user_email ?? 'Brak danych kontaktowych'}</span>
+                    <strong>${escapeHtml(reservation.start_time)}–${escapeHtml(reservation.end_time)} · ${escapeHtml(reservation.user_name)}</strong>
+                    <span>${escapeHtml(reservation.user_phone ?? reservation.user_email ?? 'Brak danych kontaktowych')}</span>
                 </div>
                 <div class="reservation-lane">
-                    <strong>${reservation.lane_name}</strong>
-                    <span>${reservation.lane_length ? `${reservation.lane_length} m · ` : ''}${reservation.positions_count} stanowisk</span>
+                    <strong>${escapeHtml(reservation.lane_name)}</strong>
+                    <span>${reservation.lane_length ? `${escapeHtml(reservation.lane_length)} m · ` : ''}${escapeHtml(reservation.positions_count)} stanowisk</span>
                 </div>
-                <span class="reservation-status">${statusLabels[reservation.status] ?? reservation.status}</span>
+                <button
+                    type="button"
+                    class="reservation-status"
+                    data-reservation-id="${reservation.id}"
+                    data-reservation-status="${escapeHtml(reservation.status)}"
+                    data-bs-toggle="modal"
+                    data-bs-target="#reservationStatusModal"
+                    title="Zmień status"
+                >
+                    ${escapeHtml(statusLabels[reservation.status] ?? reservation.status)}
+                </button>
             `;
             return card;
         }
@@ -692,6 +932,46 @@
                 document.getElementById(id).addEventListener('change', renderCalendar);
             });
             document.getElementById('clientFilter').addEventListener('input', renderCalendar);
+
+            const customerType = document.getElementById('staffCustomerType');
+            const customerName = document.getElementById('staffCustomerName');
+            const guestNameField = document.querySelector('.guest-name-field');
+            const accountEmailHelp = document.querySelector('.account-email-help');
+
+            function updateCustomerFields() {
+                const isGuest = customerType.value === 'guest';
+                guestNameField.classList.toggle('d-none', !isGuest);
+                customerName.required = isGuest;
+                accountEmailHelp.classList.toggle('d-none', isGuest);
+            }
+
+            customerType.addEventListener('change', updateCustomerFields);
+            updateCustomerFields();
+
+            const statusModal = document.getElementById('reservationStatusModal');
+            const statusForm = document.getElementById('reservationStatusForm');
+            const statusSelect = document.getElementById('reservationStatus');
+            const cancellationField = document.getElementById('cancellationReasonField');
+            const cancellationReason = document.getElementById('cancellationReason');
+
+            function updateCancellationField() {
+                const isCancelled = statusSelect.value === 'cancelled';
+                cancellationField.classList.toggle('d-none', !isCancelled);
+                cancellationReason.required = isCancelled;
+            }
+
+            statusModal.addEventListener('show.bs.modal', event => {
+                const button = event.relatedTarget;
+                statusForm.action = adminCalendar.statusRouteTemplate.replace(
+                    '__ID__',
+                    button.dataset.reservationId
+                );
+                statusSelect.value = button.dataset.reservationStatus;
+                cancellationReason.value = '';
+                updateCancellationField();
+            });
+
+            statusSelect.addEventListener('change', updateCancellationField);
         });
     </script>
 </x-app-layout>

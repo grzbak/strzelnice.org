@@ -8,261 +8,243 @@ use App\Models\ShootingRange;
 use App\Models\ShootingRangeInvitation;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 class ShootingRangeAvailabilityService
 {
-    /**
-     * Sprawdza podstawowe warunki umożliwiające rezerwacje.
-     */
-    public function basicRequirements(ShootingRange $shootingRange): array
-    {
-        if (! $shootingRange->is_visible) {
-            return $this->denied('Strzelnica nie jest widoczna.');
+    public function basicRequirements(
+        ShootingRange $shootingRange,
+        ?Carbon $date = null
+    ): array {
+        if (! $shootingRange->is_visible || $shootingRange->is_archived) {
+            return $this->denied('Strzelnica jest niedostępna.');
         }
 
-        $hasActiveAdmin = $shootingRange->employees()
-            ->where('shooting_range_employee.role', 'admin')
-            ->where('shooting_range_employee.is_approved', true)
-            ->where('users.is_approved', true)
-            ->exists();
-
-        if (! $hasActiveAdmin) {
-            return $this->denied(
-                'Strzelnica nie posiada aktywnego administratora.'
-            );
-        }
-
-        $hasActiveInterval = $shootingRange->intervals()
-            ->where('is_active', true)
-            ->whereDate('start_date', '<=', today())
-            ->whereDate('end_date', '>=', today())
-            ->exists();
-
-        if (! $hasActiveInterval) {
-            return $this->denied(
-                'Strzelnica nie posiada aktywnego przedziału.'
-            );
+        if (! $this->hasActiveAdministrator($shootingRange)) {
+            return $this->denied('Strzelnica nie posiada aktywnego administratora.');
         }
 
         if (! $shootingRange->openingHours()->exists()) {
-            return $this->denied(
-                'Strzelnica nie posiada zdefiniowanych godzin pracy.'
-            );
+            return $this->denied('Strzelnica nie posiada zdefiniowanych godzin pracy.');
         }
 
         if (! $shootingRange->lanes()->exists()) {
-            return $this->denied(
-                'Strzelnica nie posiada osi strzeleckiej.'
-            );
+            return $this->denied('Strzelnica nie posiada osi strzeleckiej.');
+        }
+
+        if ($date && ! $this->hasBookableIntervalForDate($shootingRange, $date)) {
+            return $this->denied('Strzelnica nie posiada opłaconego przedziału dla wybranej daty.');
         }
 
         return $this->allowed();
     }
 
-    /**
-     * Sprawdza dostępność strzelnicy dla wyszukiwarki.
-     */
     public function availableForSearch(
         ShootingRange $shootingRange,
         Carbon $date,
-        int $minimumLaneLength = 0
+        int $minimumLaneLength = 0,
+        ?User $user = null
     ): array {
-        $basicResult = $this->basicRequirements($shootingRange);
+        $basicResult = $this->basicRequirements($shootingRange, $date);
 
         if (! $basicResult['allowed']) {
             return $basicResult;
         }
 
         if (! $shootingRange->allowsReservationDate($date)) {
-            return $this->denied(
-                'Wybrana data znajduje się poza dozwolonym terminem rezerwacji.'
-            );
+            return $this->denied('Wybrana data znajduje się poza dozwolonym terminem rezerwacji.');
         }
 
-        if (! $this->hasActiveIntervalForDate($shootingRange, $date)) {
-            return $this->denied(
-                'Strzelnica nie posiada aktywnego przedziału dla wybranej daty.'
-            );
+        if (! $this->canUserAccessRange($shootingRange, $user, $date)) {
+            return $this->denied('Strzelnica wymaga aktywnego zaproszenia.');
         }
 
         if ($this->isHoliday($shootingRange, $date)) {
-            return $this->denied(
-                'Wybrany dzień jest dniem wolnym.'
-            );
+            return $this->denied('Wybrany dzień jest dniem wolnym.');
         }
 
         $openingHours = $this->openingHoursForDate($shootingRange, $date);
 
         if ($openingHours->isEmpty()) {
-            return $this->denied(
-                'Strzelnica jest nieczynna w wybranym dniu tygodnia.'
-            );
+            return $this->denied('Strzelnica jest nieczynna w wybranym dniu tygodnia.');
         }
 
-        $lanes = $shootingRange->lanes()
+        $hasFreeSlot = $shootingRange->lanes()
             ->when(
                 $minimumLaneLength > 0,
-                fn ($query) => $query->where(
-                    'length',
-                    '>=',
-                    $minimumLaneLength
-                )
+                fn ($query) => $query->where('length', '>=', $minimumLaneLength)
             )
-            ->get();
-
-        foreach ($lanes as $lane) {
-            foreach ($openingHours as $openingHour) {
-                if ($this->laneHasAnyFreeSlot(
+            ->get()
+            ->contains(
+                fn (Lane $lane) => $this->maximumAvailablePositionsForDate(
                     $lane,
-                    $date,
-                    $openingHour->opens_at,
-                    $openingHour->closes_at
-                )) {
-                    return $this->allowed();
-                }
-            }
-        }
+                    $shootingRange,
+                    $date
+                ) > 0
+            );
 
-        return $this->denied(
-            'Brak wolnych stanowisk na osiach spełniających kryteria.'
-        );
+        return $hasFreeSlot
+            ? $this->allowed()
+            : $this->denied('Brak wolnych stanowisk na osiach spełniających kryteria.');
     }
 
-    /**
-     * Walidacja wykonywana bezpośrednio przed zapisem rezerwacji.
-     *
-     * Metodę należy wywołać wewnątrz DB::transaction().
-     */
     public function validateReservation(
         ShootingRange $shootingRange,
         Lane $lane,
-        User $user,
+        User $actor,
         Carbon $start,
         Carbon $end,
-        int $positionsCount
+        int $positionsCount,
+        bool $createdByStaff = false
     ): void {
-        $basicResult = $this->basicRequirements($shootingRange);
+        if ((int) $lane->shooting_range_id !== (int) $shootingRange->id) {
+            $this->throwError('Wybrana oś nie należy do tej strzelnicy.');
+        }
+
+        if ($createdByStaff && ! $actor->managesShootingRange($shootingRange)) {
+            $this->throwError('Nie masz uprawnień do zarządzania rezerwacjami tej strzelnicy.');
+        }
+
+        if (! $createdByStaff && ! $this->canUserAccessRange($shootingRange, $actor, $start)) {
+            $this->throwError('Ta strzelnica wymaga aktywnego i zaakceptowanego zaproszenia.');
+        }
+
+        if ($positionsCount < 1 || $positionsCount > (int) $lane->numberOfPositions) {
+            $this->throwError('Wybrana liczba stanowisk przekracza pojemność osi.');
+        }
+
+        if ($end->lessThanOrEqualTo($start) || ! $start->isSameDay($end)) {
+            $this->throwError('Rezerwacja musi kończyć się później i tego samego dnia.');
+        }
+
+        if (! $this->usesThirtyMinuteSlots($start, $end)) {
+            $this->throwError('Początek, koniec i długość rezerwacji muszą odpowiadać przedziałom 30-minutowym.');
+        }
+
+        if ($start->lessThan(now())) {
+            $this->throwError('Nie można rezerwować terminu, który już minął.');
+        }
+
+        if (! $shootingRange->allowsReservationDate($start)) {
+            $days = $shootingRange->effectiveMaxAdvanceBookingDays();
+            $this->throwError(
+                "Rezerwacji można dokonać maksymalnie {$days} dni do przodu."
+            );
+        }
+
+        $basicResult = $this->basicRequirements($shootingRange, $start);
 
         if (! $basicResult['allowed']) {
             $this->throwError($basicResult['reason']);
         }
 
-        if ((int) $lane->shooting_range_id !== (int) $shootingRange->id) {
-            $this->throwError('Wybrana oś nie należy do tej strzelnicy.');
-        }
-
-        if ($positionsCount < 1) {
-            $this->throwError('Liczba stanowisk musi wynosić przynajmniej 1.');
-        }
-
-        if ($positionsCount > $lane->numberOfPositions) {
-            $this->throwError(
-                'Wybrana liczba stanowisk przekracza pojemność osi.'
-            );
-        }
-
-        if ($end->lessThanOrEqualTo($start)) {
-            $this->throwError(
-                'Godzina zakończenia musi być późniejsza od rozpoczęcia.'
-            );
-        }
-
-        if (! $start->isSameDay($end)) {
-            $this->throwError(
-                'Rezerwacja musi rozpoczynać się i kończyć tego samego dnia.'
-            );
-        }
-
-        if (! $shootingRange->allowsReservationDate($start)) {
-            $this->throwError(
-                'Wybrana data znajduje się poza dozwolonym terminem rezerwacji.'
-            );
-        }
-
-        if (! $this->hasActiveIntervalForDate($shootingRange, $start)) {
-            $this->throwError(
-                'Strzelnica nie posiada aktywnego przedziału dla wybranej daty.'
-            );
-        }
-
         if ($this->isHoliday($shootingRange, $start)) {
-            $this->throwError(
-                'Wybrany dzień jest dniem wolnym.'
-            );
+            $this->throwError('Wybrany dzień jest dniem wolnym.');
         }
 
-        if (! $this->reservationFitsOpeningHours(
-            $shootingRange,
-            $start,
-            $end
-        )) {
-            $this->throwError(
-                'Rezerwacja nie mieści się w godzinach pracy strzelnicy.'
-            );
+        if (! $this->reservationFitsOpeningHours($shootingRange, $start, $end)) {
+            $this->throwError('Rezerwacja nie mieści się w godzinach pracy strzelnicy.');
         }
 
-        if (! $shootingRange->is_public_access) {
-            $this->validatePrivateRangeAccess($shootingRange, $user);
-        }
-
-        $availablePositions = $this->availablePositions(
-            $lane,
-            $start,
-            $end
-        );
-
-        if ($availablePositions < $positionsCount) {
-            $this->throwError(
-                'W wybranym czasie nie ma wystarczającej liczby wolnych stanowisk.'
-            );
+        if ($this->availablePositions($lane, $start, $end) < $positionsCount) {
+            $this->throwError('W wybranym czasie nie ma wystarczającej liczby wolnych stanowisk.');
         }
     }
 
-    /**
-     * Liczba wolnych stanowisk w całym wskazanym przedziale.
-     */
+    public function canUserAccessRange(
+        ShootingRange $shootingRange,
+        ?User $user,
+        Carbon $date
+    ): bool {
+        if ($shootingRange->is_public_access) {
+            return true;
+        }
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->managesShootingRange($shootingRange)) {
+            return true;
+        }
+
+        return ShootingRangeInvitation::query()
+            ->where('shooting_range_id', $shootingRange->id)
+            ->where('status', ShootingRangeInvitation::STATUS_ACCEPTED)
+            ->whereNull('revoked_at')
+            ->where(function ($query) use ($user) {
+                $query
+                    ->where('user_id', $user->id)
+                    ->orWhereRaw('LOWER(email) = ?', [mb_strtolower($user->email)]);
+            })
+            ->where(function ($query) use ($date) {
+                $query
+                    ->whereNull('expires_at')
+                    ->orWhere('expires_at', '>=', $date->copy()->endOfDay());
+            })
+            ->exists();
+    }
+
     public function availablePositions(
         Lane $lane,
         Carbon $start,
         Carbon $end
     ): int {
-        $reservedPositions = Reservation::query()
-            ->where('line_id', $lane->id)
-            ->whereIn('status', ['pending', 'approved'])
-            ->where('start', '<', $end)
-            ->where('end', '>', $start)
-            ->sum('positions_count');
+        $minimumAvailable = (int) $lane->numberOfPositions;
+        $slotStart = $start->copy();
 
-        return max(
-            0,
-            (int) $lane->numberOfPositions - (int) $reservedPositions
-        );
-    }
+        while ($slotStart->lt($end)) {
+            $slotEnd = $slotStart->copy()->addMinutes(30)->min($end);
+            $reserved = (int) Reservation::query()
+                ->where('line_id', $lane->id)
+                ->whereIn('status', [
+                    Reservation::STATUS_PENDING,
+                    Reservation::STATUS_APPROVED,
+                ])
+                ->where('start', '<', $slotEnd)
+                ->where('end', '>', $slotStart)
+                ->sum('positions_count');
 
-    private function laneHasAnyFreeSlot(
-        Lane $lane,
-        Carbon $date,
-        mixed $opensAt,
-        mixed $closesAt
-    ): bool {
-        $start = $this->combineDateAndTime($date, $opensAt);
-        $closing = $this->combineDateAndTime($date, $closesAt);
-
-        while ($start->copy()->addMinutes(30)->lessThanOrEqualTo($closing)) {
-            $end = $start->copy()->addMinutes(30);
-
-            if ($this->availablePositions($lane, $start, $end) > 0) {
-                return true;
-            }
-
-            $start->addMinutes(30);
+            $minimumAvailable = min(
+                $minimumAvailable,
+                max(0, (int) $lane->numberOfPositions - $reserved)
+            );
+            $slotStart->addMinutes(30);
         }
 
-        return false;
+        return $minimumAvailable;
     }
 
-    private function hasActiveIntervalForDate(
+    public function maximumAvailablePositionsForDate(
+        Lane $lane,
+        ShootingRange $shootingRange,
+        Carbon $date
+    ): int {
+        return $this->openingHoursForDate($shootingRange, $date)
+            ->map(function ($openingHour) use ($lane, $date) {
+                $slotStart = $this->combineDateAndTime($date, $openingHour->opens_at);
+                $closing = $this->combineDateAndTime($date, $openingHour->closes_at);
+                $maximum = 0;
+
+                while ($slotStart->copy()->addMinutes(30)->lessThanOrEqualTo($closing)) {
+                    $maximum = max(
+                        $maximum,
+                        $this->availablePositions(
+                            $lane,
+                            $slotStart,
+                            $slotStart->copy()->addMinutes(30)
+                        )
+                    );
+                    $slotStart->addMinutes(30);
+                }
+
+                return $maximum;
+            })
+            ->max() ?? 0;
+    }
+
+    public function hasBookableIntervalForDate(
         ShootingRange $shootingRange,
         Carbon $date
     ): bool {
@@ -270,13 +252,29 @@ class ShootingRangeAvailabilityService
             ->where('is_active', true)
             ->whereDate('start_date', '<=', $date)
             ->whereDate('end_date', '>=', $date)
+            ->where(function ($query) use ($date) {
+                $query
+                    ->whereNotNull('datePaid')
+                    ->orWhere(function ($query) use ($date) {
+                        $query
+                            ->whereNull('datePaid')
+                            ->whereDate('payment_due_date', '>=', $date);
+                    });
+            })
             ->exists();
     }
 
-    private function isHoliday(
-        ShootingRange $shootingRange,
-        Carbon $date
-    ): bool {
+    private function hasActiveAdministrator(ShootingRange $shootingRange): bool
+    {
+        return $shootingRange->employees()
+            ->where('shooting_range_employee.role', 'admin')
+            ->where('shooting_range_employee.is_approved', true)
+            ->where('users.is_approved', true)
+            ->exists();
+    }
+
+    private function isHoliday(ShootingRange $shootingRange, Carbon $date): bool
+    {
         return $shootingRange->holidays()
             ->whereDate('date', $date)
             ->exists();
@@ -285,7 +283,7 @@ class ShootingRangeAvailabilityService
     private function openingHoursForDate(
         ShootingRange $shootingRange,
         Carbon $date
-    ) {
+    ): Collection {
         return $shootingRange->openingHours()
             ->where('day_of_week', $date->isoWeekday())
             ->get();
@@ -298,68 +296,38 @@ class ShootingRangeAvailabilityService
     ): bool {
         return $this->openingHoursForDate($shootingRange, $start)
             ->contains(function ($openingHour) use ($start, $end) {
-                $opensAt = $this->combineDateAndTime(
-                    $start,
-                    $openingHour->opens_at
-                );
-
-                $closesAt = $this->combineDateAndTime(
-                    $start,
-                    $openingHour->closes_at
-                );
+                $opensAt = $this->combineDateAndTime($start, $openingHour->opens_at);
+                $closesAt = $this->combineDateAndTime($start, $openingHour->closes_at);
 
                 return $start->greaterThanOrEqualTo($opensAt)
                     && $end->lessThanOrEqualTo($closesAt);
             });
     }
 
-    private function validatePrivateRangeAccess(
-        ShootingRange $shootingRange,
-        User $user
-    ): void {
-        $hasInvitation = ShootingRangeInvitation::query()
-            ->where('shooting_range_id', $shootingRange->id)
-            ->where('email', $user->email)
-            ->where('status', 'accepted')
-            ->where(function ($query) {
-                $query
-                    ->whereNull('expires_at')
-                    ->orWhere('expires_at', '>=', now());
-            })
-            ->exists();
-
-        if (! $hasInvitation) {
-            $this->throwError(
-                'Ta strzelnica wymaga aktywnego i zaakceptowanego zaproszenia.'
-            );
-        }
+    private function usesThirtyMinuteSlots(Carbon $start, Carbon $end): bool
+    {
+        return in_array($start->minute, [0, 30], true)
+            && in_array($end->minute, [0, 30], true)
+            && $start->second === 0
+            && $end->second === 0
+            && ((int) $start->diffInMinutes($end)) % 30 === 0;
     }
 
-    private function combineDateAndTime(
-        Carbon $date,
-        mixed $time
-    ): Carbon {
-        $formattedTime = Carbon::parse($time)->format('H:i:s');
-
+    private function combineDateAndTime(Carbon $date, mixed $time): Carbon
+    {
         return Carbon::parse(
-            $date->format('Y-m-d') . ' ' . $formattedTime
+            $date->format('Y-m-d').' '.Carbon::parse($time)->format('H:i:s')
         );
     }
 
     private function allowed(): array
     {
-        return [
-            'allowed' => true,
-            'reason' => null,
-        ];
+        return ['allowed' => true, 'reason' => null];
     }
 
     private function denied(string $reason): array
     {
-        return [
-            'allowed' => false,
-            'reason' => $reason,
-        ];
+        return ['allowed' => false, 'reason' => $reason];
     }
 
     private function throwError(string $message): never

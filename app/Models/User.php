@@ -3,13 +3,12 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Notifications\ResetPasswordNotification;
+use App\Notifications\VerifyEmailNotification;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
-use App\Models\UserBan;
-use App\Notifications\VerifyEmailNotification;
-use App\Notifications\ResetPasswordNotification;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -28,12 +27,12 @@ class User extends Authenticatable implements MustVerifyEmail
         'telephone',
         'avatar',
         'role',
-        'is_approved'
+        'is_approved',
     ];
 
     protected $appends = [
-        'avatar_url' //,
-        //'is_blocked' // opcjonalnie: status bana
+        'avatar_url', // ,
+        // 'is_blocked' // opcjonalnie: status bana
     ];
 
     /**
@@ -71,9 +70,32 @@ class User extends Authenticatable implements MustVerifyEmail
             ->withTimestamps();
     }
 
+    public function reservations()
+    {
+        return $this->hasMany(Reservation::class, 'customer_user_id');
+    }
+
+    public function createdReservations()
+    {
+        return $this->hasMany(Reservation::class, 'created_by_user_id');
+    }
+
+    public function managesShootingRange(ShootingRange $shootingRange): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        return $this->shootingRanges()
+            ->whereKey($shootingRange->id)
+            ->wherePivot('is_approved', true)
+            ->wherePivotIn('role', ['admin', 'pracownik'])
+            ->exists();
+    }
+
     public function sendEmailVerificationNotification(): void
     {
-        $this->notify(new VerifyEmailNotification());
+        $this->notify(new VerifyEmailNotification);
     }
 
     public function sendPasswordResetNotification($token): void
@@ -87,10 +109,10 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getAvatarUrlAttribute(): string
     {
         if ($this->avatar) {
-            return asset('storage/avatars/' . $this->avatar);
+            return asset('storage/avatars/'.$this->avatar);
         }
 
-        return 'https://i.pravatar.cc/150?u=' . $this->email;
+        return 'https://i.pravatar.cc/150?u='.$this->email;
     }
 
     /* =====================================================
@@ -100,14 +122,17 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->role === 'superadmin';
     }
+
     public function isAdmin()
     {
         return $this->role === 'admin';
     }
+
     public function isEmployee()
     {
         return $this->role === 'pracownik';
     }
+
     public function isClient()
     {
         return $this->role === 'klient';

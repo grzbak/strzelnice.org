@@ -28,6 +28,10 @@
         ->map(fn ($interval) => [
             'start_date' => Carbon::parse($interval->start_date)->format('Y-m-d'),
             'end_date' => Carbon::parse($interval->end_date)->format('Y-m-d'),
+            'is_paid' => $interval->datePaid !== null,
+            'payment_due_date' => $interval->payment_due_date
+                ? Carbon::parse($interval->payment_due_date)->format('Y-m-d')
+                : null,
         ])
         ->values();
 @endphp
@@ -475,7 +479,12 @@
             }
 
             const hasInterval = bookingConfig.intervals.some(interval => {
-                return interval.start_date <= dateString && interval.end_date >= dateString;
+                const isFinanciallyValid = interval.is_paid
+                    || (interval.payment_due_date && interval.payment_due_date >= dateString);
+
+                return interval.start_date <= dateString
+                    && interval.end_date >= dateString
+                    && isFinanciallyValid;
             });
 
             if (!hasInterval) {
@@ -502,16 +511,29 @@
         function getFreePositions(axis, dateString, startTime, endTime) {
             const start = timeToMinutes(startTime);
             const end = timeToMinutes(endTime);
-            const used = bookingConfig.reservations
-                .filter(reservation => {
-                    return Number(reservation.line_id) === Number(axis.id)
-                        && reservation.start_date === dateString
-                        && timeToMinutes(reservation.start_time) < end
-                        && timeToMinutes(reservation.end_time) > start;
-                })
-                .reduce((sum, reservation) => sum + Number(reservation.positions_count || 1), 0);
+            let minimumFree = Number(axis.positions);
 
-            return Math.max(0, Number(axis.positions) - used);
+            for (let slotStart = start; slotStart < end; slotStart += bookingConfig.slotMinutes) {
+                const slotEnd = Math.min(slotStart + bookingConfig.slotMinutes, end);
+                const used = bookingConfig.reservations
+                    .filter(reservation => {
+                        return Number(reservation.line_id) === Number(axis.id)
+                            && reservation.start_date === dateString
+                            && timeToMinutes(reservation.start_time) < slotEnd
+                            && timeToMinutes(reservation.end_time) > slotStart;
+                    })
+                    .reduce(
+                        (sum, reservation) => sum + Number(reservation.positions_count || 1),
+                        0
+                    );
+
+                minimumFree = Math.min(
+                    minimumFree,
+                    Math.max(0, Number(axis.positions) - used)
+                );
+            }
+
+            return minimumFree;
         }
 
         function getMinimumFree(axis, dateString, startTime, endTime) {

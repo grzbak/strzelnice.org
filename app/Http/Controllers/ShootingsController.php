@@ -2,32 +2,37 @@
 
 namespace App\Http\Controllers;
 
-use Carbon\Carbon;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
-use App\Models\ShootingRange;
-use App\Models\ShootingRangePackage;
-use Illuminate\Validation\Rules;
-use Illuminate\Support\Facades\Auth;
-use App\Models\User;
 use App\Models\Lane;
-use App\Models\ShootingRangeOpeningHour;
+use App\Models\ShootingRange;
 use App\Models\ShootingRangeHoliday;
 use App\Models\ShootingRangeInterval;
 use App\Models\ShootingRangeIntervalArchive;
+use App\Models\ShootingRangeOpeningHour;
+use App\Models\ShootingRangePackage;
+use App\Models\User;
+use App\Services\ShootingRangeAvailabilityService;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rules;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ShootingsController extends Controller
 {
+    public function __construct(
+        private readonly ShootingRangeAvailabilityService $availability
+    ) {}
+
     /**
      * Display a listing of the resource.
      */
     public function index(Request $request)
     {
-        $messages = "treść jako taka..";
+        $messages = 'treść jako taka..';
         $shootings = collect();
 
         $searched = $request->hasAny([
@@ -43,7 +48,7 @@ class ShootingsController extends Controller
 
         if ($searched) {
             $validated = $request->validate([
-                'date' => ['nullable', 'date'],
+                'date' => ['nullable', 'date', 'after_or_equal:today'],
                 'location' => ['nullable', 'string', 'max:255'],
                 'location_mode' => ['nullable', 'in:radius,voivodeship'],
                 'lat' => ['nullable', 'numeric'],
@@ -83,6 +88,12 @@ class ShootingsController extends Controller
             $query = ShootingRange::query()
                 ->where('is_visible', true)
                 ->where('is_archived', false)
+                ->whereHas('employees', function ($query) {
+                    $query
+                        ->where('shooting_range_employee.role', 'admin')
+                        ->where('shooting_range_employee.is_approved', true)
+                        ->where('users.is_approved', true);
+                })
                 ->whereHas('intervals', function ($q) use ($date) {
                     $q->where('is_active', true)
                         ->whereDate('start_date', '<=', $date)
@@ -150,29 +161,50 @@ class ShootingsController extends Controller
                 }
             } elseif ($location) {
                 $query->where(function ($q) use ($location) {
-                    $q->whereRaw('LOWER(town) LIKE ?', ['%' . mb_strtolower($location) . '%'])
-                        ->orWhereRaw('LOWER(name) LIKE ?', ['%' . mb_strtolower($location) . '%'])
-                        ->orWhereRaw('LOWER(street) LIKE ?', ['%' . mb_strtolower($location) . '%']);
+                    $q->whereRaw('LOWER(town) LIKE ?', ['%'.mb_strtolower($location).'%'])
+                        ->orWhereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower($location).'%'])
+                        ->orWhereRaw('LOWER(street) LIKE ?', ['%'.mb_strtolower($location).'%']);
                 });
             } else {
                 $query->orderBy('name');
             }
 
+            $user = $request->user();
             $shootings = $query
-                ->with(['lanes' => function ($q) use ($laneLength, $date) {
+                ->with(['lanes' => function ($q) use ($laneLength) {
                     if ($laneLength > 0) {
                         $q->where('length', '>=', $laneLength);
                     }
-
-                    $q->withCount(['reservations as reservations_count' => function ($r) use ($date) {
-                        $r->whereDate('start', $date)
-                            ->whereIn('status', ['pending', 'approved']);
-                    }]);
                 }])
                 ->get()
-                ->map(function ($shootingRange) {
+                ->filter(function (ShootingRange $shootingRange) use ($date, $laneLength, $user) {
+                    return $this->availability->availableForSearch(
+                        $shootingRange,
+                        $date,
+                        $laneLength,
+                        $user
+                    )['allowed'];
+                })
+                ->map(function (ShootingRange $shootingRange) use ($date) {
                     $shootingRange->available_lanes = $shootingRange->lanes
-                        ->filter(fn ($lane) => $lane->reservations_count < $lane->numberOfPositions)
+                        ->map(function (Lane $lane) use ($shootingRange, $date) {
+                            $available = $this->availability
+                                ->maximumAvailablePositionsForDate(
+                                    $lane,
+                                    $shootingRange,
+                                    $date
+                                );
+                            $lane->reservations_count = max(
+                                0,
+                                (int) $lane->numberOfPositions - $available
+                            );
+
+                            return $lane;
+                        })
+                        ->filter(
+                            fn (Lane $lane) => $lane->reservations_count
+                                < $lane->numberOfPositions
+                        )
                         ->values();
 
                     return $shootingRange;
@@ -184,7 +216,7 @@ class ShootingsController extends Controller
         return view('home', compact('messages', 'shootings', 'searched'));
     }
 
-    //pomocnicza
+    // pomocnicza
     private function normalizePolishLocation(string $value): string
     {
         return str($value)
@@ -204,7 +236,7 @@ class ShootingsController extends Controller
             ->toString();
     }
 
-    //pomocnicza
+    // pomocnicza
     private function detectVoivodeshipKey(string $value, array $voivodeships): ?string
     {
         $normalized = $this->normalizePolishLocation($value);
@@ -222,37 +254,45 @@ class ShootingsController extends Controller
         return null;
     }
 
-private function geocodeLocation(string $location): ?array
-{
-    $response = Http::get('https://maps.googleapis.com/maps/api/geocode/json', [
-        'address' => $location,
-        'components' => 'country:PL',
-        'key' => config('services.google_maps.key'),
-    ]);
+    private function geocodeLocation(string $location): ?array
+    {
+        $response = Http::get('https://maps.googleapis.com/maps/api/geocode/json', [
+            'address' => $location,
+            'components' => 'country:PL',
+            'key' => config('services.google_maps.key'),
+        ]);
 
-    if (! $response->ok()) {
-        return null;
+        if (! $response->ok()) {
+            return null;
+        }
+
+        $result = $response->json('results.0.geometry.location');
+
+        if (! $result) {
+            return null;
+        }
+
+        return [
+            'lat' => $result['lat'],
+            'lng' => $result['lng'],
+        ];
     }
-
-    $result = $response->json('results.0.geometry.location');
-
-    if (! $result) {
-        return null;
-    }
-
-    return [
-        'lat' => $result['lat'],
-        'lng' => $result['lng'],
-    ];
-}
-
-
 
     public function maps()
     {
         $shootings = ShootingRange::where('is_visible', true)
             ->where('is_archived', false)
-            ->get();
+            ->get()
+            ->filter(
+                fn (ShootingRange $shootingRange) => $this->availability
+                    ->canUserAccessRange(
+                        $shootingRange,
+                        auth()->user(),
+                        today()
+                    )
+            )
+            ->values();
+
         return view('maps.index', compact('shootings'));
     }
 
@@ -298,26 +338,26 @@ private function geocodeLocation(string $location): ?array
             ])
             ->orderBy('name')
             ->get()
-            ->map(function (ShootingRange $shootingRange) use ($today) {
-                $hasActiveAdmin = $shootingRange->employees->contains(function (User $employee) {
-                    return $employee->pivot->role === 'admin'
-                        && (bool) $employee->pivot->is_approved
-                        && (bool) $employee->is_approved;
-                });
-
-                $hasValidInterval = $shootingRange->intervals->contains(function ($interval) use ($today) {
-                    return $interval->is_active
-                        && $interval->start_date->lte($today)
-                        && $interval->end_date->gte($today);
-                });
-
-                $shootingRange->can_reserve_online = $hasActiveAdmin
-                    && $hasValidInterval
-                    && $shootingRange->openingHours->isNotEmpty()
-                    && $shootingRange->lanes->isNotEmpty();
+            ->filter(
+                fn (ShootingRange $shootingRange) => $this->availability
+                    ->canUserAccessRange(
+                        $shootingRange,
+                        $request->user(),
+                        $today
+                    )
+            )
+            ->map(function (ShootingRange $shootingRange) use ($today, $request) {
+                $shootingRange->can_reserve_online = $this->availability
+                    ->availableForSearch(
+                        $shootingRange,
+                        $today,
+                        0,
+                        $request->user()
+                    )['allowed'];
 
                 return $shootingRange;
-            });
+            })
+            ->values();
 
         return view('shooting_ranges.index', compact(
             'shootings',
@@ -343,8 +383,6 @@ private function geocodeLocation(string $location): ?array
         //
     }
 
-
-
     /**
      * Display the specified resource.
      */
@@ -352,7 +390,6 @@ private function geocodeLocation(string $location): ?array
     {
         //
     }
-
 
     public function publicShow(string $endpoint)
     {
@@ -401,11 +438,13 @@ private function geocodeLocation(string $location): ?array
                 });
         }
 
-        $canReserve = $hasActiveAdmin
-            && $hasValidInterval
-            && $hasOpeningHours
-            && $hasLanes
-            && $hasPrivateAccess;
+        $availability = $this->availability->availableForSearch(
+            $shootingRange,
+            $today,
+            0,
+            auth()->user()
+        );
+        $canReserve = $availability['allowed'];
 
         $reservationUnavailableReason = match (true) {
             ! $hasActiveAdmin => 'Strzelnica nie posiada aktywnego administratora.',
@@ -417,6 +456,7 @@ private function geocodeLocation(string $location): ?array
                 : 'Rezerwacja wymaga zalogowania i aktywnego zaproszenia.',
             default => '',
         };
+        $reservationUnavailableReason = $availability['reason'] ?? '';
 
         return view('shooting_ranges.public-show', compact(
             'shootingRange',
@@ -425,15 +465,10 @@ private function geocodeLocation(string $location): ?array
         ));
     }
 
-
-
-
-
     /**
      * Remove the specified resource from storage.
      */
     public function destroy(string $id) {}
-
 
     /**
      * Usuwanie osi strzelnicy.
@@ -461,16 +496,7 @@ private function geocodeLocation(string $location): ?array
             ->with('success', 'Oś strzelecka została usunięta!');
     }
 
-
-
-
-
-
-    //dodawanie strzelnicy przez gościa
-
-
-
-
+    // dodawanie strzelnicy przez gościa
 
     /* walidacja zachodzenia się na siebie zakresów dat
 if (ShootingRangeInterval::hasOverlap(
@@ -482,11 +508,11 @@ if (ShootingRangeInterval::hasOverlap(
 }
 */
 
-    //==================================================================================
+    // ==================================================================================
     // ROLE: SUPERADMIN
-    //==================================================================================
+    // ==================================================================================
 
-    //LISTA STRZELNIC W PANELU SUPERADMINA
+    // LISTA STRZELNIC W PANELU SUPERADMINA
     public function listSuperAdmin()
     {
         $shootings = ShootingRange::query()
@@ -499,15 +525,15 @@ if (ShootingRangeInterval::hasOverlap(
         return view('superAdmin.shooting_ranges.index', compact('shootings'));
     }
 
-    //IMPORT STRZELNIC Z EXCELA
+    // IMPORT STRZELNIC Z EXCELA
     public function import(Request $request)
     {
         $request->validate([
             'file' => [
                 'required',
                 'file',
-                'mimes:xls,xlsx'
-            ]
+                'mimes:xls,xlsx',
+            ],
         ]);
 
         $spreadsheet = IOFactory::load(
@@ -569,7 +595,8 @@ if (ShootingRangeInterval::hasOverlap(
             ]);
 
             if ($validator->fails()) {
-                $errors[] = 'Wiersz ' . ($index + 1) . ': ' . implode(', ', $validator->errors()->all());
+                $errors[] = 'Wiersz '.($index + 1).': '.implode(', ', $validator->errors()->all());
+
                 continue;
             }
 
@@ -577,7 +604,8 @@ if (ShootingRangeInterval::hasOverlap(
 
             // <sprawdzanie duplikatów
             if ($existingByEmail) {
-                $errors[] = 'Wiersz ' . ($index+1) . ': pominięto — istnieje już strzelnica z tym samym adresem email: ' . $mapped['email'];
+                $errors[] = 'Wiersz '.($index + 1).': pominięto — istnieje już strzelnica z tym samym adresem email: '.$mapped['email'];
+
                 continue;
             }
 
@@ -589,7 +617,8 @@ if (ShootingRangeInterval::hasOverlap(
 
             foreach ($sameAddressRanges as $existingRange) {
                 if ($this->isSimilarName($mapped['name'], $existingRange->name)) {
-                    $errors[] = 'Wiersz ' . ($index+1) . ': pominięto — prawdopodobny duplikat: podobna nazwa + ten sam adres. Istnieje: ' . $existingRange->name;
+                    $errors[] = 'Wiersz '.($index + 1).': pominięto — prawdopodobny duplikat: podobna nazwa + ten sam adres. Istnieje: '.$existingRange->name;
+
                     continue 2;
                 }
             }
@@ -683,8 +712,7 @@ if (ShootingRangeInterval::hasOverlap(
             ->with('success', 'Dane strzelnicy zostały zaktualizowane.');
     }
 
-
-    //PAKIETY STRZELNICY W PANELU SUPERADMINA
+    // PAKIETY STRZELNICY W PANELU SUPERADMINA
     public function packages($id)
     {
         $shooting = ShootingRange::where('id', $id)->firstOrFail();
@@ -692,7 +720,7 @@ if (ShootingRangeInterval::hasOverlap(
         return view('superAdmin.shooting_ranges.index', compact('shootings'));
     }
 
-    //ZMIANA STATUSU WIDOCZNOŚCI STRZELNICY NA STRONIE
+    // ZMIANA STATUSU WIDOCZNOŚCI STRZELNICY NA STRONIE
     public function toggleVisibility(ShootingRange $shootingRange)
     {
         if ($shootingRange->is_archived) {
@@ -749,6 +777,7 @@ if (ShootingRangeInterval::hasOverlap(
             if ($range->reservations_count > 0) {
                 if (! $archiveWithReservations) {
                     $blocked[] = $range->name;
+
                     continue;
                 }
 
@@ -758,6 +787,7 @@ if (ShootingRangeInterval::hasOverlap(
                 ]);
 
                 $archived++;
+
                 continue;
             }
 
@@ -768,7 +798,7 @@ if (ShootingRangeInterval::hasOverlap(
         if ($blocked) {
             return back()->with(
                 'error',
-                'Nie usunięto strzelnic z rezerwacjami: ' . implode(', ', $blocked) . '. Potwierdź archiwizację, aby ustawić je jako archiwalne.'
+                'Nie usunięto strzelnic z rezerwacjami: '.implode(', ', $blocked).'. Potwierdź archiwizację, aby ustawić je jako archiwalne.'
             );
         }
 
@@ -777,13 +807,13 @@ if (ShootingRangeInterval::hasOverlap(
         if ($deleted > 0) {
             $messages[] = $deleted === 1
                 ? 'Usunięto 1 strzelnicę wraz z przedziałami, galerią, zdjęciami, godzinami pracy, dniami wolnymi i zaproszeniami.'
-                : 'Usunięto ' . $deleted . ' strzelnic wraz z przedziałami, galeriami, zdjęciami, godzinami pracy, dniami wolnymi i zaproszeniami.';
+                : 'Usunięto '.$deleted.' strzelnic wraz z przedziałami, galeriami, zdjęciami, godzinami pracy, dniami wolnymi i zaproszeniami.';
         }
 
         if ($archived > 0) {
             $messages[] = $archived === 1
                 ? 'Zarchiwizowano 1 strzelnicę z istniejącymi rezerwacjami.'
-                : 'Zarchiwizowano ' . $archived . ' strzelnic z istniejącymi rezerwacjami.';
+                : 'Zarchiwizowano '.$archived.' strzelnic z istniejącymi rezerwacjami.';
         }
 
         return back()->with('success', implode(' ', $messages));
@@ -811,29 +841,10 @@ if (ShootingRangeInterval::hasOverlap(
         }
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     public function intervals(ShootingRange $shootingRange)
     {
         $today = Carbon::today();
@@ -890,7 +901,6 @@ if (ShootingRangeInterval::hasOverlap(
             ->map(fn ($packages) => $packages->first())
             ->values();
     }
-
 
     public function storeInterval(Request $request, ShootingRange $shootingRange)
     {
@@ -1019,114 +1029,39 @@ if (ShootingRangeInterval::hasOverlap(
     {
         abort_if($interval->shooting_range_id !== $shootingRange->id, 404);
 
-
         ShootingRangeIntervalArchive::where('shooting_range_interval_id', $interval->id)
-        ->update([
-            'operator_update_id' => auth()->id(),
-            'is_active' => 0,
-        ]);
+            ->update([
+                'operator_update_id' => auth()->id(),
+                'is_active' => 0,
+            ]);
 
         $interval->delete();
 
         return back()->with('success', 'Usunięto przedział z aktywnych.');
     }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    //==================================================================================
+    // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    // ==================================================================================
     // ROLE: ADMINISTRATOR
-    //==================================================================================
+    // ==================================================================================
 
-    //Edycja danych podstawowych strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
+    // Edycja danych podstawowych strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
     public function edit()
     {
         /** @var User $user */
         $user = Auth::user();
         $shootingRange = $user->shootingRanges()
-            //->wherePivot('role', 'admin')
+            // ->wherePivot('role', 'admin')
             ->wherePivot('is_approved', true)
             ->first();
+
         return view('admin.shooting_ranges.edit', compact('shootingRange'));
     }
 
-    //Zapis danych podstawowych strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
+    // Zapis danych podstawowych strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
     public function update(Request $request, ShootingRange $shootingRange)
     {
         $rules = $this->shootingRangeRules();
@@ -1157,26 +1092,27 @@ if (ShootingRangeInterval::hasOverlap(
         return redirect()->route('shooting.edit', ['id' => $shootingRange->id])
             ->with('success', 'Dane strzelnicy zostały zapisane.');
     }
-    //===============================================================================================================================================
+    // ===============================================================================================================================================
 
-    //Edycja godzin otwarcia strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
+    // Edycja godzin otwarcia strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
     public function editTime(Request $request)
     {
         $year = $request->input('year', now()->year);
         /** @var User $user */
         $user = Auth::user();
         $shootingRange = $user->shootingRanges()
-            //->wherePivot('role', 'admin')
+            // ->wherePivot('role', 'admin')
             ->wherePivot('is_approved', true)
             ->first();
         $openingHours = ShootingRangeOpeningHour::whereShootingRangeId($shootingRange->id)->get();
         $holidays = $shootingRange->holidays()->whereYear('date', $year)->orderBy('date')->get();
-        //dd($openingHours);
+
+        // dd($openingHours);
         return view('admin.shooting_ranges.openingTimes', compact('shootingRange', 'openingHours', 'holidays'));
     }
-    //===============================================================================================================================================
+    // ===============================================================================================================================================
 
-    //Zapis godzin otwarcia strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
+    // Zapis godzin otwarcia strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
     public function updateTime(Request $request, ShootingRange $shootingRange)
     {
         $validated = $request->validate([
@@ -1204,8 +1140,8 @@ if (ShootingRangeInterval::hasOverlap(
 
             $shootingRange->openingHours()->create([
                 'day_of_week' => $day + 1,
-                'opens_at'    => $data['opens_at'],
-                'closes_at'   => $data['closes_at'],
+                'opens_at' => $data['opens_at'],
+                'closes_at' => $data['closes_at'],
             ]);
         }
 
@@ -1213,9 +1149,9 @@ if (ShootingRangeInterval::hasOverlap(
             ->back()
             ->with('success', 'Godziny pracy zostały zapisane.');
     }
-    //===============================================================================================================================================
+    // ===============================================================================================================================================
 
-    //Dodawanie wpisu zawierającego dzień wolny
+    // Dodawanie wpisu zawierającego dzień wolny
     public function addHoliday(Request $request, ShootingRange $shootingRange)
     {
         $validated = $request->validate([
@@ -1228,9 +1164,9 @@ if (ShootingRangeInterval::hasOverlap(
 
         return back()->with('success', 'Dodano dzień wolny.');
     }
-    //===============================================================================================================================================
+    // ===============================================================================================================================================
 
-    //Usuwanie wpisu zawierającego dzień wolny
+    // Usuwanie wpisu zawierającego dzień wolny
     public function deleteHoliday(
         ShootingRange $shootingRange,
         ShootingRangeHoliday $holiday
@@ -1244,21 +1180,22 @@ if (ShootingRangeInterval::hasOverlap(
 
         return back()->with('success', 'Usunięto dzień wolny.');
     }
-    //===============================================================================================================================================
+    // ===============================================================================================================================================
 
-    //Edycja osi strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
+    // Edycja osi strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
     public function editLanes()
     {
         /** @var User $user */
         $user = Auth::user();
         $shootingRange = $user->shootingRanges()
-            //->wherePivot('role', 'admin')
+            // ->wherePivot('role', 'admin')
             ->wherePivot('is_approved', true)
             ->first();
+
         return view('admin.shooting_ranges.lanes', compact('shootingRange'));
     }
 
-    //Zapis nowej osi strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
+    // Zapis nowej osi strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
     public function updateLane(Request $request, $id)
     {
         $validated = $request->validate(
@@ -1271,14 +1208,14 @@ if (ShootingRangeInterval::hasOverlap(
             ],
             [
                 'name.required' => 'Nazwa osi jest wymagana.',
-                'name.min'      => 'Nazwa osi musi mieć co najmniej :min znak.',
-                'name.max'      => 'Nazwa osi może mieć maksymalnie :max znaków.',
+                'name.min' => 'Nazwa osi musi mieć co najmniej :min znak.',
+                'name.max' => 'Nazwa osi może mieć maksymalnie :max znaków.',
             ]
         );
         /** @var User $user */
         $user = Auth::user();
         $shootingRange = $user->shootingRanges()
-            //->wherePivot('role', 'admin')
+            // ->wherePivot('role', 'admin')
             ->wherePivot('is_approved', true)
             ->first();
 
@@ -1288,7 +1225,7 @@ if (ShootingRangeInterval::hasOverlap(
             ->with('success', 'Oś została zaktualizowana.');
     }
 
-    //Zapis nowej osi strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
+    // Zapis nowej osi strzelnicy(formularz). Dostęp dla pracownika/administratora strzelnicy
     public function storeLane(Request $request)
     {
         $validated = $request->validate(
@@ -1301,14 +1238,14 @@ if (ShootingRangeInterval::hasOverlap(
             ],
             [
                 'name.required' => 'Nazwa osi jest wymagana.',
-                'name.min'      => 'Nazwa osi musi mieć co najmniej :min znak.',
-                'name.max'      => 'Nazwa osi może mieć maksymalnie :max znaków.',
+                'name.min' => 'Nazwa osi musi mieć co najmniej :min znak.',
+                'name.max' => 'Nazwa osi może mieć maksymalnie :max znaków.',
             ]
         );
         /** @var User $user */
         $user = Auth::user();
         $shootingRange = $user->shootingRanges()
-            //->wherePivot('role', 'admin')
+            // ->wherePivot('role', 'admin')
             ->wherePivot('is_approved', true)
             ->first();
 
@@ -1318,15 +1255,15 @@ if (ShootingRangeInterval::hasOverlap(
             ->with('success', 'Oś została dodana');
     }
 
-    //==================================================================================
+    // ==================================================================================
     // ROLE: GOŚĆ
-    //==================================================================================
+    // ==================================================================================
 
     // Dodawanie nowej strzelnicy + tworzenie konta administratora (3 kroki)
     public function step1()
     {
         $url = parse_url(url()->previous(), PHP_URL_PATH);
-        if (($url == "/strzelnica/dodaj/krok-1") || ($url == "/strzelnica/dodaj/krok-2") || ($url == "/strzelnica/dodaj/krok-3")) {
+        if (($url == '/strzelnica/dodaj/krok-1') || ($url == '/strzelnica/dodaj/krok-2') || ($url == '/strzelnica/dodaj/krok-3')) {
 
             return view('shooting_ranges.step1', [
                 'step' => 1,
@@ -1339,12 +1276,10 @@ if (ShootingRangeInterval::hasOverlap(
 
         // start nowego formularza
 
-
         return view('shooting_ranges.step1', [
             'step' => 1,
         ]);
     }
-
 
     public function postStep1(Request $request)
     {
@@ -1371,7 +1306,7 @@ if (ShootingRangeInterval::hasOverlap(
             $oldBrand = session('shooting_range_form.range.brand_file_name');
 
             if ($oldBrand) {
-                $path = public_path('files/brands/' . $oldBrand);
+                $path = public_path('files/brands/'.$oldBrand);
 
                 if (file_exists($path)) {
                     unlink($path);
@@ -1383,15 +1318,17 @@ if (ShootingRangeInterval::hasOverlap(
 
         session()->put('shooting_range_form.range', $validated);
         session()->put('shooting_range_form.step', 2);
+
         return redirect()->route('range.step2');
     }
 
     public function step2()
     {
         $step = 2;
+
         return view('shooting_ranges.step2', [
             'step' => $step,
-            'data' => session('shooting_range_form.lanes', [])
+            'data' => session('shooting_range_form.lanes', []),
         ]);
     }
 
@@ -1409,21 +1346,23 @@ if (ShootingRangeInterval::hasOverlap(
             ],
             [
                 'lanes.*.name.required' => 'Nazwa osi jest wymagana.',
-                'lanes.*.name.min'      => 'Nazwa osi musi mieć co najmniej :min znak.',
-                'lanes.*.name.max'      => 'Nazwa osi może mieć maksymalnie :max znaków.',
+                'lanes.*.name.min' => 'Nazwa osi musi mieć co najmniej :min znak.',
+                'lanes.*.name.max' => 'Nazwa osi może mieć maksymalnie :max znaków.',
             ]
         );
         session()->put('shooting_range_form.lanes', $validated['lanes']);
         session()->put('shooting_range_form.step', 3);
+
         return redirect()->route('range.step3');
     }
 
     public function step3()
     {
         $step = 3;
+
         return view('shooting_ranges.step3', [
             'step' => $step,
-            'admin' => session('shooting_range_form.admin', [])
+            'admin' => session('shooting_range_form.admin', []),
         ]);
     }
 
@@ -1431,16 +1370,16 @@ if (ShootingRangeInterval::hasOverlap(
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:' . User::class],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
             'telephone' => ['nullable', 'string'],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
 
         session()->put('shooting_range_form.admin', $validated);
 
-        //dd(session('shooting_range_form'));
+        // dd(session('shooting_range_form'));
         $rangeData = session()->get('shooting_range_form.range', []);
-        //dd($rangeData);
+        // dd($rangeData);
         $lanesData = session()->get('shooting_range_form.lanes', []);
         $adminData = session()->get('shooting_range_form.admin', []);
 
@@ -1467,14 +1406,12 @@ if (ShootingRangeInterval::hasOverlap(
             ]);
         });
 
-
         session()->forget('shooting_range_form');
 
         return redirect()->route('maps');
     }
 
-
-    //funkcje pomocnicze
+    // funkcje pomocnicze
     private function shootingRangeRules(): array
     {
         return [
@@ -1574,7 +1511,7 @@ if (ShootingRangeInterval::hasOverlap(
         $originalName = $file->getClientOriginalName();
         $extension = $file->getClientOriginalExtension();
 
-        $fileName = uniqid('brand_', true) . '.' . $extension;
+        $fileName = uniqid('brand_', true).'.'.$extension;
 
         $destination = public_path('files/brands');
 
@@ -1596,7 +1533,7 @@ if (ShootingRangeInterval::hasOverlap(
             return;
         }
 
-        $path = public_path('files/brands/' . $shootingRange->brand_file_name);
+        $path = public_path('files/brands/'.$shootingRange->brand_file_name);
 
         if (file_exists($path)) {
             unlink($path);

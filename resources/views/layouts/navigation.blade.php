@@ -92,6 +92,7 @@
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.packages.index') }}">Cenniki</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.pages.index') }}">Strony</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.system-configurations.index') }}">Konfiguracja</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ route('admin.reservations.calendar') }}">Rezerwacje</a></li>
                     @elseif(auth()->user()->isAdmin())
                          @php
                             $navigationShootingRange = auth()->user()
@@ -146,6 +147,12 @@
                                     </a>
                                 </li>
                             </ul>
+                        </li>
+                    @elseif(auth()->user()->isEmployee())
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ route('admin.reservations.calendar') }}">
+                                Rezerwacje
+                            </a>
                         </li>
                     @endif
                 @endauth

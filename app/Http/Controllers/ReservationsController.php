@@ -2,39 +2,31 @@
 
 namespace App\Http\Controllers;
 
-use Carbon\Carbon;
-use Illuminate\Http\Request;
-use App\Models\ShootingRange;
-use App\Models\Reservation;
 use App\Models\Lane;
+use App\Models\Reservation;
+use App\Models\ShootingRange;
+use App\Models\User;
+use App\Services\ShootingRangeAvailabilityService;
+use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
 
 class ReservationsController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
-    {
-        //
-    }
+    public function __construct(
+        private readonly ShootingRangeAvailabilityService $availability
+    ) {}
 
-    public function callendar($id)
+    public function callendar(int $id): View|RedirectResponse
     {
         $shootingRange = ShootingRange::query()
             ->where('is_visible', true)
             ->where('is_archived', false)
-            ->whereHas('employees', function ($query) {
-                $query
-                    ->where('shooting_range_employee.role', 'admin')
-                    ->where('shooting_range_employee.is_approved', true)
-                    ->where('users.is_approved', true);
-            })
-            ->with([
-                'lanes',
-                'openingHours',
-                'holidays',
-                'intervals',
-            ])
+            ->with(['lanes', 'openingHours', 'holidays', 'intervals'])
             ->findOrFail($id);
 
         $maxAdvanceBookingDays = $shootingRange->effectiveMaxAdvanceBookingDays();
@@ -54,26 +46,47 @@ class ReservationsController extends Controller
             );
         }
 
-        $calendarDate = $requestedDate->format('Y-m-d');
+        $user = auth()->user();
 
+        if (! $this->availability->canUserAccessRange($shootingRange, $user, $requestedDate)) {
+            if (! $user) {
+                return redirect()
+                    ->route('login')
+                    ->with('error', 'Zaloguj się, aby uzyskać dostęp do rezerwacji tej strzelnicy.');
+            }
+
+            abort(403, 'Nie posiadasz aktywnego zaproszenia do tej strzelnicy.');
+        }
+
+        $requirements = $this->availability->basicRequirements(
+            $shootingRange,
+            $requestedDate
+        );
+
+        if (! $requirements['allowed']) {
+            session()->flash('error', $requirements['reason']);
+        }
+
+        $calendarDate = $requestedDate->format('Y-m-d');
         $reservations = Reservation::query()
             ->where('shooting_range_id', $shootingRange->id)
-            ->whereIn('status', ['pending', 'approved'])
-            ->whereDate('start', '>=', Carbon::parse($calendarDate)->copy()->subDays(7))
-            ->whereDate('start', '<=', Carbon::parse($calendarDate)->copy()->addDays(14))
+            ->whereIn('status', [
+                Reservation::STATUS_PENDING,
+                Reservation::STATUS_APPROVED,
+            ])
+            ->whereDate('start', '>=', $requestedDate->copy()->subDays(7))
+            ->whereDate('start', '<=', $requestedDate->copy()->addDays(14))
             ->get()
-            ->map(function ($reservation) {
-                return [
-                    'id' => $reservation->id,
-                    'line_id' => $reservation->line_id,
-                    'start_date' => $reservation->start->format('Y-m-d'),
-                    'start_time' => $reservation->start->format('H:i'),
-                    'end_time' => $reservation->end->format('H:i'),
-                    'status' => $reservation->status,
-                    'positions_count' => $reservation->positions_count ?? 1,
-                    'title' => 'Rezerwacja',
-                ];
-            });
+            ->map(fn (Reservation $reservation) => [
+                'id' => $reservation->id,
+                'line_id' => $reservation->line_id,
+                'start_date' => $reservation->start->format('Y-m-d'),
+                'start_time' => $reservation->start->format('H:i'),
+                'end_time' => $reservation->end->format('H:i'),
+                'status' => $reservation->status,
+                'positions_count' => $reservation->positions_count ?? 1,
+                'title' => 'Rezerwacja',
+            ]);
 
         return view('reservation.calendar-day-test', compact(
             'shootingRange',
@@ -84,287 +97,343 @@ class ReservationsController extends Controller
         ));
     }
 
-    public function events(Request $request)
-    {
-        // optional: range of dates
-        $start = $request->query('start');
-        $end   = $request->query('end');
-
-        $events = Reservation::whereBetween('start', [$start, $end])->get();
-
-        return response()->json(
-            $events->map(fn($r) => [
-                'id'         => $r->id,
-                'resourceId' => $r->axis_id,
-                'start'      => $r->start,
-                'end'        => $r->end,
-                'title'      => "Zajęte",
-            ])
-        );
-    }
-
-    public function adminCalendar(Request $request)
+    public function adminCalendar(Request $request): View
     {
         $validated = $request->validate([
             'view' => ['nullable', 'in:day,week,month'],
             'date' => ['nullable', 'date'],
+            'shooting_range_id' => ['nullable', 'integer', 'exists:shooting_ranges,id'],
         ]);
 
+        $user = $request->user();
+        $rangesQuery = $user->isSuperAdmin()
+            ? ShootingRange::query()
+            : $user->shootingRanges()->wherePivot('is_approved', true);
+
+        $managedRanges = $rangesQuery
+            ->orderBy('name')
+            ->get(['shooting_ranges.id', 'shooting_ranges.name']);
+
+        $shootingRangeId = (int) (
+            $validated['shooting_range_id']
+            ?? $managedRanges->first()?->id
+        );
+
+        abort_if($shootingRangeId === 0, 404, 'Nie przypisano żadnej strzelnicy.');
+
+        $shootingRange = ShootingRange::with(['lanes', 'openingHours'])
+            ->findOrFail($shootingRangeId);
+
+        abort_unless(
+            $user->managesShootingRange($shootingRange),
+            403,
+            'Nie masz uprawnień do tej strzelnicy.'
+        );
+
         $viewMode = $validated['view'] ?? 'day';
-        $selectedDate = Carbon::parse($validated['date'] ?? now()->toDateString())->startOfDay();
+        $selectedDate = Carbon::parse(
+            $validated['date'] ?? now()->toDateString()
+        )->startOfDay();
 
-        $shootingRange = auth()->user()
-            ->shootingRanges()
-            ->wherePivot('is_approved', true)
-            ->with(['lanes', 'openingHours'])
-            ->firstOrFail();
-
-        if ($viewMode === 'month') {
-            $periodStart = $selectedDate->copy()->startOfMonth()->startOfWeek();
-            $periodEnd = $selectedDate->copy()->endOfMonth()->endOfWeek()->endOfDay();
-        } elseif ($viewMode === 'week') {
-            $periodStart = $selectedDate->copy()->startOfWeek();
-            $periodEnd = $selectedDate->copy()->endOfWeek()->endOfDay();
-        } else {
-            $periodStart = $selectedDate->copy()->startOfDay();
-            $periodEnd = $selectedDate->copy()->endOfDay();
-        }
+        [$periodStart, $periodEnd] = $this->calendarPeriod(
+            $viewMode,
+            $selectedDate
+        );
 
         $reservations = Reservation::query()
             ->where('shooting_range_id', $shootingRange->id)
             ->where('start', '<=', $periodEnd)
             ->where('end', '>=', $periodStart)
-            ->with(['user:id,name,email,telephone', 'lane:id,name,length,numberOfPositions'])
+            ->with(['customer:id,name,email,telephone', 'user:id,name,email,telephone', 'lane'])
             ->orderBy('start')
             ->get()
-            ->map(function (Reservation $reservation) {
-                return [
-                    'id' => $reservation->id,
-                    'user_name' => $reservation->user?->name ?? 'Brak danych',
-                    'user_email' => $reservation->user?->email,
-                    'user_phone' => $reservation->user?->telephone,
-                    'lane_name' => $reservation->lane?->name ?? 'Usunięta oś',
-                    'lane_length' => $reservation->lane?->length,
-                    'start' => $reservation->start->format('Y-m-d H:i'),
-                    'end' => $reservation->end->format('Y-m-d H:i'),
-                    'date' => $reservation->start->format('Y-m-d'),
-                    'start_time' => $reservation->start->format('H:i'),
-                    'end_time' => $reservation->end->format('H:i'),
-                    'positions_count' => $reservation->positions_count,
-                    'status' => $reservation->status,
-                ];
-            })
+            ->map(fn (Reservation $reservation) => [
+                'id' => $reservation->id,
+                'user_name' => $reservation->customer_name
+                    ?? $reservation->customer?->name
+                    ?? $reservation->user?->name
+                    ?? 'Brak danych',
+                'user_email' => $reservation->customer_email
+                    ?? $reservation->customer?->email
+                    ?? $reservation->user?->email,
+                'user_phone' => $reservation->customer_phone
+                    ?? $reservation->customer?->telephone
+                    ?? $reservation->user?->telephone,
+                'source' => $reservation->source,
+                'lane_name' => $reservation->lane?->name ?? 'Usunięta oś',
+                'lane_length' => $reservation->lane?->length,
+                'start' => $reservation->start->format('Y-m-d H:i'),
+                'end' => $reservation->end->format('Y-m-d H:i'),
+                'date' => $reservation->start->format('Y-m-d'),
+                'start_time' => $reservation->start->format('H:i'),
+                'end_time' => $reservation->end->format('H:i'),
+                'positions_count' => $reservation->positions_count,
+                'status' => $reservation->status,
+            ])
             ->values();
 
         $openingHours = $shootingRange->openingHours
-            ->mapWithKeys(function ($openingHour) {
-                return [
-                    (int) $openingHour->day_of_week => [
-                        'opens_at' => Carbon::parse($openingHour->opens_at)->format('H:i'),
-                        'closes_at' => Carbon::parse($openingHour->closes_at)->format('H:i'),
-                    ],
-                ];
-            });
+            ->mapWithKeys(fn ($openingHour) => [
+                (int) $openingHour->day_of_week => [
+                    'opens_at' => Carbon::parse($openingHour->opens_at)->format('H:i'),
+                    'closes_at' => Carbon::parse($openingHour->closes_at)->format('H:i'),
+                ],
+            ]);
 
         return view('admin.reservations.calendar', [
             'shootingRange' => $shootingRange,
+            'managedRanges' => $managedRanges,
             'reservations' => $reservations,
             'openingHours' => $openingHours,
             'viewMode' => $viewMode,
             'selectedDate' => $selectedDate->format('Y-m-d'),
             'periodStart' => $periodStart->format('Y-m-d'),
             'periodEnd' => $periodEnd->format('Y-m-d'),
+            'maxBookingDate' => $shootingRange->latestBookableDate(),
         ]);
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function store(Request $request): RedirectResponse
     {
-        //
+        $validated = $this->validateReservationInput($request);
+        $actor = $request->user();
+
+        try {
+            DB::transaction(function () use ($validated, $actor) {
+                $shootingRange = ShootingRange::findOrFail(
+                    $validated['shooting_range_id']
+                );
+                $lane = Lane::query()
+                    ->where('shooting_range_id', $shootingRange->id)
+                    ->lockForUpdate()
+                    ->findOrFail($validated['line_id']);
+                [$start, $end] = $this->reservationPeriod($validated);
+
+                $this->availability->validateReservation(
+                    $shootingRange,
+                    $lane,
+                    $actor,
+                    $start,
+                    $end,
+                    (int) $validated['positions_count']
+                );
+
+                Reservation::create([
+                    'user_id' => $actor->id,
+                    'mod_id' => $actor->id,
+                    'customer_user_id' => $actor->id,
+                    'customer_name' => $actor->name,
+                    'customer_email' => $actor->email,
+                    'customer_phone' => $actor->telephone,
+                    'created_by_user_id' => $actor->id,
+                    'source' => Reservation::SOURCE_ONLINE_ACCOUNT,
+                    'shooting_range_id' => $shootingRange->id,
+                    'line_id' => $lane->id,
+                    'start' => $start,
+                    'end' => $end,
+                    'positions_count' => $validated['positions_count'],
+                    'status' => Reservation::STATUS_PENDING,
+                ]);
+            });
+        } catch (ValidationException $exception) {
+            return $this->reservationValidationRedirect($exception);
+        }
+
+        return back()->with('success', 'Rezerwacja została dodana i oczekuje na zatwierdzenie.');
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
+    public function storeByStaff(Request $request): RedirectResponse
     {
-        if (! auth()->check()) {
-            return redirect()
-                ->route('login')
-                ->with('error', 'Musisz być zalogowany, aby dokonać rezerwacji.');
+        $customerEmailRules = ['required', 'email', 'max:255'];
+
+        if ($request->input('customer_type') === 'account') {
+            $customerEmailRules[] = Rule::exists('users', 'email');
         }
 
         $validated = $request->validate([
+            ...$this->reservationRules(),
+            'customer_type' => ['required', Rule::in(['account', 'guest'])],
+            'customer_name' => ['required_if:customer_type,guest', 'nullable', 'string', 'max:255'],
+            'customer_email' => $customerEmailRules,
+            'customer_phone' => ['nullable', 'string', 'max:50'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $actor = $request->user();
+
+        try {
+            DB::transaction(function () use ($validated, $actor) {
+                $shootingRange = ShootingRange::findOrFail(
+                    $validated['shooting_range_id']
+                );
+                $lane = Lane::query()
+                    ->where('shooting_range_id', $shootingRange->id)
+                    ->lockForUpdate()
+                    ->findOrFail($validated['line_id']);
+                [$start, $end] = $this->reservationPeriod($validated);
+
+                $this->availability->validateReservation(
+                    $shootingRange,
+                    $lane,
+                    $actor,
+                    $start,
+                    $end,
+                    (int) $validated['positions_count'],
+                    true
+                );
+
+                $customer = $validated['customer_type'] === 'account'
+                    ? User::where('email', $validated['customer_email'])->firstOrFail()
+                    : null;
+                $isGuest = $customer === null;
+
+                Reservation::create([
+                    // Kolumny zgodnościowe pozostają do czasu drugiego etapu migracji.
+                    'user_id' => $customer?->id ?? $actor->id,
+                    'mod_id' => $actor->id,
+                    'customer_user_id' => $customer?->id,
+                    'customer_name' => $customer?->name
+                        ?? ($validated['customer_name'] ?? 'Brak danych'),
+                    'customer_email' => $customer?->email
+                        ?? $validated['customer_email'],
+                    'customer_phone' => $customer?->telephone
+                        ?? ($validated['customer_phone'] ?? null),
+                    'created_by_user_id' => $actor->id,
+                    'source' => $isGuest
+                        ? Reservation::SOURCE_STAFF_GUEST
+                        : Reservation::SOURCE_STAFF_ACCOUNT,
+                    'shooting_range_id' => $shootingRange->id,
+                    'line_id' => $lane->id,
+                    'start' => $start,
+                    'end' => $end,
+                    'positions_count' => $validated['positions_count'],
+                    'status' => Reservation::STATUS_APPROVED,
+                    'approved_by_user_id' => $actor->id,
+                    'approved_at' => now(),
+                    'notes' => $validated['notes'] ?? null,
+                ]);
+            });
+        } catch (ValidationException $exception) {
+            return $this->reservationValidationRedirect($exception);
+        }
+
+        return back()->with('success', 'Rezerwacja została zapisana i zatwierdzona.');
+    }
+
+    public function updateStatus(
+        Request $request,
+        Reservation $reservation
+    ): RedirectResponse {
+        abort_unless(
+            $request->user()->managesShootingRange($reservation->shootingRange),
+            403
+        );
+
+        $validated = $request->validate([
+            'status' => ['required', Rule::in([
+                Reservation::STATUS_PENDING,
+                Reservation::STATUS_APPROVED,
+                Reservation::STATUS_CANCELLED,
+            ])],
+            'cancellation_reason' => [
+                'required_if:status,'.Reservation::STATUS_CANCELLED,
+                'nullable',
+                'string',
+                'max:500',
+            ],
+        ]);
+
+        $attributes = [
+            'status' => $validated['status'],
+            'mod_id' => $request->user()->id,
+        ];
+
+        if ($validated['status'] === Reservation::STATUS_APPROVED) {
+            $attributes += [
+                'approved_by_user_id' => $request->user()->id,
+                'approved_at' => now(),
+                'cancelled_by_user_id' => null,
+                'cancelled_at' => null,
+                'cancellation_reason' => null,
+            ];
+        } elseif ($validated['status'] === Reservation::STATUS_CANCELLED) {
+            $attributes += [
+                'cancelled_by_user_id' => $request->user()->id,
+                'cancelled_at' => now(),
+                'cancellation_reason' => $validated['cancellation_reason'],
+            ];
+        } else {
+            $attributes += [
+                'approved_by_user_id' => null,
+                'approved_at' => null,
+                'cancelled_by_user_id' => null,
+                'cancelled_at' => null,
+                'cancellation_reason' => null,
+            ];
+        }
+
+        $reservation->update($attributes);
+
+        return back()->with('success', 'Status rezerwacji został zmieniony.');
+    }
+
+    private function validateReservationInput(Request $request): array
+    {
+        return $request->validate($this->reservationRules());
+    }
+
+    private function reservationValidationRedirect(
+        ValidationException $exception
+    ): RedirectResponse {
+        $message = $exception->errors()['reservation'][0]
+            ?? 'Nie udało się zapisać rezerwacji.';
+
+        return back()
+            ->withInput()
+            ->with('error', $message);
+    }
+
+    private function reservationRules(): array
+    {
+        return [
             'shooting_range_id' => ['required', 'integer', 'exists:shooting_ranges,id'],
             'line_id' => ['required', 'integer', 'exists:lanes,id'],
-            'date' => ['required', 'date'],
+            'date' => ['required', 'date_format:Y-m-d'],
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
             'positions_count' => ['required', 'integer', 'min:1'],
-        ]);
-
-        $shootingRange = ShootingRange::query()
-            ->where('is_visible', true)
-            ->where('is_archived', false)
-            ->whereHas('employees', function ($query) {
-                $query
-                    ->where('shooting_range_employee.role', 'admin')
-                    ->where('shooting_range_employee.is_approved', true)
-                    ->where('users.is_approved', true);
-            })
-            ->with(['openingHours', 'holidays'])
-            ->findOrFail($validated['shooting_range_id']);
-
-        $lane = Lane::where('id', $validated['line_id'])
-            ->where('shooting_range_id', $shootingRange->id)
-            ->firstOrFail();
-
-            if ((int) $validated['positions_count'] > $lane->numberOfPositions) {
-                return back()->with('error', 'Wybrana liczba miejsc przekracza liczbę stanowisk na osi.');
-            }
-
-        $start = Carbon::parse($validated['date'] . ' ' . $validated['start_time']);
-        $end = Carbon::parse($validated['date'] . ' ' . $validated['end_time']);
-        $date = $start->copy()->startOfDay();
-
-        if (! $shootingRange->allowsReservationDate($start)) {
-            if ($start->lt(today())) {
-                return back()
-                    ->withInput()
-                    ->with('error', 'Nie można rezerwować terminów z przeszłości.');
-            }
-
-            $maxAdvanceBookingDays = $shootingRange->effectiveMaxAdvanceBookingDays();
-
-            return back()
-                ->withInput()
-                ->with(
-                    'error',
-                    "Rezerwacji można dokonać maksymalnie {$maxAdvanceBookingDays} dni do przodu."
-                );
-        }
-
-        $hasValidInterval = $shootingRange->intervals()
-            ->where('is_active', true)
-            ->whereDate('start_date', '<=', $date)
-            ->whereDate('end_date', '>=', $date)
-            ->exists();
-
-        if (! $hasValidInterval) {
-            return back()->with('error', 'Strzelnica nie ma aktywnego lub ważnego przedziału pracy.');
-        }
-
-        $isHoliday = $shootingRange->holidays()
-            ->whereDate('date', $date)
-            ->exists();
-
-        if ($isHoliday) {
-            return back()->with('error', 'Strzelnica jest nieczynna w wybranym dniu.');
-        }
-
-        $openingHour = $shootingRange->openingHours()
-            ->where('day_of_week', $start->isoWeekday())
-            ->first();
-
-        if (! $openingHour) {
-            return back()->with('error', 'Strzelnica nie pracuje w wybranym dniu.');
-        }
-
-        $opensAt = Carbon::parse(
-            $validated['date'] . ' ' . Carbon::parse($openingHour->opens_at)->format('H:i:s')
-        );
-
-        $closesAt = Carbon::parse(
-            $validated['date'] . ' ' . Carbon::parse($openingHour->closes_at)->format('H:i:s')
-        );
-
-        if ($start->lt($opensAt) || $end->gt($closesAt)) {
-            return back()->with('error', 'Godziny rezerwacji są poza godzinami pracy strzelnicy.');
-        }
-
-        $overlappingReservationsCount = Reservation::where('line_id', $lane->id)
-            ->whereIn('status', ['pending', 'approved'])
-            ->where('start', '<', $end)
-            ->where('end', '>', $start)
-            ->count();
-
-        if ($overlappingReservationsCount >= $lane->numberOfPositions) {
-            return back()->with('error', 'Brak wolnych miejsc na wybranej osi w tym terminie.');
-        }
-
-        $requestedPositions = (int) $validated['positions_count'];
-
-        if ($requestedPositions > $lane->numberOfPositions) {
-            return back()->with('error', 'Wybrana liczba miejsc przekracza liczbę stanowisk na osi.');
-        }
-
-        $slotStart = $start->copy();
-
-        while ($slotStart->lt($end)) {
-            $slotEnd = $slotStart->copy()->addMinutes(30);
-
-            $reservedPositionsInSlot = Reservation::where('line_id', $lane->id)
-                ->whereIn('status', ['pending', 'approved'])
-                ->where('start', '<', $slotEnd)
-                ->where('end', '>', $slotStart)
-                ->sum('positions_count');
-
-            if (($reservedPositionsInSlot + $requestedPositions) > $lane->numberOfPositions) {
-                return back()->with(
-                    'error',
-                    'Brak wystarczającej liczby wolnych miejsc w przedziale ' .
-                    $slotStart->format('H:i') . ' - ' . $slotEnd->format('H:i') . '.'
-                );
-            }
-
-            $slotStart->addMinutes(30);
-        }
-
-        Reservation::create([
-            'user_id' => auth()->id(),
-            'mod_id' => auth()->id(),
-            'shooting_range_id' => $shootingRange->id,
-            'line_id' => $lane->id,
-            'start' => $start,
-            'end' => $end,
-            'positions_count' => $validated['positions_count'],
-            'status' => 'pending',
-        ]);
-
-        return back()->with('success', 'Rezerwacja została dodana.');
+        ];
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
+    private function reservationPeriod(array $validated): array
     {
-        //
+        return [
+            Carbon::createFromFormat(
+                'Y-m-d H:i',
+                $validated['date'].' '.$validated['start_time']
+            ),
+            Carbon::createFromFormat(
+                'Y-m-d H:i',
+                $validated['date'].' '.$validated['end_time']
+            ),
+        ];
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
+    private function calendarPeriod(string $viewMode, Carbon $date): array
     {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+        return match ($viewMode) {
+            'month' => [
+                $date->copy()->startOfMonth()->startOfWeek(),
+                $date->copy()->endOfMonth()->endOfWeek()->endOfDay(),
+            ],
+            'week' => [
+                $date->copy()->startOfWeek(),
+                $date->copy()->endOfWeek()->endOfDay(),
+            ],
+            default => [
+                $date->copy()->startOfDay(),
+                $date->copy()->endOfDay(),
+            ],
+        };
     }
 }
