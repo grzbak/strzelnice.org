@@ -186,6 +186,145 @@ class ReservationsController extends Controller
         ]);
     }
 
+    public function myReservations(Request $request): View
+    {
+        $user = $request->user();
+        $reservations = Reservation::query()
+            ->where(function ($query) use ($user) {
+                $query
+                    ->where('customer_user_id', $user->id)
+                    ->orWhere(function ($query) use ($user) {
+                        $query
+                            ->whereNull('customer_user_id')
+                            ->where('user_id', $user->id)
+                            ->where(function ($query) {
+                                $query
+                                    ->whereNull('source')
+                                    ->orWhere(
+                                        'source',
+                                        Reservation::SOURCE_ONLINE_ACCOUNT
+                                    );
+                            });
+                    });
+            })
+            ->with(['shootingRange:id,name,town', 'lane:id,name,length'])
+            ->orderByDesc('start')
+            ->get();
+
+        return view('reservation.mine', compact('reservations'));
+    }
+
+    public function editByCustomer(
+        Request $request,
+        Reservation $reservation
+    ): View {
+        $this->authorizeCustomerReservation($request, $reservation);
+        abort_unless(
+            $reservation->status === Reservation::STATUS_PENDING,
+            403,
+            'Można edytować wyłącznie rezerwację oczekującą.'
+        );
+        abort_unless(
+            $reservation->canBeEdited(),
+            403,
+            'Termin tej rezerwacji już się rozpoczął.'
+        );
+
+        $shootingRange = $reservation->shootingRange()
+            ->with(['lanes', 'openingHours'])
+            ->firstOrFail();
+
+        return view('reservation.edit', [
+            'reservation' => $reservation,
+            'shootingRange' => $shootingRange,
+            'openingHours' => $this->openingHoursMap($shootingRange),
+            'maxBookingDate' => $shootingRange->latestBookableDate(),
+        ]);
+    }
+
+    public function updateByCustomer(
+        Request $request,
+        Reservation $reservation
+    ): RedirectResponse {
+        $this->authorizeCustomerReservation($request, $reservation);
+        $validated = $this->validateReservationInput($request);
+        $actor = $request->user();
+
+        try {
+            DB::transaction(function () use (
+                $reservation,
+                $validated,
+                $actor
+            ) {
+                $lockedReservation = Reservation::query()
+                    ->whereKey($reservation->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if (
+                    $lockedReservation->status !== Reservation::STATUS_PENDING
+                    || ! $lockedReservation->canBeEdited()
+                ) {
+                    $this->throwReservationError(
+                        'Rezerwacja nie może już zostać edytowana.'
+                    );
+                }
+
+                if (
+                    (int) $validated['shooting_range_id']
+                    !== (int) $lockedReservation->shooting_range_id
+                ) {
+                    $this->throwReservationError(
+                        'Nie można przenieść rezerwacji do innej strzelnicy.'
+                    );
+                }
+
+                $shootingRange = $lockedReservation->shootingRange;
+                $lane = Lane::query()
+                    ->where('shooting_range_id', $shootingRange->id)
+                    ->where('is_archived', false)
+                    ->lockForUpdate()
+                    ->findOrFail($validated['line_id']);
+                [$start, $end] = $this->reservationPeriod($validated);
+                $isDynamicShooting = (bool) (
+                    $validated['is_dynamic_shooting'] ?? false
+                );
+                $positionsCount = $this->requestedPositions(
+                    $lane,
+                    (int) $validated['positions_count'],
+                    $isDynamicShooting
+                );
+
+                $this->availability->validateReservation(
+                    $shootingRange,
+                    $lane,
+                    $actor,
+                    $start,
+                    $end,
+                    $positionsCount,
+                    false,
+                    $isDynamicShooting,
+                    $lockedReservation->id
+                );
+
+                $lockedReservation->update([
+                    'mod_id' => $actor->id,
+                    'line_id' => $lane->id,
+                    'start' => $start,
+                    'end' => $end,
+                    'positions_count' => $positionsCount,
+                    'is_dynamic_shooting' => $isDynamicShooting,
+                ]);
+            });
+        } catch (ValidationException $exception) {
+            return $this->reservationValidationRedirect($exception);
+        }
+
+        return redirect()
+            ->route('rezerwacje.mine')
+            ->with('success', 'Rezerwacja została zaktualizowana.');
+    }
+
     public function adminCalendar(Request $request): View
     {
         $validated = $request->validate([
@@ -239,6 +378,7 @@ class ReservationsController extends Controller
                 'creator:id,name',
                 'approver:id,name',
                 'canceller:id,name',
+                'finalizer:id,name',
                 'lane',
             ])
             ->orderBy('start')
@@ -255,6 +395,10 @@ class ReservationsController extends Controller
                 'user_phone' => $reservation->customer_phone
                     ?? $reservation->customer?->telephone
                     ?? $reservation->user?->telephone,
+                'customer_user_id' => $reservation->customer_user_id,
+                'customer_type' => $reservation->customer_user_id
+                    ? 'account'
+                    : 'guest',
                 'source' => $reservation->source,
                 'line_id' => $reservation->line_id,
                 'lane_name' => $reservation->lane?->name ?? 'Usunięta oś',
@@ -275,6 +419,10 @@ class ReservationsController extends Controller
                 'approved_by_name' => $reservation->approver?->name,
                 'cancelled_at' => $reservation->cancelled_at?->format('d.m.Y H:i'),
                 'cancelled_by_name' => $reservation->canceller?->name,
+                'finalized_at' => $reservation->finalized_at?->format('d.m.Y H:i'),
+                'finalized_by_name' => $reservation->finalizer?->name,
+                'has_started' => $reservation->start->lessThanOrEqualTo(now()),
+                'can_edit' => $reservation->canBeEdited(),
             ])
             ->values();
 
@@ -362,32 +510,7 @@ class ReservationsController extends Controller
 
     public function storeByStaff(Request $request): RedirectResponse
     {
-        $customerEmailRules = ['nullable', 'email', 'max:255'];
-        $customerPhoneRules = ['nullable', 'string', 'max:50'];
-
-        if ($request->input('customer_type') === 'guest') {
-            array_unshift($customerEmailRules, 'required_without:customer_phone');
-            array_unshift($customerPhoneRules, 'required_without:customer_email');
-        }
-
-        $validated = $request->validate([
-            ...$this->reservationRules(),
-            'customer_type' => ['required', Rule::in(['account', 'guest'])],
-            'customer_user_id' => [
-                'required_if:customer_type,account',
-                'nullable',
-                Rule::exists('users', 'id')->where('is_approved', true),
-            ],
-            'customer_name' => [
-                'required_if:customer_type,guest',
-                'nullable',
-                'string',
-                'max:255',
-            ],
-            'customer_email' => $customerEmailRules,
-            'customer_phone' => $customerPhoneRules,
-            'notes' => ['nullable', 'string', 'max:2000'],
-        ]);
+        $validated = $this->validateStaffReservationInput($request);
 
         $actor = $request->user();
 
@@ -463,6 +586,110 @@ class ReservationsController extends Controller
         return back()->with('success', 'Rezerwacja została zapisana i zatwierdzona.');
     }
 
+    public function updateByStaff(
+        Request $request,
+        Reservation $reservation
+    ): RedirectResponse {
+        abort_unless(
+            $request->user()->managesShootingRange($reservation->shootingRange),
+            403
+        );
+        $validated = $this->validateStaffReservationInput($request);
+        $actor = $request->user();
+
+        try {
+            DB::transaction(function () use (
+                $reservation,
+                $validated,
+                $actor
+            ) {
+                $lockedReservation = Reservation::query()
+                    ->whereKey($reservation->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if (! $lockedReservation->canBeEdited()) {
+                    $this->throwReservationError(
+                        'Po rozpoczęciu terminu nie można edytować parametrów rezerwacji.'
+                    );
+                }
+
+                if (
+                    (int) $validated['shooting_range_id']
+                    !== (int) $lockedReservation->shooting_range_id
+                ) {
+                    $this->throwReservationError(
+                        'Nie można przenieść rezerwacji do innej strzelnicy.'
+                    );
+                }
+
+                $shootingRange = $lockedReservation->shootingRange;
+                abort_unless(
+                    $actor->managesShootingRange($shootingRange),
+                    403
+                );
+                $lane = Lane::query()
+                    ->where('shooting_range_id', $shootingRange->id)
+                    ->where('is_archived', false)
+                    ->lockForUpdate()
+                    ->findOrFail($validated['line_id']);
+                [$start, $end] = $this->reservationPeriod($validated);
+                $isDynamicShooting = (bool) (
+                    $validated['is_dynamic_shooting'] ?? false
+                );
+                $positionsCount = $this->requestedPositions(
+                    $lane,
+                    (int) $validated['positions_count'],
+                    $isDynamicShooting
+                );
+
+                $this->availability->validateReservation(
+                    $shootingRange,
+                    $lane,
+                    $actor,
+                    $start,
+                    $end,
+                    $positionsCount,
+                    true,
+                    $isDynamicShooting,
+                    $lockedReservation->id
+                );
+
+                $customer = $validated['customer_type'] === 'account'
+                    ? User::query()
+                        ->where('is_approved', true)
+                        ->findOrFail($validated['customer_user_id'])
+                    : null;
+                $isGuest = $customer === null;
+
+                $lockedReservation->update([
+                    'user_id' => $customer?->id ?? $actor->id,
+                    'mod_id' => $actor->id,
+                    'customer_user_id' => $customer?->id,
+                    'customer_name' => $customer?->name
+                        ?? ($validated['customer_name'] ?? 'Brak danych'),
+                    'customer_email' => $customer?->email
+                        ?? ($validated['customer_email'] ?? null),
+                    'customer_phone' => $customer?->telephone
+                        ?? ($validated['customer_phone'] ?? null),
+                    'source' => $isGuest
+                        ? Reservation::SOURCE_STAFF_GUEST
+                        : Reservation::SOURCE_STAFF_ACCOUNT,
+                    'line_id' => $lane->id,
+                    'start' => $start,
+                    'end' => $end,
+                    'positions_count' => $positionsCount,
+                    'is_dynamic_shooting' => $isDynamicShooting,
+                    'notes' => $validated['notes'] ?? null,
+                ]);
+            });
+        } catch (ValidationException $exception) {
+            return $this->reservationValidationRedirect($exception);
+        }
+
+        return back()->with('success', 'Rezerwacja została zaktualizowana.');
+    }
+
     public function updateStatus(
         Request $request,
         Reservation $reservation
@@ -477,6 +704,8 @@ class ReservationsController extends Controller
                 Reservation::STATUS_PENDING,
                 Reservation::STATUS_APPROVED,
                 Reservation::STATUS_CANCELLED,
+                Reservation::STATUS_COMPLETED,
+                Reservation::STATUS_NO_SHOW,
             ])],
             'cancellation_reason' => [
                 'required_if:status,'.Reservation::STATUS_CANCELLED,
@@ -490,14 +719,20 @@ class ReservationsController extends Controller
             Reservation::STATUS_PENDING => [
                 Reservation::STATUS_APPROVED,
                 Reservation::STATUS_CANCELLED,
+                Reservation::STATUS_COMPLETED,
+                Reservation::STATUS_NO_SHOW,
             ],
             Reservation::STATUS_APPROVED => [
                 Reservation::STATUS_CANCELLED,
+                Reservation::STATUS_COMPLETED,
+                Reservation::STATUS_NO_SHOW,
             ],
             Reservation::STATUS_CANCELLED => [
                 Reservation::STATUS_PENDING,
                 Reservation::STATUS_APPROVED,
             ],
+            Reservation::STATUS_COMPLETED => [],
+            Reservation::STATUS_NO_SHOW => [],
         ];
 
         if ($validated['status'] === $reservation->status) {
@@ -512,6 +747,25 @@ class ReservationsController extends Controller
             return back()->with(
                 'error',
                 'Ta zmiana statusu rezerwacji jest niedozwolona.'
+            );
+        }
+
+        $isFinalStatus = in_array($validated['status'], [
+            Reservation::STATUS_COMPLETED,
+            Reservation::STATUS_NO_SHOW,
+        ], true);
+
+        if ($isFinalStatus && $reservation->start->isFuture()) {
+            return back()->with(
+                'error',
+                'Status realizacji można ustawić dopiero po rozpoczęciu rezerwacji.'
+            );
+        }
+
+        if (! $isFinalStatus && ! $reservation->start->isFuture()) {
+            return back()->with(
+                'error',
+                'Po rozpoczęciu rezerwacji można ustawić wyłącznie status realizacji.'
             );
         }
 
@@ -567,6 +821,15 @@ class ReservationsController extends Controller
                         'cancelled_at' => now(),
                         'cancellation_reason' => $validated['cancellation_reason'],
                     ];
+                } elseif (in_array($validated['status'], [
+                    Reservation::STATUS_COMPLETED,
+                    Reservation::STATUS_NO_SHOW,
+                ], true)) {
+                    $attributes += [
+                        'finalized_by_user_id' => $request->user()->id,
+                        'finalized_at' => now(),
+                        'cancellation_reason' => null,
+                    ];
                 } else {
                     $attributes += [
                         'approved_by_user_id' => null,
@@ -574,6 +837,8 @@ class ReservationsController extends Controller
                         'cancelled_by_user_id' => null,
                         'cancelled_at' => null,
                         'cancellation_reason' => null,
+                        'finalized_by_user_id' => null,
+                        'finalized_at' => null,
                     ];
                 }
 
@@ -589,6 +854,36 @@ class ReservationsController extends Controller
     private function validateReservationInput(Request $request): array
     {
         return $request->validate($this->reservationRules());
+    }
+
+    private function validateStaffReservationInput(Request $request): array
+    {
+        $customerEmailRules = ['nullable', 'email', 'max:255'];
+        $customerPhoneRules = ['nullable', 'string', 'max:50'];
+
+        if ($request->input('customer_type') === 'guest') {
+            array_unshift($customerEmailRules, 'required_without:customer_phone');
+            array_unshift($customerPhoneRules, 'required_without:customer_email');
+        }
+
+        return $request->validate([
+            ...$this->reservationRules(),
+            'customer_type' => ['required', Rule::in(['account', 'guest'])],
+            'customer_user_id' => [
+                'required_if:customer_type,account',
+                'nullable',
+                Rule::exists('users', 'id')->where('is_approved', true),
+            ],
+            'customer_name' => [
+                'required_if:customer_type,guest',
+                'nullable',
+                'string',
+                'max:255',
+            ],
+            'customer_email' => $customerEmailRules,
+            'customer_phone' => $customerPhoneRules,
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
     }
 
     private function reservationValidationRedirect(
@@ -653,6 +948,42 @@ class ReservationsController extends Controller
                 $validated['date'].' '.$validated['end_time']
             ),
         ];
+    }
+
+    private function authorizeCustomerReservation(
+        Request $request,
+        Reservation $reservation
+    ): void {
+        $userId = (int) $request->user()->id;
+        $isOwner = (int) $reservation->customer_user_id === $userId
+            || (
+                $reservation->customer_user_id === null
+                && (int) $reservation->user_id === $userId
+                && in_array($reservation->source, [
+                    null,
+                    Reservation::SOURCE_ONLINE_ACCOUNT,
+                ], true)
+            );
+
+        abort_unless($isOwner, 403);
+    }
+
+    private function openingHoursMap(ShootingRange $shootingRange)
+    {
+        return $shootingRange->openingHours
+            ->mapWithKeys(fn ($openingHour) => [
+                (int) $openingHour->day_of_week => [
+                    'opens_at' => Carbon::parse($openingHour->opens_at)->format('H:i'),
+                    'closes_at' => Carbon::parse($openingHour->closes_at)->format('H:i'),
+                ],
+            ]);
+    }
+
+    private function throwReservationError(string $message): never
+    {
+        throw ValidationException::withMessages([
+            'reservation' => $message,
+        ]);
     }
 
     private function calendarPeriod(string $viewMode, Carbon $date): array

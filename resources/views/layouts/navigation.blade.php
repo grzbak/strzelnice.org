@@ -154,6 +154,12 @@
                                 Rezerwacje
                             </a>
                         </li>
+                    @elseif(auth()->user()->isClient())
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ route('rezerwacje.mine') }}">
+                                Moje rezerwacje
+                            </a>
+                        </li>
                     @endif
                 @endauth
 

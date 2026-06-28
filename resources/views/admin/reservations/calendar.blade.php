@@ -38,6 +38,7 @@
 
                 <button
                     type="button"
+                    id="newReservationButton"
                     class="btn btn-success"
                     data-bs-toggle="modal"
                     data-bs-target="#staffReservationModal"
@@ -93,6 +94,8 @@
                     <option value="pending">Oczekujące</option>
                     <option value="approved">Zatwierdzone</option>
                     <option value="cancelled">Anulowane</option>
+                    <option value="completed">Zrealizowane</option>
+                    <option value="no_show">Niezrealizowane</option>
                 </select>
 
                 <input
@@ -110,14 +113,26 @@
 
     <div class="modal fade" id="staffReservationModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-            <form method="POST" action="{{ route('admin.reservations.store') }}" class="modal-content">
+            <form
+                method="POST"
+                action="{{ route('admin.reservations.store') }}"
+                class="modal-content"
+                id="staffReservationForm"
+            >
                 @csrf
+                <input
+                    type="hidden"
+                    name="_method"
+                    value="PATCH"
+                    id="staffReservationMethod"
+                    disabled
+                >
                 <input type="hidden" name="shooting_range_id" value="{{ $shootingRange->id }}">
 
                 <div class="modal-header">
                     <div>
                         <span class="calendar-eyebrow">Panel strzelnicy</span>
-                        <h2 class="modal-title fs-5">Nowa rezerwacja</h2>
+                        <h2 class="modal-title fs-5" id="staffReservationTitle">Nowa rezerwacja</h2>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
@@ -272,7 +287,7 @@
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Anuluj</button>
                     <button type="submit" id="staffReservationSubmit" class="btn btn-success">
                         <i class="bi bi-check-lg me-1"></i>
-                        Zapisz rezerwację
+                        <span id="staffReservationSubmitLabel">Zapisz rezerwację</span>
                     </button>
                 </div>
             </form>
@@ -338,6 +353,8 @@
                         <option value="pending">Oczekująca</option>
                         <option value="approved">Zatwierdzona</option>
                         <option value="cancelled">Anulowana</option>
+                        <option value="completed">Zrealizowana</option>
+                        <option value="no_show">Niezrealizowana</option>
                     </select>
 
                     <div class="mt-3 d-none" id="cancellationReasonField">
@@ -353,6 +370,14 @@
                 </div>
 
                 <div class="modal-footer">
+                    <button
+                        type="button"
+                        class="btn btn-outline-primary me-auto d-none"
+                        id="editReservationButton"
+                    >
+                        <i class="bi bi-pencil me-1"></i>
+                        Edytuj rezerwację
+                    </button>
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Anuluj</button>
                     <button type="submit" class="btn btn-success">Zapisz status</button>
                 </div>
@@ -561,6 +586,18 @@
             border-color: #dc3545;
         }
 
+        .reservation-card.completed {
+            color: #164e63;
+            background: #ecfeff;
+            border-color: #0891b2;
+        }
+
+        .reservation-card.no_show {
+            color: #52525b;
+            background: #f4f4f5;
+            border-color: #71717a;
+        }
+
         .reservation-card strong,
         .reservation-card span {
             display: block;
@@ -707,6 +744,14 @@
             background: #dc3545;
         }
 
+        .status-bar .completed {
+            background: #0891b2;
+        }
+
+        .status-bar .no_show {
+            background: #71717a;
+        }
+
         @media (max-width: 991.98px) {
             .calendar-header,
             .calendar-summary {
@@ -784,13 +829,17 @@
             shootingRangeId: @json($shootingRange->id),
             customerSearchUrl: @json(route('admin.reservations.customers.search')),
             availabilityUrl: @json(route('rezerwacje.availability', $shootingRange->id)),
-            statusRouteTemplate: @json(route('admin.reservations.status', ['reservation' => '__ID__']))
+            statusRouteTemplate: @json(route('admin.reservations.status', ['reservation' => '__ID__'])),
+            updateRouteTemplate: @json(route('admin.reservations.update', ['reservation' => '__ID__'])),
+            storeRoute: @json(route('admin.reservations.store'))
         };
 
         const statusLabels = {
             pending: 'Oczekująca',
             approved: 'Zatwierdzona',
-            cancelled: 'Anulowana'
+            cancelled: 'Anulowana',
+            completed: 'Zrealizowana',
+            no_show: 'Niezrealizowana'
         };
         const sourceLabels = {
             online_account: 'Użytkownik z kontem - rezerwacja online',
@@ -945,7 +994,7 @@
 
             return `
                 <div class="status-bar">
-                    ${['approved', 'pending', 'cancelled'].map(status => {
+                    ${['approved', 'pending', 'cancelled', 'completed', 'no_show'].map(status => {
                         const count = reservations.filter(item => item.status === status).length;
                         return `<i class="${status}" style="width:${(count / reservations.length) * 100}%"></i>`;
                     }).join('')}
@@ -1178,13 +1227,17 @@
                 );
             }
 
-            function updateCustomerFields() {
+            function updateCustomerFields(clearValues = true) {
                 const isGuest = customerType.value === 'guest';
                 customerName.required = isGuest;
-                customerUserId.value = '';
-                customerName.value = '';
-                customerEmail.value = '';
-                customerPhone.value = '';
+
+                if (clearValues) {
+                    customerUserId.value = '';
+                    customerName.value = '';
+                    customerEmail.value = '';
+                    customerPhone.value = '';
+                }
+
                 customerSuggestions.classList.add('d-none');
                 accountSearchHelp.classList.toggle('d-none', isGuest);
             }
@@ -1192,9 +1245,14 @@
             [customerName, customerEmail, customerPhone].forEach(input => {
                 input.addEventListener('input', handleCustomerInput);
             });
-            customerType.addEventListener('change', updateCustomerFields);
+            customerType.addEventListener('change', () => updateCustomerFields());
             updateCustomerFields();
 
+            const staffForm = document.getElementById('staffReservationForm');
+            const staffMethod = document.getElementById('staffReservationMethod');
+            const staffTitle = document.getElementById('staffReservationTitle');
+            const staffSubmitLabel = document.getElementById('staffReservationSubmitLabel');
+            const staffNotes = document.getElementById('staffNotes');
             const staffDate = document.getElementById('staffReservationDate');
             const staffStart = document.getElementById('staffStartTime');
             const staffEnd = document.getElementById('staffEndTime');
@@ -1205,6 +1263,7 @@
             const staffAvailability = document.getElementById('staffAvailability');
             const staffSubmit = document.getElementById('staffReservationSubmit');
             const staffModal = document.getElementById('staffReservationModal');
+            let editingReservationId = null;
             let staffReservations = [];
             let staffAvailabilityLoading = false;
             let staffAvailabilityError = null;
@@ -1293,6 +1352,7 @@
                     const occupied = staffReservations
                         .filter(reservation => (
                             String(reservation.line_id) === staffLane.value
+                            && Number(reservation.id) !== editingReservationId
                             && timeMinutes(reservation.start_time) < slot + 30
                             && timeMinutes(reservation.end_time) > slot
                         ))
@@ -1415,6 +1475,71 @@
                 }
             }
 
+            async function resetStaffForm() {
+                editingReservationId = null;
+                staffForm.action = adminCalendar.storeRoute;
+                staffMethod.disabled = true;
+                staffTitle.textContent = 'Nowa rezerwacja';
+                staffSubmitLabel.textContent = 'Zapisz rezerwację';
+                staffForm.reset();
+                customerType.value = 'account';
+                updateCustomerFields();
+                staffDate.value = adminCalendar.selectedDate;
+                staffDynamic.checked = false;
+                updateStaffTimeOptions();
+                await loadStaffAvailability();
+            }
+
+            async function configureStaffEdit(reservation) {
+                editingReservationId = Number(reservation.id);
+                staffForm.action = adminCalendar.updateRouteTemplate.replace(
+                    '__ID__',
+                    reservation.id
+                );
+                staffMethod.disabled = false;
+                staffTitle.textContent = `Edytuj rezerwację #${reservation.id}`;
+                staffSubmitLabel.textContent = 'Zapisz zmiany';
+                staffForm.reset();
+
+                customerType.value = reservation.customer_type;
+                updateCustomerFields(false);
+                customerUserId.value = reservation.customer_user_id ?? '';
+                customerName.value = reservation.user_name ?? '';
+                customerEmail.value = reservation.user_email ?? '';
+                customerPhone.value = reservation.user_phone ?? '';
+                staffDate.value = reservation.date;
+                staffLane.value = String(reservation.line_id);
+                staffDynamic.checked = Boolean(
+                    reservation.is_dynamic_shooting
+                );
+                staffNotes.value = reservation.notes ?? '';
+
+                updateStaffTimeOptions();
+
+                if ([...staffStart.options].some(
+                    option => option.value === reservation.start_time
+                )) {
+                    staffStart.value = reservation.start_time;
+                }
+
+                updateStaffEndTimes();
+
+                if ([...staffEnd.options].some(
+                    option => option.value === reservation.end_time
+                )) {
+                    staffEnd.value = reservation.end_time;
+                }
+
+                await loadStaffAvailability();
+
+                if ([...staffPositions.options].some(
+                    option => Number(option.value)
+                        === Number(reservation.positions_count)
+                )) {
+                    staffPositions.value = reservation.positions_count;
+                }
+            }
+
             staffDate.addEventListener('change', () => {
                 updateStaffTimeOptions();
                 loadStaffAvailability();
@@ -1423,9 +1548,11 @@
             staffEnd.addEventListener('change', updateStaffPositions);
             staffLane.addEventListener('change', updateStaffPositions);
             staffDynamic.addEventListener('change', updateStaffPositions);
-            staffModal.addEventListener('shown.bs.modal', loadStaffAvailability);
-            updateStaffTimeOptions();
-            loadStaffAvailability();
+            staffModal.addEventListener('show.bs.modal', event => {
+                if (event.relatedTarget?.id === 'newReservationButton') {
+                    resetStaffForm();
+                }
+            });
 
             const statusModal = document.getElementById('reservationStatusModal');
             const statusForm = document.getElementById('reservationStatusForm');
@@ -1434,20 +1561,36 @@
             const cancellationReason = document.getElementById('cancellationReason');
             const notesSection = document.getElementById('reservationDetailNotesSection');
             const historySection = document.getElementById('reservationDetailHistorySection');
+            const editReservationButton = document.getElementById(
+                'editReservationButton'
+            );
+            let selectedReservation = null;
 
             function setDetailText(id, value) {
                 document.getElementById(id).textContent = value || 'Brak danych';
             }
 
-            function setAvailableStatusOptions(currentStatus) {
-                const availableStatuses = {
+            function setAvailableStatusOptions(reservation) {
+                const availableBeforeStart = {
                     pending: ['pending', 'approved', 'cancelled'],
                     approved: ['approved', 'cancelled'],
-                    cancelled: ['cancelled', 'pending', 'approved']
+                    cancelled: ['cancelled', 'pending', 'approved'],
+                    completed: ['completed'],
+                    no_show: ['no_show']
                 };
+                const availableAfterStart = {
+                    pending: ['pending', 'completed', 'no_show'],
+                    approved: ['approved', 'completed', 'no_show'],
+                    cancelled: ['cancelled'],
+                    completed: ['completed'],
+                    no_show: ['no_show']
+                };
+                const availableStatuses = reservation.has_started
+                    ? availableAfterStart
+                    : availableBeforeStart;
 
                 [...statusSelect.options].forEach(option => {
-                    option.disabled = ! availableStatuses[currentStatus]?.includes(
+                    option.disabled = ! availableStatuses[reservation.status]?.includes(
                         option.value
                     );
                 });
@@ -1471,6 +1614,8 @@
                     event.preventDefault();
                     return;
                 }
+
+                selectedReservation = reservation;
 
                 statusForm.action = adminCalendar.statusRouteTemplate.replace(
                     '__ID__',
@@ -1540,13 +1685,43 @@
                     );
                 }
 
+                if (reservation.finalized_at) {
+                    history.push(
+                        `${statusLabels[reservation.status]}: ${reservation.finalized_at}`
+                        + (reservation.finalized_by_name
+                            ? ` · ${reservation.finalized_by_name}`
+                            : '')
+                    );
+                }
+
                 historySection.classList.toggle('d-none', history.length === 0);
                 setDetailText('reservationDetailHistory', history.join('\n'));
 
-                setAvailableStatusOptions(reservation.status);
+                editReservationButton.classList.toggle(
+                    'd-none',
+                    ! reservation.can_edit
+                );
+                setAvailableStatusOptions(reservation);
                 statusSelect.value = reservation.status;
                 cancellationReason.value = reservation.cancellation_reason ?? '';
                 updateCancellationField();
+            });
+
+            editReservationButton.addEventListener('click', async () => {
+                if (! selectedReservation?.can_edit) {
+                    return;
+                }
+
+                await configureStaffEdit(selectedReservation);
+                const detailsModal = bootstrap.Modal.getInstance(statusModal);
+                const editModal = bootstrap.Modal.getOrCreateInstance(staffModal);
+
+                statusModal.addEventListener(
+                    'hidden.bs.modal',
+                    () => editModal.show(editReservationButton),
+                    { once: true }
+                );
+                detailsModal.hide();
             });
 
             statusSelect.addEventListener('change', updateCancellationField);

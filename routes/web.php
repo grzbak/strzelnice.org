@@ -126,6 +126,12 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
 
     Route::post('/rezerwacje', [ReservationsController::class, 'store'])
         ->name('rezerwacje.store');
+    Route::get('/moje-rezerwacje', [ReservationsController::class, 'myReservations'])
+        ->name('rezerwacje.mine');
+    Route::get('/moje-rezerwacje/{reservation}/edytuj', [ReservationsController::class, 'editByCustomer'])
+        ->name('rezerwacje.edit');
+    Route::patch('/moje-rezerwacje/{reservation}', [ReservationsController::class, 'updateByCustomer'])
+        ->name('rezerwacje.update');
 
     Route::middleware('role:superadmin,admin,pracownik')->group(function () {
         Route::get('/panel/rezerwacje', [ReservationsController::class, 'adminCalendar'])
@@ -134,6 +140,8 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
             ->name('admin.reservations.customers.search');
         Route::post('/panel/rezerwacje', [ReservationsController::class, 'storeByStaff'])
             ->name('admin.reservations.store');
+        Route::patch('/panel/rezerwacje/{reservation}', [ReservationsController::class, 'updateByStaff'])
+            ->name('admin.reservations.update');
         Route::patch('/panel/rezerwacje/{reservation}/status', [ReservationsController::class, 'updateStatus'])
             ->name('admin.reservations.status');
     });

@@ -12,6 +12,10 @@ class Reservation extends Model
 
     public const STATUS_CANCELLED = 'cancelled';
 
+    public const STATUS_COMPLETED = 'completed';
+
+    public const STATUS_NO_SHOW = 'no_show';
+
     public const SOURCE_ONLINE_ACCOUNT = 'online_account';
 
     public const SOURCE_STAFF_ACCOUNT = 'staff_account';
@@ -40,6 +44,8 @@ class Reservation extends Model
         'approved_at',
         'cancelled_by_user_id',
         'cancelled_at',
+        'finalized_by_user_id',
+        'finalized_at',
         'cancellation_reason',
         'notes',
     ];
@@ -51,6 +57,7 @@ class Reservation extends Model
         'is_dynamic_shooting' => 'boolean',
         'approved_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'finalized_at' => 'datetime',
     ];
 
     public function user()
@@ -83,6 +90,11 @@ class Reservation extends Model
         return $this->belongsTo(User::class, 'cancelled_by_user_id');
     }
 
+    public function finalizer()
+    {
+        return $this->belongsTo(User::class, 'finalized_by_user_id');
+    }
+
     public function shootingRange()
     {
         return $this->belongsTo(ShootingRange::class);
@@ -106,5 +118,18 @@ class Reservation extends Model
     public function isCancelled(): bool
     {
         return $this->status === self::STATUS_CANCELLED;
+    }
+
+    public function isFinalized(): bool
+    {
+        return in_array($this->status, [
+            self::STATUS_COMPLETED,
+            self::STATUS_NO_SHOW,
+        ], true);
+    }
+
+    public function canBeEdited(): bool
+    {
+        return $this->start->isFuture() && ! $this->isFinalized();
     }
 }

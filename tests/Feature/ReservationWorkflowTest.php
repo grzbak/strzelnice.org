@@ -51,6 +51,7 @@ class ReservationWorkflowTest extends TestCase
         Schema::create('shooting_ranges', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->string('town')->nullable();
             $table->boolean('is_visible')->default(true);
             $table->boolean('is_public_access')->default(true);
             $table->boolean('is_archived')->default(false);
@@ -144,6 +145,8 @@ class ReservationWorkflowTest extends TestCase
             $table->timestamp('approved_at')->nullable();
             $table->foreignId('cancelled_by_user_id')->nullable();
             $table->timestamp('cancelled_at')->nullable();
+            $table->foreignId('finalized_by_user_id')->nullable();
+            $table->timestamp('finalized_at')->nullable();
             $table->string('cancellation_reason')->nullable();
             $table->text('notes')->nullable();
             $table->timestamps();
@@ -541,6 +544,199 @@ class ReservationWorkflowTest extends TestCase
             'id' => $laneId,
             'is_archived' => true,
         ]);
+    }
+
+    public function test_customer_can_edit_own_pending_future_reservation(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        $reservationId = $this->insertReservation(
+            $client,
+            $rangeId,
+            $laneId,
+            '10:00',
+            '10:30',
+            1,
+            Reservation::STATUS_PENDING
+        );
+
+        $this->actingAs($client)
+            ->patch(route('rezerwacje.update', $reservationId), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '11:00',
+                'end_time' => '12:00',
+                'positions_count' => 2,
+                'is_dynamic_shooting' => false,
+            ])
+            ->assertRedirect(route('rezerwacje.mine'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservationId,
+            'start' => today()->toDateString().' 11:00:00',
+            'end' => today()->toDateString().' 12:00:00',
+            'positions_count' => 2,
+            'status' => Reservation::STATUS_PENDING,
+        ]);
+    }
+
+    public function test_customer_can_open_own_reservations_list(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        $reservationId = $this->insertReservation(
+            $client,
+            $rangeId,
+            $laneId,
+            '10:00',
+            '10:30',
+            1,
+            Reservation::STATUS_PENDING
+        );
+
+        $this->actingAs($client)
+            ->get(route('rezerwacje.mine'))
+            ->assertOk()
+            ->assertSee('Moje rezerwacje')
+            ->assertSee(route('rezerwacje.edit', $reservationId));
+    }
+
+    public function test_customer_cannot_edit_non_pending_or_started_reservation(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        $approvedId = $this->insertReservation(
+            $client,
+            $rangeId,
+            $laneId,
+            '10:00',
+            '10:30',
+            1,
+            Reservation::STATUS_APPROVED
+        );
+        $startedId = $this->insertReservation(
+            $client,
+            $rangeId,
+            $laneId,
+            '07:00',
+            '08:30',
+            1,
+            Reservation::STATUS_PENDING
+        );
+
+        $this->actingAs($client)
+            ->get(route('rezerwacje.edit', $approvedId))
+            ->assertForbidden();
+        $this->actingAs($client)
+            ->get(route('rezerwacje.edit', $startedId))
+            ->assertForbidden();
+    }
+
+    public function test_staff_can_edit_all_future_reservation_parameters(): void
+    {
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        $reservationId = $this->insertReservation(
+            $client,
+            $rangeId,
+            $laneId,
+            '10:00',
+            '10:30',
+            1,
+            Reservation::STATUS_APPROVED
+        );
+
+        $this->actingAs($admin)
+            ->patch(route('admin.reservations.update', $reservationId), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '12:00',
+                'end_time' => '13:00',
+                'positions_count' => 2,
+                'is_dynamic_shooting' => true,
+                'customer_type' => 'guest',
+                'customer_name' => 'Gość Edytowany',
+                'customer_email' => 'gosc-edytowany@example.test',
+                'customer_phone' => '600700800',
+                'notes' => 'Zmieniona notatka',
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservationId,
+            'customer_user_id' => null,
+            'customer_name' => 'Gość Edytowany',
+            'source' => Reservation::SOURCE_STAFF_GUEST,
+            'start' => today()->toDateString().' 12:00:00',
+            'end' => today()->toDateString().' 13:00:00',
+            'positions_count' => 2,
+            'is_dynamic_shooting' => true,
+            'notes' => 'Zmieniona notatka',
+        ]);
+    }
+
+    public function test_completion_status_is_available_only_after_reservation_starts(): void
+    {
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $futureId = $this->insertReservation(
+            $admin,
+            $rangeId,
+            $laneId,
+            '10:00',
+            '10:30',
+            1,
+            Reservation::STATUS_APPROVED
+        );
+        $startedId = $this->insertReservation(
+            $admin,
+            $rangeId,
+            $laneId,
+            '07:30',
+            '08:30',
+            1,
+            Reservation::STATUS_APPROVED
+        );
+
+        $this->actingAs($admin)
+            ->patch(route('admin.reservations.status', $futureId), [
+                'status' => Reservation::STATUS_COMPLETED,
+            ])
+            ->assertSessionHas(
+                'error',
+                'Status realizacji można ustawić dopiero po rozpoczęciu rezerwacji.'
+            );
+
+        $this->actingAs($admin)
+            ->patch(route('admin.reservations.status', $startedId), [
+                'status' => Reservation::STATUS_NO_SHOW,
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $startedId,
+            'status' => Reservation::STATUS_NO_SHOW,
+            'finalized_by_user_id' => $admin->id,
+        ]);
+        $this->assertNotNull(
+            DB::table('reservations')
+                ->where('id', $startedId)
+                ->value('finalized_at')
+        );
     }
 
     private function createBookableRange(
