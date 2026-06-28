@@ -280,17 +280,59 @@
     </div>
 
     <div class="modal fade" id="reservationStatusModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <form method="POST" action="" class="modal-content" id="reservationStatusForm">
                 @csrf
                 @method('PATCH')
 
                 <div class="modal-header">
-                    <h2 class="modal-title fs-5">Zmień status rezerwacji</h2>
+                    <div>
+                        <span class="detail-eyebrow">Szczegóły rezerwacji</span>
+                        <h2 class="modal-title fs-5" id="reservationDetailTitle"></h2>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
 
                 <div class="modal-body">
+                    <div class="reservation-detail-grid">
+                        <div>
+                            <span>Termin</span>
+                            <strong id="reservationDetailDate"></strong>
+                        </div>
+                        <div>
+                            <span>Oś i stanowiska</span>
+                            <strong id="reservationDetailLane"></strong>
+                        </div>
+                        <div>
+                            <span>E-mail</span>
+                            <strong id="reservationDetailEmail"></strong>
+                        </div>
+                        <div>
+                            <span>Telefon</span>
+                            <strong id="reservationDetailPhone"></strong>
+                        </div>
+                        <div>
+                            <span>Rodzaj klienta</span>
+                            <strong id="reservationDetailSource"></strong>
+                        </div>
+                        <div>
+                            <span>Utworzona</span>
+                            <strong id="reservationDetailCreated"></strong>
+                        </div>
+                    </div>
+
+                    <div class="reservation-detail-section d-none" id="reservationDetailNotesSection">
+                        <span>Notatka wewnętrzna</span>
+                        <p id="reservationDetailNotes"></p>
+                    </div>
+
+                    <div class="reservation-detail-section d-none" id="reservationDetailHistorySection">
+                        <span>Historia statusu</span>
+                        <p id="reservationDetailHistory"></p>
+                    </div>
+
+                    <hr class="my-4">
+
                     <label for="reservationStatus" class="form-label">Status</label>
                     <select name="status" id="reservationStatus" class="form-select" required>
                         <option value="pending">Oczekująca</option>
@@ -486,6 +528,19 @@
             padding: .65rem .75rem;
             border-left: 4px solid;
             border-radius: 5px;
+            cursor: pointer;
+            transition: box-shadow .15s ease, transform .15s ease;
+        }
+
+        .reservation-card:hover,
+        .reservation-card:focus-visible {
+            box-shadow: 0 4px 14px rgb(22 32 27 / 12%);
+            transform: translateY(-1px);
+        }
+
+        .reservation-card:focus-visible {
+            outline: 2px solid var(--green);
+            outline-offset: 2px;
         }
 
         .reservation-card.pending {
@@ -524,7 +579,45 @@
             background: transparent;
             border: 1px solid currentColor;
             border-radius: 4px;
-            cursor: pointer;
+        }
+
+        .detail-eyebrow,
+        .reservation-detail-grid span,
+        .reservation-detail-section > span {
+            display: block;
+            color: var(--muted);
+            font-size: .7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .detail-eyebrow {
+            margin-bottom: .15rem;
+        }
+
+        .reservation-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem 1.5rem;
+        }
+
+        .reservation-detail-grid strong {
+            display: block;
+            margin-top: .2rem;
+            overflow-wrap: anywhere;
+        }
+
+        .reservation-detail-section {
+            margin-top: 1.25rem;
+            padding: .8rem 1rem;
+            background: #f7f9f8;
+            border-left: 3px solid var(--border);
+            border-radius: 4px;
+        }
+
+        .reservation-detail-section p {
+            margin: .25rem 0 0;
+            white-space: pre-line;
         }
 
         .week-grid,
@@ -672,6 +765,10 @@
             .reservation-card {
                 grid-template-columns: 1fr;
             }
+
+            .reservation-detail-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 
@@ -694,6 +791,11 @@
             pending: 'Oczekująca',
             approved: 'Zatwierdzona',
             cancelled: 'Anulowana'
+        };
+        const sourceLabels = {
+            online_account: 'Użytkownik z kontem - rezerwacja online',
+            staff_account: 'Użytkownik z kontem - rezerwacja personelu',
+            staff_guest: 'Gość bez konta - rezerwacja personelu'
         };
 
         const weekdayLabels = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Nd'];
@@ -759,6 +861,15 @@
         function createReservationCard(reservation) {
             const card = document.createElement('article');
             card.className = `reservation-card ${reservation.status}`;
+            card.tabIndex = 0;
+            card.setAttribute('role', 'button');
+            card.setAttribute(
+                'aria-label',
+                `Pokaż szczegóły rezerwacji ${reservation.user_name}`
+            );
+            card.dataset.reservationId = reservation.id;
+            card.dataset.bsToggle = 'modal';
+            card.dataset.bsTarget = '#reservationStatusModal';
             card.innerHTML = `
                 <div>
                     <strong>${escapeHtml(reservation.start_time)}–${escapeHtml(reservation.end_time)} · ${escapeHtml(reservation.user_name)}</strong>
@@ -772,18 +883,17 @@
                         ${reservation.is_dynamic_shooting ? ' · dynamiczne' : ''}
                     </span>
                 </div>
-                <button
-                    type="button"
-                    class="reservation-status"
-                    data-reservation-id="${reservation.id}"
-                    data-reservation-status="${escapeHtml(reservation.status)}"
-                    data-bs-toggle="modal"
-                    data-bs-target="#reservationStatusModal"
-                    title="Zmień status"
-                >
+                <span class="reservation-status">
                     ${escapeHtml(statusLabels[reservation.status] ?? reservation.status)}
-                </button>
+                </span>
             `;
+            card.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    card.click();
+                }
+            });
+
             return card;
         }
 
@@ -1322,6 +1432,26 @@
             const statusSelect = document.getElementById('reservationStatus');
             const cancellationField = document.getElementById('cancellationReasonField');
             const cancellationReason = document.getElementById('cancellationReason');
+            const notesSection = document.getElementById('reservationDetailNotesSection');
+            const historySection = document.getElementById('reservationDetailHistorySection');
+
+            function setDetailText(id, value) {
+                document.getElementById(id).textContent = value || 'Brak danych';
+            }
+
+            function setAvailableStatusOptions(currentStatus) {
+                const availableStatuses = {
+                    pending: ['pending', 'approved', 'cancelled'],
+                    approved: ['approved', 'cancelled'],
+                    cancelled: ['cancelled', 'pending', 'approved']
+                };
+
+                [...statusSelect.options].forEach(option => {
+                    option.disabled = ! availableStatuses[currentStatus]?.includes(
+                        option.value
+                    );
+                });
+            }
 
             function updateCancellationField() {
                 const isCancelled = statusSelect.value === 'cancelled';
@@ -1330,13 +1460,92 @@
             }
 
             statusModal.addEventListener('show.bs.modal', event => {
-                const button = event.relatedTarget;
+                const reservationId = Number(
+                    event.relatedTarget?.dataset.reservationId
+                );
+                const reservation = adminCalendar.reservations.find(
+                    item => Number(item.id) === reservationId
+                );
+
+                if (! reservation) {
+                    event.preventDefault();
+                    return;
+                }
+
                 statusForm.action = adminCalendar.statusRouteTemplate.replace(
                     '__ID__',
-                    button.dataset.reservationId
+                    reservation.id
                 );
-                statusSelect.value = button.dataset.reservationStatus;
-                cancellationReason.value = '';
+                setDetailText(
+                    'reservationDetailTitle',
+                    `#${reservation.id} · ${reservation.user_name}`
+                );
+                setDetailText(
+                    'reservationDetailDate',
+                    `${reservation.date} · ${reservation.start_time}–${reservation.end_time}`
+                );
+                setDetailText(
+                    'reservationDetailLane',
+                    [
+                        reservation.lane_name,
+                        reservation.lane_length
+                            ? `${reservation.lane_length} m`
+                            : null,
+                        `${reservation.positions_count} stanowisk`,
+                        reservation.is_dynamic_shooting
+                            ? 'strzelanie dynamiczne'
+                            : null
+                    ].filter(Boolean).join(' · ')
+                );
+                setDetailText('reservationDetailEmail', reservation.user_email);
+                setDetailText('reservationDetailPhone', reservation.user_phone);
+                setDetailText(
+                    'reservationDetailSource',
+                    sourceLabels[reservation.source] ?? reservation.source
+                );
+                setDetailText(
+                    'reservationDetailCreated',
+                    [
+                        reservation.created_at,
+                        reservation.created_by_name
+                    ].filter(Boolean).join(' · ')
+                );
+
+                notesSection.classList.toggle('d-none', ! reservation.notes);
+                setDetailText('reservationDetailNotes', reservation.notes);
+
+                const history = [];
+
+                if (reservation.approved_at) {
+                    history.push(
+                        `Zatwierdzona: ${reservation.approved_at}`
+                        + (reservation.approved_by_name
+                            ? ` · ${reservation.approved_by_name}`
+                            : '')
+                    );
+                }
+
+                if (reservation.cancelled_at) {
+                    history.push(
+                        `Anulowana: ${reservation.cancelled_at}`
+                        + (reservation.cancelled_by_name
+                            ? ` · ${reservation.cancelled_by_name}`
+                            : '')
+                    );
+                }
+
+                if (reservation.cancellation_reason) {
+                    history.push(
+                        `Powód anulowania: ${reservation.cancellation_reason}`
+                    );
+                }
+
+                historySection.classList.toggle('d-none', history.length === 0);
+                setDetailText('reservationDetailHistory', history.join('\n'));
+
+                setAvailableStatusOptions(reservation.status);
+                statusSelect.value = reservation.status;
+                cancellationReason.value = reservation.cancellation_reason ?? '';
                 updateCancellationField();
             });
 

@@ -233,7 +233,14 @@ class ReservationsController extends Controller
             ->where('shooting_range_id', $shootingRange->id)
             ->where('start', '<=', $periodEnd)
             ->where('end', '>=', $periodStart)
-            ->with(['customer:id,name,email,telephone', 'user:id,name,email,telephone', 'lane'])
+            ->with([
+                'customer:id,name,email,telephone',
+                'user:id,name,email,telephone',
+                'creator:id,name',
+                'approver:id,name',
+                'canceller:id,name',
+                'lane',
+            ])
             ->orderBy('start')
             ->get()
             ->map(fn (Reservation $reservation) => [
@@ -260,6 +267,14 @@ class ReservationsController extends Controller
                 'positions_count' => $reservation->positions_count,
                 'is_dynamic_shooting' => $reservation->is_dynamic_shooting,
                 'status' => $reservation->status,
+                'notes' => $reservation->notes,
+                'cancellation_reason' => $reservation->cancellation_reason,
+                'created_at' => $reservation->created_at?->format('d.m.Y H:i'),
+                'created_by_name' => $reservation->creator?->name,
+                'approved_at' => $reservation->approved_at?->format('d.m.Y H:i'),
+                'approved_by_name' => $reservation->approver?->name,
+                'cancelled_at' => $reservation->cancelled_at?->format('d.m.Y H:i'),
+                'cancelled_by_name' => $reservation->canceller?->name,
             ])
             ->values();
 
