@@ -41,3 +41,4 @@ e9a4eaf Snapshot before reservation workflow overhaul
 1566594 Add reservation details modal to staff calendar
 c4fc58a Add reservation editing and completion statuses
 7935741 Expose customer reservation editing for every account
+27948cc Separate current range eligibility from booking date
