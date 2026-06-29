@@ -84,6 +84,7 @@ class ShootingsController extends Controller
                 ?? ($isVoivodeshipSearch ? 'voivodeship' : null);
 
             $date = Carbon::parse($validated['date'] ?? now()->format('Y-m-d'));
+            $eligibilityDate = today();
             $dayOfWeek = $date->isoWeekday();
             $laneLength = (int) ($validated['lane_length'] ?? 0);
 
@@ -96,15 +97,19 @@ class ShootingsController extends Controller
                         ->where('shooting_range_employee.is_approved', true)
                         ->where('users.is_approved', true);
                 })
-                ->whereHas('intervals', function ($q) use ($date) {
+                ->whereHas('intervals', function ($q) use ($eligibilityDate) {
                     $q->where('is_active', true)
-                        ->whereDate('start_date', '<=', $date)
-                        ->whereDate('end_date', '>=', $date)
-                        ->where(function ($q) use ($date) {
+                        ->whereDate('start_date', '<=', $eligibilityDate)
+                        ->whereDate('end_date', '>=', $eligibilityDate)
+                        ->where(function ($q) use ($eligibilityDate) {
                             $q->whereNotNull('datePaid')
-                                ->orWhere(function ($q) use ($date) {
+                                ->orWhere(function ($q) use ($eligibilityDate) {
                                     $q->whereNull('datePaid')
-                                        ->whereDate('payment_due_date', '>=', $date);
+                                        ->whereDate(
+                                            'payment_due_date',
+                                            '>=',
+                                            $eligibilityDate
+                                        );
                                 });
                         });
                 })

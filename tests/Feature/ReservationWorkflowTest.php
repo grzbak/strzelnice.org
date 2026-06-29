@@ -375,6 +375,89 @@ class ReservationWorkflowTest extends TestCase
             ->assertJsonPath('reservations.0.line_id', $laneId);
     }
 
+    public function test_current_interval_allows_booking_beyond_its_end_and_payment_due_dates(): void
+    {
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $bookingDate = today()->addDays(5);
+
+        DB::table('shooting_range_interval')
+            ->where('shooting_range_id', $rangeId)
+            ->update([
+                'end_date' => today()->addDay(),
+                'datePaid' => null,
+                'payment_due_date' => today()->addDay(),
+            ]);
+        DB::table('shooting_range_opening_hours')->insert([
+            'shooting_range_id' => $rangeId,
+            'day_of_week' => $bookingDate->isoWeekday(),
+            'opens_at' => '09:00',
+            'closes_at' => '18:00',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->get(route('index', [
+            'date' => $bookingDate->toDateString(),
+        ]))
+            ->assertOk()
+            ->assertSee('Strzelnica testowa');
+
+        $this->actingAs($admin)
+            ->post(route('rezerwacje.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => $bookingDate->toDateString(),
+                'start_time' => '10:00',
+                'end_time' => '10:30',
+                'positions_count' => 1,
+                'is_dynamic_shooting' => false,
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reservations', [
+            'shooting_range_id' => $rangeId,
+            'line_id' => $laneId,
+            'start' => $bookingDate->toDateString().' 10:00:00',
+        ]);
+    }
+
+    public function test_expired_current_payment_due_date_blocks_new_booking(): void
+    {
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+
+        DB::table('shooting_range_interval')
+            ->where('shooting_range_id', $rangeId)
+            ->update([
+                'datePaid' => null,
+                'payment_due_date' => today()->subDay(),
+            ]);
+
+        $this->get(route('index', [
+            'date' => today()->toDateString(),
+        ]))
+            ->assertOk()
+            ->assertDontSee('Strzelnica testowa');
+
+        $this->actingAs($admin)
+            ->post(route('rezerwacje.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '10:00',
+                'end_time' => '10:30',
+                'positions_count' => 1,
+                'is_dynamic_shooting' => false,
+            ])
+            ->assertSessionHas(
+                'error',
+                'Strzelnica nie posiada obecnie aktywnego przedziału lub upłynął termin płatności.'
+            );
+
+        $this->assertDatabaseMissing('reservations', [
+            'shooting_range_id' => $rangeId,
+        ]);
+    }
+
     public function test_invitation_cannot_be_accepted_by_account_with_different_email(): void
     {
         [, $rangeId] = $this->createBookableRange('admin', false);

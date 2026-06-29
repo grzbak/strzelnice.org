@@ -33,8 +33,10 @@ class ShootingRangeAvailabilityService
             return $this->denied('Strzelnica nie posiada osi strzeleckiej.');
         }
 
-        if ($date && ! $this->hasBookableIntervalForDate($shootingRange, $date)) {
-            return $this->denied('Strzelnica nie posiada opłaconego przedziału dla wybranej daty.');
+        if ($date && ! $this->hasCurrentBookableInterval($shootingRange)) {
+            return $this->denied(
+                'Strzelnica nie posiada obecnie aktywnego przedziału lub upłynął termin płatności.'
+            );
         }
 
         return $this->allowed();
@@ -320,6 +322,12 @@ class ShootingRangeAvailabilityService
                     });
             })
             ->exists();
+    }
+
+    public function hasCurrentBookableInterval(
+        ShootingRange $shootingRange
+    ): bool {
+        return $this->hasBookableIntervalForDate($shootingRange, today());
     }
 
     private function hasActiveAdministrator(ShootingRange $shootingRange): bool
