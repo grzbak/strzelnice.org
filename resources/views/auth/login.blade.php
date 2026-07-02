@@ -73,6 +73,18 @@
                     </x-primary-button>
                 </div>
             </form>
+
+            @if (Route::has('register'))
+                <div class="pt-4 mt-2 text-sm text-center text-gray-600 border-t border-gray-200">
+                    Nie masz jeszcze konta?
+                    <a
+                        href="{{ route('register') }}"
+                        class="font-semibold text-indigo-600 rounded-md hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                    >
+                        Załóż je TUTAJ!
+                    </a>
+                </div>
+            @endif
         </div>
     </div>
 </x-app-layout>

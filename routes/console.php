@@ -13,3 +13,6 @@ Schedule::command('shooting-ranges:send-invitation-expiry-reminders --days=2')->
 Schedule::command('shooting-range:cleanup-expired')
     ->dailyAt('00:00')
     ->withoutOverlapping();
+Schedule::command('reservations:archive-and-purge')
+    ->dailyAt('00:15')
+    ->withoutOverlapping();

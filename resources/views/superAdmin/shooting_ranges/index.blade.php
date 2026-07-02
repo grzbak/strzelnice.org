@@ -130,6 +130,8 @@
         const shootings = @json($shootings);
         const selectedShootingIds = new Set();
         const deleteBaseUrl = @json(url('/strzelnice'));
+        const reservationsBaseUrl = @json(route('admin.reservations.calendar'));
+        const reservationArchiveBaseUrl = @json(route('admin.reservations.archive'));
         let currentPage = 1;
 
         function todayDate() {
@@ -300,6 +302,13 @@
                             <i class="bi bi-clock action-icon text-warning" onclick="window.location.href='${deleteBaseUrl}/${s.id}/przedzialy'" data-bs-toggle="tooltip" data-bs-placement="top" title="Zarządzaj przedziałami"></i>
                             <i class="bi bi-pencil action-icon text-dark" onclick="window.location.href='${deleteBaseUrl}/${s.id}/edytuj'" data-bs-toggle="tooltip" data-bs-placement="top" title="Edytuj"></i>
                             <i class="bi bi-images action-icon text-primary" onclick="window.location.href='${deleteBaseUrl}/${s.id}/galeria'" data-bs-toggle="tooltip" data-bs-placement="top" title="Zarządzaj galerią"></i>
+
+                            <a href="${reservationsBaseUrl}?shooting_range_id=${encodeURIComponent(s.id)}" class="text-decoration-none">
+                                <i class="bi bi-calendar3 action-icon text-success" data-bs-toggle="tooltip" data-bs-placement="top" title="Rezerwacje strzelnicy"></i>
+                            </a>
+                            <a href="${reservationArchiveBaseUrl}?shooting_range_id=${encodeURIComponent(s.id)}" class="text-decoration-none">
+                                <i class="bi bi-archive action-icon text-secondary" data-bs-toggle="tooltip" data-bs-placement="top" title="Archiwum rezerwacji strzelnicy"></i>
+                            </a>
 
                             <form method="POST" action="${deleteBaseUrl}/${s.id}" class="d-inline shooting-delete-form" data-range-name="${escapedName}" data-reservations-count="${reservationsCount}">
                                 <input type="hidden" name="_token" value="{{ csrf_token() }}">

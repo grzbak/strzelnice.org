@@ -136,6 +136,8 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
     Route::middleware('role:superadmin,admin,pracownik')->group(function () {
         Route::get('/panel/rezerwacje', [ReservationsController::class, 'adminCalendar'])
             ->name('admin.reservations.calendar');
+        Route::get('/panel/rezerwacje/archiwum', [ReservationsController::class, 'adminArchive'])
+            ->name('admin.reservations.archive');
         Route::get('/panel/rezerwacje/uzytkownicy/szukaj', [ReservationsController::class, 'searchCustomers'])
             ->name('admin.reservations.customers.search');
         Route::post('/panel/rezerwacje', [ReservationsController::class, 'storeByStaff'])

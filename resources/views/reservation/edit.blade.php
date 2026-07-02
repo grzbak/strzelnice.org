@@ -1,21 +1,27 @@
 <x-app-layout>
+    <div class="page-bg-2"></div>
+
     <main class="container py-4">
-        <div class="mx-auto" style="max-width: 760px;">
+        <div class="col-xl-10 mx-auto reservation-edit-page">
             <x-session-alerts />
 
-            <div class="mb-4">
-                <a href="{{ route('rezerwacje.mine') }}" class="text-decoration-none">
+            <section class="reservation-edit-heading">
+                <div>
+                    <span class="text-uppercase text-muted small fw-bold">Panel klienta</span>
+                    <h1 class="h3 mb-1">Edytuj rezerwację</h1>
+                    <p class="text-muted mb-0">{{ $shootingRange->name }}</p>
+                </div>
+
+                <a href="{{ route('rezerwacje.mine') }}" class="btn btn-outline-secondary">
                     <i class="bi bi-arrow-left me-1"></i>
                     Moje rezerwacje
                 </a>
-                <h1 class="h3 mt-3 mb-1">Edytuj rezerwację</h1>
-                <p class="text-muted mb-0">{{ $shootingRange->name }}</p>
-            </div>
+            </section>
 
             <form
                 method="POST"
                 action="{{ route('rezerwacje.update', $reservation) }}"
-                class="bg-white border rounded p-4"
+                class="reservation-edit-form"
             >
                 @csrf
                 @method('PATCH')
@@ -64,6 +70,7 @@
                             data-initial="{{ old('start_time', $reservation->start->format('H:i')) }}"
                             required
                         ></select>
+                        <x-input-error :message="$errors->first('start_time')" />
                     </div>
 
                     <div class="col-md-4">
@@ -75,6 +82,7 @@
                             data-initial="{{ old('end_time', $reservation->end->format('H:i')) }}"
                             required
                         ></select>
+                        <x-input-error :message="$errors->first('end_time')" />
                     </div>
 
                     <div class="col-md-4">
@@ -86,6 +94,7 @@
                             data-initial="{{ old('positions_count', $reservation->positions_count) }}"
                             required
                         ></select>
+                        <x-input-error :message="$errors->first('positions_count')" />
                     </div>
 
                     <div class="col-12 d-none" id="dynamicField">
@@ -115,6 +124,69 @@
             </form>
         </div>
     </main>
+
+    <style>
+        .reservation-edit-page {
+            --reservation-edit-border: #dfe5e2;
+            max-width: 900px;
+        }
+
+        .reservation-edit-heading,
+        .reservation-edit-form {
+            background: rgba(255, 255, 255, .94);
+            border: 1px solid var(--reservation-edit-border);
+            box-shadow: 0 3px 12px rgba(20, 35, 28, .08);
+        }
+
+        .reservation-edit-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1rem 1.15rem;
+            margin-bottom: .75rem;
+        }
+
+        .reservation-edit-heading h1 {
+            color: #202a25;
+        }
+
+        .reservation-edit-form {
+            padding: 1.25rem;
+        }
+
+        .reservation-edit-form .form-label {
+            color: #27342e;
+            font-weight: 600;
+        }
+
+        .reservation-edit-form .form-control,
+        .reservation-edit-form .form-select {
+            background-color: #fff;
+            border-color: #cbd5d0;
+        }
+
+        .reservation-edit-form .form-control:focus,
+        .reservation-edit-form .form-select:focus {
+            border-color: #198754;
+            box-shadow: 0 0 0 .2rem rgba(25, 135, 84, .15);
+        }
+
+        @media (max-width: 575.98px) {
+            .reservation-edit-heading {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .reservation-edit-heading .btn {
+                width: 100%;
+            }
+
+            .reservation-edit-form {
+                padding: 1rem;
+            }
+        }
+    </style>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {

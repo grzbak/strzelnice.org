@@ -21,6 +21,8 @@
             'Bank' => $systemConfiguration->bank_name,
             'Numer rachunku' => $systemConfiguration->formatted_bank_account_number,
             'Domyślny termin rezerwacji' => $systemConfiguration->default_max_advance_booking_days . ' dni',
+            'Rezerwacje w tabeli bieżącej' => $systemConfiguration->reservation_operational_months . ' mies.',
+            'Łączny okres historii rezerwacji' => $systemConfiguration->reservation_history_months . ' mies.',
         ];
     @endphp
 

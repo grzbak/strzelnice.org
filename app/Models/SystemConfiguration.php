@@ -10,6 +10,10 @@ class SystemConfiguration extends Model
 {
     use HasFactory;
 
+    public const DEFAULT_RESERVATION_OPERATIONAL_MONTHS = 6;
+
+    public const DEFAULT_RESERVATION_HISTORY_MONTHS = 60;
+
     public const DATA_FIELDS = [
         'company_name_1',
         'company_name_2',
@@ -27,6 +31,8 @@ class SystemConfiguration extends Model
         'bank_name',
         'bank_account_number',
         'default_max_advance_booking_days',
+        'reservation_operational_months',
+        'reservation_history_months',
     ];
 
     protected $fillable = [
@@ -37,6 +43,8 @@ class SystemConfiguration extends Model
     protected $casts = [
         'is_archived' => 'boolean',
         'default_max_advance_booking_days' => 'integer',
+        'reservation_operational_months' => 'integer',
+        'reservation_history_months' => 'integer',
     ];
 
     public function scopeActive(Builder $query): Builder

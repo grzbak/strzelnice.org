@@ -6,15 +6,27 @@
     <main class="container py-4 admin-reservations">
         <x-session-alerts />
 
+        @if (! $shootingRange->is_visible)
+            <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+                <i class="bi bi-eye-slash-fill fs-5" aria-hidden="true"></i>
+                <div>
+                    <strong>Strzelnica jest ukryta.</strong>
+                    Kalendarz pozostaje dostępny do podglądu, ale dodawanie i edycja
+                    rezerwacji są zablokowane do czasu ponownego włączenia widoczności.
+                </div>
+            </div>
+        @endif
+
         <section class="calendar-header">
             <div>
                 <span class="calendar-eyebrow">Panel strzelnicy</span>
                 <h1>Rezerwacje</h1>
                 <p>{{ $shootingRange->name }}</p>
+                <div id="calendarTitle" class="calendar-period-title"></div>
             </div>
 
             <div class="calendar-navigation">
-                @if ($managedRanges->count() > 1)
+                @if (! auth()->user()->isSuperAdmin() && $managedRanges->count() > 1)
                     <form method="GET" action="{{ route('admin.reservations.calendar') }}">
                         <input type="hidden" name="view" value="{{ $viewMode }}">
                         <input type="hidden" name="date" value="{{ $selectedDate }}">
@@ -30,6 +42,9 @@
                                     @selected($range->id === $shootingRange->id)
                                 >
                                     {{ $range->name }}
+                                    @if (! $range->is_visible)
+                                        (ukryta)
+                                    @endif
                                 </option>
                             @endforeach
                         </select>
@@ -42,10 +57,22 @@
                     class="btn btn-success"
                     data-bs-toggle="modal"
                     data-bs-target="#staffReservationModal"
+                    @disabled(! $shootingRange->is_visible)
+                    @if (! $shootingRange->is_visible)
+                        title="Rezerwacje są zablokowane dla ukrytej strzelnicy"
+                    @endif
                 >
                     <i class="bi bi-calendar-plus me-1"></i>
                     Dodaj rezerwację
                 </button>
+
+                <a
+                    href="{{ route('admin.reservations.archive', ['shooting_range_id' => $shootingRange->id]) }}"
+                    class="btn btn-outline-secondary"
+                >
+                    <i class="bi bi-archive me-1"></i>
+                    Archiwum
+                </a>
 
                 <div class="btn-group" role="group" aria-label="Nawigacja po kalendarzu">
                     <button type="button" id="previousPeriod" class="btn btn-light" title="Poprzedni okres">
@@ -107,7 +134,6 @@
             </div>
         </section>
 
-        <section id="calendarTitle" class="period-title"></section>
         <section id="calendarContent"></section>
     </main>
 
@@ -488,10 +514,15 @@
             min-width: 145px;
         }
 
-        .period-title {
-            padding: 1rem .15rem .65rem;
+        .calendar-period-title {
+            margin-top: .55rem;
+            color: #26332d;
             font-size: 1.1rem;
             font-weight: 700;
+        }
+
+        #calendarContent {
+            margin-top: .7rem;
         }
 
         .empty-state {

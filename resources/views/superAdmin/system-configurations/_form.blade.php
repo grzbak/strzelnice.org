@@ -31,6 +31,16 @@
                 'Domyślny maksymalny termin rezerwacji (dni)',
                 'number',
             ],
+            [
+                'reservation_operational_months',
+                'Rezerwacje w tabeli bieżącej (miesiące)',
+                'number',
+            ],
+            [
+                'reservation_history_months',
+                'Łączny okres przechowywania historii (miesiące)',
+                'number',
+            ],
         ],
     ];
 @endphp
@@ -65,6 +75,11 @@
                         max="365"
                         required
                     @endif
+                    @if (in_array($name, ['reservation_operational_months', 'reservation_history_months'], true))
+                        min="1"
+                        max="240"
+                        required
+                    @endif
                 >
                 @if ($name === 'bank_account_number')
                     <div class="form-text">
@@ -74,6 +89,16 @@
                 @if ($name === 'default_max_advance_booking_days')
                     <div class="form-text">
                         Wartość 0 pozwala na rezerwację wyłącznie na dzisiaj.
+                    </div>
+                @endif
+                @if ($name === 'reservation_operational_months')
+                    <div class="form-text">
+                        Po tym czasie zakończone rezerwacje zostaną przeniesione do archiwum.
+                    </div>
+                @endif
+                @if ($name === 'reservation_history_months')
+                    <div class="form-text">
+                        Po tym czasie, liczonym od końca rezerwacji, dane zostaną trwale usunięte.
                     </div>
                 @endif
                 <x-input-error :messages="$errors->get($name)" class="mt-1" />

@@ -35,6 +35,10 @@ class ReservationWorkflowTest extends TestCase
             $table->id();
             $table->unsignedSmallInteger('default_max_advance_booking_days')
                 ->default(30);
+            $table->unsignedSmallInteger('reservation_operational_months')
+                ->default(6);
+            $table->unsignedSmallInteger('reservation_history_months')
+                ->default(60);
             $table->boolean('is_archived')->default(false);
             $table->timestamps();
         });
@@ -152,8 +156,45 @@ class ReservationWorkflowTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('reservation_archives', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('original_reservation_id')->unique();
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->unsignedBigInteger('mod_id')->nullable();
+            $table->unsignedBigInteger('customer_user_id')->nullable();
+            $table->string('customer_name')->nullable();
+            $table->string('customer_email')->nullable();
+            $table->string('customer_phone')->nullable();
+            $table->unsignedBigInteger('created_by_user_id')->nullable();
+            $table->string('source')->nullable();
+            $table->unsignedBigInteger('shooting_range_id')->nullable();
+            $table->string('shooting_range_name')->nullable();
+            $table->string('shooting_range_town')->nullable();
+            $table->unsignedBigInteger('line_id')->nullable();
+            $table->string('lane_name')->nullable();
+            $table->unsignedInteger('lane_length')->nullable();
+            $table->dateTime('start');
+            $table->dateTime('end');
+            $table->unsignedInteger('positions_count')->default(1);
+            $table->boolean('is_dynamic_shooting')->default(false);
+            $table->string('status');
+            $table->unsignedBigInteger('approved_by_user_id')->nullable();
+            $table->timestamp('approved_at')->nullable();
+            $table->unsignedBigInteger('cancelled_by_user_id')->nullable();
+            $table->timestamp('cancelled_at')->nullable();
+            $table->unsignedBigInteger('finalized_by_user_id')->nullable();
+            $table->timestamp('finalized_at')->nullable();
+            $table->string('cancellation_reason')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamp('reservation_created_at')->nullable();
+            $table->timestamp('reservation_updated_at')->nullable();
+            $table->dateTime('archived_at');
+        });
+
         DB::table('system_configurations')->insert([
             'default_max_advance_booking_days' => 30,
+            'reservation_operational_months' => 6,
+            'reservation_history_months' => 60,
             'is_archived' => false,
             'created_at' => now(),
             'updated_at' => now(),
@@ -194,6 +235,43 @@ class ReservationWorkflowTest extends TestCase
             'status' => Reservation::STATUS_APPROVED,
             'approved_by_user_id' => $admin->id,
         ]);
+    }
+
+    public function test_hidden_range_calendar_is_read_only_and_blocks_new_reservations(): void
+    {
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+
+        DB::table('shooting_ranges')
+            ->where('id', $rangeId)
+            ->update(['is_visible' => false]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.reservations.calendar', [
+                'shooting_range_id' => $rangeId,
+            ]))
+            ->assertOk()
+            ->assertSee('Strzelnica jest ukryta.')
+            ->assertSee('id="newReservationButton"', false)
+            ->assertSee('disabled', false);
+
+        $this->actingAs($admin)
+            ->post(route('admin.reservations.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '10:00',
+                'end_time' => '10:30',
+                'positions_count' => 1,
+                'customer_type' => 'guest',
+                'customer_name' => 'Jan Gość',
+                'customer_email' => 'gosc@example.test',
+            ])
+            ->assertSessionHas(
+                'error',
+                'Strzelnica jest ukryta. Dodawanie i edycja rezerwacji są zablokowane.'
+            );
+
+        $this->assertDatabaseCount('reservations', 0);
     }
 
     public function test_client_cannot_use_staff_guest_endpoint(): void
@@ -692,6 +770,195 @@ class ReservationWorkflowTest extends TestCase
             ->assertSee(route('rezerwacje.edit', $reservationId));
     }
 
+    public function test_customer_history_contains_archived_reservations(): void
+    {
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        DB::table('reservation_archives')->insert([
+            'original_reservation_id' => 987,
+            'user_id' => $client->id,
+            'customer_user_id' => $client->id,
+            'customer_name' => $client->name,
+            'customer_email' => $client->email,
+            'source' => Reservation::SOURCE_ONLINE_ACCOUNT,
+            'shooting_range_name' => 'Archiwalna strzelnica',
+            'shooting_range_town' => 'Warszawa',
+            'lane_name' => 'Oś historyczna',
+            'start' => now()->subMonths(7)->setTime(10, 0),
+            'end' => now()->subMonths(7)->setTime(10, 30),
+            'positions_count' => 1,
+            'is_dynamic_shooting' => false,
+            'status' => Reservation::STATUS_COMPLETED,
+            'archived_at' => now(),
+        ]);
+
+        $this->actingAs($client)
+            ->get(route('rezerwacje.mine', ['view' => 'history']))
+            ->assertOk()
+            ->assertSee('Archiwalna strzelnica')
+            ->assertSee('Oś historyczna')
+            ->assertSee('Zrealizowana');
+    }
+
+    public function test_command_archives_final_reservations_and_purges_expired_history(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        $reservationId = $this->insertReservation(
+            $client,
+            $rangeId,
+            $laneId,
+            '10:00',
+            '10:30',
+            1,
+            Reservation::STATUS_COMPLETED,
+            false,
+            today()->subMonths(7)
+        );
+
+        DB::table('reservation_archives')->insert([
+            'original_reservation_id' => 123456,
+            'start' => now()->subMonths(61)->setTime(10, 0),
+            'end' => now()->subMonths(61)->setTime(10, 30),
+            'status' => Reservation::STATUS_COMPLETED,
+            'archived_at' => now()->subMonths(54),
+        ]);
+
+        $this->artisan('reservations:archive-and-purge')
+            ->assertSuccessful();
+
+        $this->assertDatabaseMissing('reservations', [
+            'id' => $reservationId,
+        ]);
+        $this->assertDatabaseHas('reservation_archives', [
+            'original_reservation_id' => $reservationId,
+            'shooting_range_id' => $rangeId,
+            'line_id' => $laneId,
+        ]);
+        $this->assertDatabaseMissing('reservation_archives', [
+            'original_reservation_id' => 123456,
+        ]);
+    }
+
+    public function test_staff_archive_only_contains_assigned_shooting_ranges(): void
+    {
+        [$admin, $ownRangeId] = $this->createBookableRange('admin', true);
+        [, $otherRangeId] = $this->createBookableRange('admin', true);
+
+        $this->insertArchivedReservation(
+            $ownRangeId,
+            'Archiwum własnej strzelnicy',
+            'Klient własny'
+        );
+        $this->insertArchivedReservation(
+            $otherRangeId,
+            'Archiwum obcej strzelnicy',
+            'Klient obcy'
+        );
+
+        $this->actingAs($admin)
+            ->get(route('admin.reservations.archive'))
+            ->assertOk()
+            ->assertSee('Archiwum własnej strzelnicy')
+            ->assertDontSee('Archiwum obcej strzelnicy');
+
+        $this->actingAs($admin)
+            ->get(route('admin.reservations.archive', [
+                'shooting_range_id' => $otherRangeId,
+            ]))
+            ->assertForbidden();
+    }
+
+    public function test_superadmin_can_filter_all_archived_reservations(): void
+    {
+        [, $firstRangeId] = $this->createBookableRange('admin', true);
+        [, $secondRangeId] = $this->createBookableRange('admin', true);
+        $superadmin = User::factory()->create([
+            'role' => 'superadmin',
+            'is_approved' => true,
+        ]);
+
+        $this->insertArchivedReservation(
+            $firstRangeId,
+            'Pierwsza strzelnica archiwalna',
+            'Jan Archiwalny'
+        );
+        $this->insertArchivedReservation(
+            $secondRangeId,
+            'Druga strzelnica archiwalna',
+            'Anna Historyczna'
+        );
+
+        $this->actingAs($superadmin)
+            ->get(route('admin.reservations.archive'))
+            ->assertOk()
+            ->assertSee('Pierwsza strzelnica archiwalna')
+            ->assertSee('Druga strzelnica archiwalna')
+            ->assertSee('data-date-picker-only', false)
+            ->assertSee('max="'.today()->toDateString().'"', false);
+
+        $this->actingAs($superadmin)
+            ->get(route('admin.reservations.archive', [
+                'q' => 'Anna Historyczna',
+            ]))
+            ->assertOk()
+            ->assertSee('Anna Historyczna')
+            ->assertDontSee('Jan Archiwalny');
+
+        $this->actingAs($superadmin)
+            ->get(route('admin.reservations.archive', [
+                'date_from' => '999999.99.99',
+            ]))
+            ->assertSessionHasErrors('date_from');
+    }
+
+    public function test_deleted_shooting_range_filter_redirects_without_model_exception(): void
+    {
+        $this->createBookableRange('admin', true);
+        $superadmin = User::factory()->create([
+            'role' => 'superadmin',
+            'is_approved' => true,
+        ]);
+
+        $missingRangeId = 407;
+
+        $this->assertDatabaseMissing('shooting_ranges', [
+            'id' => $missingRangeId,
+        ]);
+
+        $this->actingAs($superadmin)
+            ->get(route('admin.reservations.calendar', [
+                'shooting_range_id' => $missingRangeId,
+            ]))
+            ->assertRedirect(route('admin.reservations.calendar'))
+            ->assertSessionHas('error');
+
+        $this->actingAs($superadmin)
+            ->get(route('admin.reservations.archive', [
+                'shooting_range_id' => $missingRangeId,
+            ]))
+            ->assertRedirect(route('admin.reservations.archive'))
+            ->assertSessionHas('error');
+    }
+
+    public function test_client_cannot_open_staff_reservation_archive(): void
+    {
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        $this->actingAs($client)
+            ->get(route('admin.reservations.archive'))
+            ->assertForbidden();
+    }
+
     public function test_staff_account_can_access_its_own_customer_reservations(): void
     {
         [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
@@ -970,6 +1237,35 @@ class ReservationWorkflowTest extends TestCase
             'status' => $status,
             'created_at' => now(),
             'updated_at' => now(),
+        ]);
+    }
+
+    private function insertArchivedReservation(
+        int $rangeId,
+        string $rangeName,
+        string $customerName
+    ): int {
+        return DB::table('reservation_archives')->insertGetId([
+            'original_reservation_id' => (
+                (int) DB::table('reservation_archives')
+                    ->max('original_reservation_id')
+            ) + 1,
+            'customer_name' => $customerName,
+            'customer_email' => mb_strtolower(
+                str_replace(' ', '.', $customerName)
+            ).'@example.com',
+            'source' => Reservation::SOURCE_ONLINE_ACCOUNT,
+            'shooting_range_id' => $rangeId,
+            'shooting_range_name' => $rangeName,
+            'shooting_range_town' => 'Warszawa',
+            'lane_name' => 'Oś archiwalna',
+            'lane_length' => 25,
+            'start' => now()->subMonths(7)->setTime(10, 0),
+            'end' => now()->subMonths(7)->setTime(10, 30),
+            'positions_count' => 1,
+            'is_dynamic_shooting' => false,
+            'status' => Reservation::STATUS_COMPLETED,
+            'archived_at' => now(),
         ]);
     }
 }

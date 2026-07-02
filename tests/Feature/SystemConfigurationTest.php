@@ -33,7 +33,11 @@ class SystemConfigurationTest extends TestCase
             $table->id();
 
             foreach (SystemConfiguration::DATA_FIELDS as $field) {
-                if ($field === 'default_max_advance_booking_days') {
+                if (in_array($field, [
+                    'default_max_advance_booking_days',
+                    'reservation_operational_months',
+                    'reservation_history_months',
+                ], true)) {
                     continue;
                 }
 
@@ -42,6 +46,10 @@ class SystemConfigurationTest extends TestCase
 
             $table->unsignedSmallInteger('default_max_advance_booking_days')
                 ->default(30);
+            $table->unsignedSmallInteger('reservation_operational_months')
+                ->default(6);
+            $table->unsignedSmallInteger('reservation_history_months')
+                ->default(60);
             $table->boolean('is_archived')->default(false);
             $table->timestamps();
         });
@@ -139,6 +147,8 @@ class SystemConfigurationTest extends TestCase
                 'email' => 'kontakt@example.com',
                 'postal_code' => '00-001',
                 'default_max_advance_booking_days' => 30,
+                'reservation_operational_months' => 6,
+                'reservation_history_months' => 60,
             ])
             ->assertRedirect();
 
@@ -150,8 +160,29 @@ class SystemConfigurationTest extends TestCase
         $this->assertDatabaseHas('system_configurations', [
             'company_name_1' => 'Strzelnice Test',
             'email' => 'kontakt@example.com',
+            'reservation_operational_months' => 6,
+            'reservation_history_months' => 60,
             'is_archived' => false,
         ]);
+
+        $this->assertSame(1, SystemConfiguration::query()->active()->count());
+    }
+
+    public function test_operational_period_cannot_exceed_history_period(): void
+    {
+        $superadmin = User::factory()->create([
+            'role' => 'superadmin',
+            'is_approved' => true,
+        ]);
+        $current = SystemConfiguration::query()->active()->firstOrFail();
+
+        $this->actingAs($superadmin)
+            ->patch(route('admin.system-configurations.update', $current), [
+                'default_max_advance_booking_days' => 30,
+                'reservation_operational_months' => 12,
+                'reservation_history_months' => 6,
+            ])
+            ->assertSessionHasErrors('reservation_operational_months');
 
         $this->assertSame(1, SystemConfiguration::query()->active()->count());
     }
@@ -192,6 +223,8 @@ class SystemConfigurationTest extends TestCase
             ->patch(route('admin.system-configurations.update', $current), [
                 'bank_account_number' => 'PL61 1090 1014 0000 0712 1981 2874',
                 'default_max_advance_booking_days' => 30,
+                'reservation_operational_months' => 6,
+                'reservation_history_months' => 60,
             ])
             ->assertRedirect();
 
@@ -226,6 +259,8 @@ class SystemConfigurationTest extends TestCase
             ->patch(route('admin.system-configurations.update', $configuration), [
                 'bank_account_number' => '61 1090 1014 0000 0712 1981 2875',
                 'default_max_advance_booking_days' => 30,
+                'reservation_operational_months' => 6,
+                'reservation_history_months' => 60,
             ])
             ->assertSessionHasErrors('bank_account_number');
 

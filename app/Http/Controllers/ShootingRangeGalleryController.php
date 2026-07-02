@@ -56,7 +56,7 @@ class ShootingRangeGalleryController extends Controller
                 'required',
                 'file',
                 'mimes:jpg,jpeg,png',
-                'max:1024',
+                //'max:1024',
             ],
         ]);
 

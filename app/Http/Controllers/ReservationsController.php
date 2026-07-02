@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Lane;
 use App\Models\Reservation;
+use App\Models\ReservationArchive;
 use App\Models\ShootingRange;
 use App\Models\User;
 use App\Services\ShootingRangeAvailabilityService;
@@ -189,29 +190,111 @@ class ReservationsController extends Controller
     public function myReservations(Request $request): View
     {
         $user = $request->user();
-        $reservations = Reservation::query()
-            ->where(function ($query) use ($user) {
-                $query
-                    ->where('customer_user_id', $user->id)
-                    ->orWhere(function ($query) use ($user) {
-                        $query
-                            ->whereNull('customer_user_id')
-                            ->where('user_id', $user->id)
-                            ->where(function ($query) {
-                                $query
-                                    ->whereNull('source')
-                                    ->orWhere(
-                                        'source',
-                                        Reservation::SOURCE_ONLINE_ACCOUNT
-                                    );
-                            });
-                    });
-            })
-            ->with(['shootingRange:id,name,town', 'lane:id,name,length'])
-            ->orderByDesc('start')
-            ->get();
+        $section = $request->query('view') === 'history'
+            ? 'history'
+            : 'upcoming';
+        $reservationOwnershipFilter = function ($query) use ($user): void {
+            $query
+                ->where('reservations.customer_user_id', $user->id)
+                ->orWhere(function ($query) use ($user) {
+                    $query
+                        ->whereNull('reservations.customer_user_id')
+                        ->where('reservations.user_id', $user->id)
+                        ->where(function ($query) {
+                            $query
+                                ->whereNull('reservations.source')
+                                ->orWhere(
+                                    'reservations.source',
+                                    Reservation::SOURCE_ONLINE_ACCOUNT
+                                );
+                        });
+                });
+        };
+        $archiveOwnershipFilter = function ($query) use ($user): void {
+            $query
+                ->where('reservation_archives.customer_user_id', $user->id)
+                ->orWhere(function ($query) use ($user) {
+                    $query
+                        ->whereNull('reservation_archives.customer_user_id')
+                        ->where('reservation_archives.user_id', $user->id)
+                        ->where(function ($query) {
+                            $query
+                                ->whereNull('reservation_archives.source')
+                                ->orWhere(
+                                    'reservation_archives.source',
+                                    Reservation::SOURCE_ONLINE_ACCOUNT
+                                );
+                        });
+                });
+        };
 
-        return view('reservation.mine', compact('reservations'));
+        $upcomingReservations = collect();
+        $historyReservations = null;
+
+        if ($section === 'upcoming') {
+            $upcomingReservations = Reservation::query()
+                ->where($reservationOwnershipFilter)
+                ->where('end', '>=', now())
+                ->with([
+                    'shootingRange:id,name,town',
+                    'lane:id,name,length',
+                ])
+                ->orderBy('start')
+                ->get();
+        } else {
+            $currentHistory = DB::table('reservations')
+                ->leftJoin(
+                    'shooting_ranges',
+                    'shooting_ranges.id',
+                    '=',
+                    'reservations.shooting_range_id'
+                )
+                ->leftJoin('lanes', 'lanes.id', '=', 'reservations.line_id')
+                ->where($reservationOwnershipFilter)
+                ->where('reservations.end', '<', now())
+                ->select([
+                    'reservations.id as original_reservation_id',
+                    'reservations.start',
+                    'reservations.end',
+                    'reservations.positions_count',
+                    'reservations.is_dynamic_shooting',
+                    'reservations.status',
+                    'shooting_ranges.name as shooting_range_name',
+                    'shooting_ranges.town as shooting_range_town',
+                    'lanes.name as lane_name',
+                ])
+                ->selectRaw('0 as is_archived');
+
+            $archivedHistory = DB::table('reservation_archives')
+                ->where($archiveOwnershipFilter)
+                ->select([
+                    'original_reservation_id',
+                    'start',
+                    'end',
+                    'positions_count',
+                    'is_dynamic_shooting',
+                    'status',
+                    'shooting_range_name',
+                    'shooting_range_town',
+                    'lane_name',
+                ])
+                ->selectRaw('1 as is_archived');
+
+            $historyReservations = DB::query()
+                ->fromSub(
+                    $currentHistory->unionAll($archivedHistory),
+                    'reservation_history'
+                )
+                ->orderByDesc('start')
+                ->paginate(20, ['*'], 'history_page')
+                ->withQueryString();
+        }
+
+        return view('reservation.mine', compact(
+            'section',
+            'upcomingReservations',
+            'historyReservations'
+        ));
     }
 
     public function editByCustomer(
@@ -325,32 +408,65 @@ class ReservationsController extends Controller
             ->with('success', 'Rezerwacja została zaktualizowana.');
     }
 
-    public function adminCalendar(Request $request): View
+    public function adminCalendar(Request $request): View|RedirectResponse
     {
         $validated = $request->validate([
             'view' => ['nullable', 'in:day,week,month'],
             'date' => ['nullable', 'date'],
-            'shooting_range_id' => ['nullable', 'integer', 'exists:shooting_ranges,id'],
+            'shooting_range_id' => ['nullable', 'integer'],
         ]);
 
         $user = $request->user();
         $rangesQuery = $user->isSuperAdmin()
             ? ShootingRange::query()
-            : $user->shootingRanges()->wherePivot('is_approved', true);
+            : $user->shootingRanges()
+                ->wherePivot('is_approved', true)
+                ->wherePivotIn('role', ['admin', 'pracownik']);
 
         $managedRanges = $rangesQuery
             ->orderBy('name')
-            ->get(['shooting_ranges.id', 'shooting_ranges.name']);
+            ->get([
+                'shooting_ranges.id',
+                'shooting_ranges.name',
+                'shooting_ranges.is_visible',
+            ]);
+
+        abort_if($managedRanges->isEmpty(), 404, 'Nie przypisano żadnej strzelnicy.');
+
+        $requestedShootingRangeId = isset($validated['shooting_range_id'])
+            ? (int) $validated['shooting_range_id']
+            : null;
+
+        if (
+            $requestedShootingRangeId !== null
+            && ! $managedRanges->contains('id', $requestedShootingRangeId)
+        ) {
+            abort_if(
+                ShootingRange::whereKey($requestedShootingRangeId)->exists(),
+                403,
+                'Nie masz uprawnień do tej strzelnicy.'
+            );
+
+            return redirect()
+                ->route('admin.reservations.calendar')
+                ->with('error', 'Wybrana strzelnica nie istnieje lub została usunięta.');
+        }
 
         $shootingRangeId = (int) (
-            $validated['shooting_range_id']
+            $requestedShootingRangeId
             ?? $managedRanges->first()?->id
         );
 
         abort_if($shootingRangeId === 0, 404, 'Nie przypisano żadnej strzelnicy.');
 
         $shootingRange = ShootingRange::with(['lanes', 'openingHours'])
-            ->findOrFail($shootingRangeId);
+            ->find($shootingRangeId);
+
+        if (! $shootingRange) {
+            return redirect()
+                ->route('admin.reservations.calendar')
+                ->with('error', 'Wybrana strzelnica nie istnieje lub została usunięta.');
+        }
 
         abort_unless(
             $user->managesShootingRange($shootingRange),
@@ -423,7 +539,8 @@ class ReservationsController extends Controller
                 'finalized_by_name' => $reservation->finalizer?->name,
                 'has_started' => $reservation->start->lessThanOrEqualTo(now()),
                 'has_ended' => $reservation->end->lessThanOrEqualTo(now()),
-                'can_edit' => $reservation->canBeEdited(),
+                'can_edit' => $shootingRange->is_visible
+                    && $reservation->canBeEdited(),
             ])
             ->values();
 
@@ -445,6 +562,140 @@ class ReservationsController extends Controller
             'periodStart' => $periodStart->format('Y-m-d'),
             'periodEnd' => $periodEnd->format('Y-m-d'),
             'maxBookingDate' => $shootingRange->latestBookableDate(),
+        ]);
+    }
+
+    public function adminArchive(Request $request): View|RedirectResponse
+    {
+        $validated = $request->validate([
+            'shooting_range_id' => [
+                'nullable',
+                'integer',
+            ],
+            'date_from' => [
+                'nullable',
+                'date',
+                'after_or_equal:1900-01-01',
+                'before_or_equal:today',
+            ],
+            'date_to' => [
+                'nullable',
+                'date',
+                'after_or_equal:date_from',
+                'before_or_equal:today',
+            ],
+            'status' => [
+                'nullable',
+                Rule::in([
+                    Reservation::STATUS_CANCELLED,
+                    Reservation::STATUS_COMPLETED,
+                    Reservation::STATUS_NO_SHOW,
+                ]),
+            ],
+            'q' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $user = $request->user();
+        $rangesQuery = $user->isSuperAdmin()
+            ? ShootingRange::query()
+            : $user->shootingRanges()
+                ->wherePivot('is_approved', true)
+                ->wherePivotIn('role', ['admin', 'pracownik']);
+
+        $managedRanges = $rangesQuery
+            ->orderBy('name')
+            ->get(['shooting_ranges.id', 'shooting_ranges.name']);
+
+        abort_if(
+            ! $user->isSuperAdmin() && $managedRanges->isEmpty(),
+            404,
+            'Nie przypisano żadnej strzelnicy.'
+        );
+
+        $shootingRangeId = isset($validated['shooting_range_id'])
+            ? (int) $validated['shooting_range_id']
+            : null;
+
+        if ($shootingRangeId !== null) {
+            if (
+                ! $managedRanges->contains('id', $shootingRangeId)
+                && ! ShootingRange::whereKey($shootingRangeId)->exists()
+            ) {
+                return redirect()
+                    ->route('admin.reservations.archive')
+                    ->with('error', 'Wybrana strzelnica nie istnieje lub została usunięta.');
+            }
+
+            abort_unless(
+                $managedRanges->contains('id', $shootingRangeId),
+                403,
+                'Nie masz uprawnień do tej strzelnicy.'
+            );
+        }
+
+        $archives = ReservationArchive::query()
+            ->when(
+                ! $user->isSuperAdmin(),
+                fn ($query) => $query->whereIn(
+                    'shooting_range_id',
+                    $managedRanges->pluck('id')
+                )
+            )
+            ->when(
+                $shootingRangeId !== null,
+                fn ($query) => $query->where(
+                    'shooting_range_id',
+                    $shootingRangeId
+                )
+            )
+            ->when(
+                $validated['date_from'] ?? null,
+                fn ($query, $date) => $query->whereDate(
+                    'start',
+                    '>=',
+                    $date
+                )
+            )
+            ->when(
+                $validated['date_to'] ?? null,
+                fn ($query, $date) => $query->whereDate(
+                    'start',
+                    '<=',
+                    $date
+                )
+            )
+            ->when(
+                $validated['status'] ?? null,
+                fn ($query, $status) => $query->where('status', $status)
+            )
+            ->when(
+                filled($validated['q'] ?? null),
+                function ($query) use ($validated): void {
+                    $term = trim($validated['q']);
+                    $query->where(function ($query) use ($term): void {
+                        $like = '%'.$term.'%';
+                        $query
+                            ->where('customer_name', 'like', $like)
+                            ->orWhere('customer_email', 'like', $like)
+                            ->orWhere('customer_phone', 'like', $like);
+
+                        if (ctype_digit($term)) {
+                            $query->orWhere(
+                                'original_reservation_id',
+                                (int) $term
+                            );
+                        }
+                    });
+                }
+            )
+            ->orderByDesc('start')
+            ->paginate(25)
+            ->withQueryString();
+
+        return view('admin.reservations.archive', [
+            'archives' => $archives,
+            'managedRanges' => $managedRanges,
+            'filters' => $validated,
         ]);
     }
 

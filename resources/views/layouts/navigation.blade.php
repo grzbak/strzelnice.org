@@ -92,7 +92,6 @@
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.packages.index') }}">Cenniki</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.pages.index') }}">Strony</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.system-configurations.index') }}">Konfiguracja</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ route('admin.reservations.calendar') }}">Rezerwacje</a></li>
                     @elseif(auth()->user()->isAdmin())
                          @php
                             $navigationShootingRange = auth()->user()
@@ -128,6 +127,11 @@
                                         Rezerwacje
                                     </a>
                                 </li>
+                                <li>
+                                    <a class="dropdown-item" href="{{ route('admin.reservations.archive') }}">
+                                        Archiwum rezerwacji
+                                    </a>
+                                </li>
                             @if ($navigationShootingRange)
                                 <li>
                                     <a
@@ -152,6 +156,11 @@
                         <li class="nav-item">
                             <a class="nav-link" href="{{ route('admin.reservations.calendar') }}">
                                 Rezerwacje
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ route('admin.reservations.archive') }}">
+                                Archiwum
                             </a>
                         </li>
                     @endif

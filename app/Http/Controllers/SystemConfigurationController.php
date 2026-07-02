@@ -166,7 +166,21 @@ class SystemConfigurationController extends Controller
             'bank_name' => ['nullable', 'string', 'max:255'],
             'bank_account_number' => ['nullable', new PolishBankAccountNumber],
             'default_max_advance_booking_days' => ['required', 'integer', 'min:0', 'max:365'],
+            'reservation_operational_months' => [
+                'required',
+                'integer',
+                'min:1',
+                'max:240',
+                'lte:reservation_history_months',
+            ],
+            'reservation_history_months' => [
+                'required',
+                'integer',
+                'min:1',
+                'max:240',
+            ],
         ], [
+            'reservation_operational_months.lte' => 'Okres przechowywania rezerwacji bieżących nie może być dłuższy niż łączny okres historii.',
             'postal_code.regex' => 'Kod pocztowy musi mieć format 00-000.',
         ]);
     }

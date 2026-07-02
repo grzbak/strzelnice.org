@@ -17,8 +17,14 @@ class ShootingRangeAvailabilityService
         ShootingRange $shootingRange,
         ?Carbon $date = null
     ): array {
-        if (! $shootingRange->is_visible || $shootingRange->is_archived) {
-            return $this->denied('Strzelnica jest niedostępna.');
+        if (! $shootingRange->is_visible) {
+            return $this->denied(
+                'Strzelnica jest ukryta. Dodawanie i edycja rezerwacji są zablokowane.'
+            );
+        }
+
+        if ($shootingRange->is_archived) {
+            return $this->denied('Strzelnica jest zarchiwizowana.');
         }
 
         if (! $this->hasActiveAdministrator($shootingRange)) {
