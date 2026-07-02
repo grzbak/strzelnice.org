@@ -565,6 +565,12 @@ if (ShootingRangeInterval::hasOverlap(
             ->where('is_archived', false)
             ->with('activeInterval')
             ->withCount('reservations')
+            ->withCount([
+                'employees as active_admins_count' => fn ($query) => $query
+                    ->where('shooting_range_employee.role', 'admin')
+                    ->where('shooting_range_employee.is_approved', true)
+                    ->where('users.is_approved', true),
+            ])
             ->orderBy('name')
             ->get();
 

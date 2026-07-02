@@ -132,6 +132,7 @@
         const deleteBaseUrl = @json(url('/strzelnice'));
         const reservationsBaseUrl = @json(route('admin.reservations.calendar'));
         const reservationArchiveBaseUrl = @json(route('admin.reservations.archive'));
+        const staffBaseUrl = @json(url('/strzelnice'));
         let currentPage = 1;
 
         function todayDate() {
@@ -193,6 +194,22 @@
 
         function renderStatusIcon(shootingRange) {
             const status = shootingRangeStatus(shootingRange);
+            const administratorsCount = Number(
+                shootingRange.active_admins_count || 0
+            );
+            const administratorStatus = administratorsCount > 0
+                ? {
+                    icon: 'bi-person-check-fill',
+                    color: 'text-success',
+                    text: administratorsCount === 1
+                        ? 'Przypisano aktywnego administratora.'
+                        : `Przypisani aktywni administratorzy: ${administratorsCount}.`,
+                }
+                : {
+                    icon: 'bi-person-x-fill',
+                    color: 'text-danger',
+                    text: 'Brak aktywnego administratora strzelnicy.',
+                };
 
             return `
                 <i
@@ -200,6 +217,12 @@
                     data-bs-toggle="tooltip"
                     data-bs-placement="top"
                     title="${escapeHtml(status.text)}"
+                ></i>
+                <i
+                    class="bi ${administratorStatus.icon} action-icon ${administratorStatus.color}"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    title="${escapeHtml(administratorStatus.text)}"
                 ></i>
             `;
         }
@@ -302,6 +325,9 @@
                             <i class="bi bi-clock action-icon text-warning" onclick="window.location.href='${deleteBaseUrl}/${s.id}/przedzialy'" data-bs-toggle="tooltip" data-bs-placement="top" title="Zarządzaj przedziałami"></i>
                             <i class="bi bi-pencil action-icon text-dark" onclick="window.location.href='${deleteBaseUrl}/${s.id}/edytuj'" data-bs-toggle="tooltip" data-bs-placement="top" title="Edytuj"></i>
                             <i class="bi bi-images action-icon text-primary" onclick="window.location.href='${deleteBaseUrl}/${s.id}/galeria'" data-bs-toggle="tooltip" data-bs-placement="top" title="Zarządzaj galerią"></i>
+                            <a href="${staffBaseUrl}/${s.id}/pracownicy" class="text-decoration-none">
+                                <i class="bi bi-people-fill action-icon text-info" data-bs-toggle="tooltip" data-bs-placement="top" title="Zarządzaj personelem strzelnicy"></i>
+                            </a>
 
                             <a href="${reservationsBaseUrl}?shooting_range_id=${encodeURIComponent(s.id)}" class="text-decoration-none">
                                 <i class="bi bi-calendar3 action-icon text-success" data-bs-toggle="tooltip" data-bs-placement="top" title="Rezerwacje strzelnicy"></i>

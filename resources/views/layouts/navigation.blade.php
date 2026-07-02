@@ -93,10 +93,15 @@
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.pages.index') }}">Strony</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.system-configurations.index') }}">Konfiguracja</a></li>
                     @elseif(auth()->user()->isAdmin())
-                         @php
+                        @php
                             $navigationShootingRange = auth()->user()
                                 ->shootingRanges()
                                 ->wherePivot('is_approved', true)
+                                ->first();
+                            $administratedShootingRange = auth()->user()
+                                ->shootingRanges()
+                                ->wherePivot('is_approved', true)
+                                ->wherePivot('role', 'admin')
                                 ->first();
                         @endphp
 
@@ -139,6 +144,16 @@
                                         href="{{ route('shooting.gallery.index', $navigationShootingRange) }}"
                                     >
                                         Galeria
+                                    </a>
+                                </li>
+                            @endif
+                            @if ($administratedShootingRange)
+                                <li>
+                                    <a
+                                        class="dropdown-item"
+                                        href="{{ route('shooting.staff.index', $administratedShootingRange) }}"
+                                    >
+                                        Pracownicy
                                     </a>
                                 </li>
                             @endif

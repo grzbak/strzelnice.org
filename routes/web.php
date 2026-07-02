@@ -11,6 +11,7 @@ use App\Http\Controllers\ReservationsController;
 use App\Http\Controllers\ShootingRangeGalleryController;
 use App\Http\Controllers\ShootingRangeInvitationController;
 use App\Http\Controllers\ShootingRangePackageController;
+use App\Http\Controllers\ShootingRangeStaffController;
 use App\Http\Controllers\ShootingsController;
 use App\Http\Controllers\SystemConfigurationController;
 use Illuminate\Support\Facades\Route;
@@ -146,6 +147,29 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
             ->name('admin.reservations.update');
         Route::patch('/panel/rezerwacje/{reservation}/status', [ReservationsController::class, 'updateStatus'])
             ->name('admin.reservations.status');
+    });
+
+    Route::middleware('role:superadmin,admin')->group(function () {
+        Route::get('/strzelnice/{shootingRange}/pracownicy', [
+            ShootingRangeStaffController::class,
+            'index',
+        ])->name('shooting.staff.index');
+        Route::get('/strzelnice/{shootingRange}/pracownicy/szukaj', [
+            ShootingRangeStaffController::class,
+            'search',
+        ])->name('shooting.staff.search');
+        Route::post('/strzelnice/{shootingRange}/pracownicy', [
+            ShootingRangeStaffController::class,
+            'store',
+        ])->name('shooting.staff.store');
+        Route::patch('/strzelnice/{shootingRange}/pracownicy/{user}/rola', [
+            ShootingRangeStaffController::class,
+            'updateRole',
+        ])->name('shooting.staff.update-role');
+        Route::delete('/strzelnice/{shootingRange}/pracownicy/{user}', [
+            ShootingRangeStaffController::class,
+            'destroy',
+        ])->name('shooting.staff.destroy');
     });
 
     // ROLE DASHBOARD: SUPERADMIN
