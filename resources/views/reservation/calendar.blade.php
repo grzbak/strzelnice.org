@@ -64,39 +64,89 @@
                     {{ $shootingRange->town }}
                 </p>
 
-                <div class="availability-legend">
-                    <span><i class="dot free"></i> Wolne</span>
-                    <span><i class="dot limited"></i> Ostatnie miejsca</span>
-                    <span><i class="dot full"></i> Zajęte</span>
+                @if ($canViewCalendar)
+                    <div class="availability-legend">
+                        <span><i class="dot free"></i> Wolne</span>
+                        <span><i class="dot limited"></i> Ostatnie miejsca</span>
+                        <span><i class="dot full"></i> Zajęte</span>
+                    </div>
+                @endif
+            </div>
+
+            @if ($canViewCalendar)
+                <div class="date-navigation">
+                    <button type="button" id="previousDay" class="icon-button" title="Poprzedni dzień">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+
+                    <input
+                        type="date"
+                        id="selectedDate"
+                        class="form-control"
+                        value="{{ $calendarDate }}"
+                        min="{{ now()->format('Y-m-d') }}"
+                        max="{{ $maxBookingDate->format('Y-m-d') }}"
+                        title="Rezerwacje są dostępne maksymalnie {{ $maxAdvanceBookingDays }} dni do przodu"
+                    >
+
+                    <button type="button" id="nextDay" class="icon-button" title="Następny dzień">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
                 </div>
-            </div>
-
-            <div class="date-navigation">
-                <button type="button" id="previousDay" class="icon-button" title="Poprzedni dzień">
-                    <i class="bi bi-chevron-left"></i>
-                </button>
-
-                <input
-                    type="date"
-                    id="selectedDate"
-                    class="form-control"
-                    value="{{ $calendarDate }}"
-                    min="{{ now()->format('Y-m-d') }}"
-                    max="{{ $maxBookingDate->format('Y-m-d') }}"
-                    title="Rezerwacje są dostępne maksymalnie {{ $maxAdvanceBookingDays }} dni do przodu"
-                >
-
-                <button type="button" id="nextDay" class="icon-button" title="Następny dzień">
-                    <i class="bi bi-chevron-right"></i>
-                </button>
-            </div>
+            @endif
         </section>
 
-        <section id="daySummary" class="day-summary"></section>
-        <section id="lanesList" class="lanes-list"></section>
+        @if ($canViewCalendar)
+            <section id="daySummary" class="day-summary"></section>
+            <section id="lanesList" class="lanes-list"></section>
+        @elseif (auth()->check() && ! $shootingRange->is_public_access)
+            <section id="closedGroupNotice" class="login-required-panel">
+                <div class="login-required-icon">
+                    <i class="bi bi-shield-lock-fill" aria-hidden="true"></i>
+                </div>
+                <div class="login-required-content">
+                    <h2>Rezerwacje dla zamkniętej grupy</h2>
+                    <p>
+                        Ta strzelnica przyjmuje rezerwacje wyłącznie od
+                        zaproszonych użytkowników.
+                    </p>
+                    <p class="login-required-note">
+                        Twoje konto nie posiada aktywnego dostępu.
+                    </p>
+                    <a href="{{ route('shootings.list') }}" class="btn btn-outline-dark">
+                        <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                        Wróć do listy strzelnic
+                    </a>
+                </div>
+            </section>
+        @else
+            <section id="loginRequiredNotice" class="login-required-panel">
+                <div class="login-required-icon">
+                    <i class="bi bi-shield-lock-fill" aria-hidden="true"></i>
+                </div>
+                <div class="login-required-content">
+                    <h2>Zaloguj się, aby zarezerwować</h2>
+                    <p>
+                        Rezerwacje online są dostępne dla zalogowanych
+                        użytkowników.
+                    </p>
+                    <div class="login-required-actions">
+                        <a href="{{ route('login') }}" class="btn btn-dark">
+                            <i class="bi bi-box-arrow-in-right me-1" aria-hidden="true"></i>
+                            Zaloguj się
+                        </a>
+                        <span>
+                            Nie masz konta?
+                            <a href="{{ route('register') }}">Zarejestruj się</a>
+                        </span>
+                    </div>
+                </div>
+            </section>
+        @endif
     </main>
 
-    <div class="modal fade" id="reservationModal" tabindex="-1" aria-hidden="true">
+    @if ($canViewCalendar)
+        <div class="modal fade" id="reservationModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <form method="POST" action="{{ route('rezerwacje.store') }}" class="modal-content">
                 @csrf
@@ -170,7 +220,8 @@
                 </div>
             </form>
         </div>
-    </div>
+        </div>
+    @endif
 
     <style>
         .day-booking {
@@ -211,6 +262,67 @@
             font-size: .7rem;
             font-weight: 700;
             text-transform: uppercase;
+        }
+
+        .login-required-panel {
+            display: flex;
+            align-items: flex-start;
+            gap: 1.35rem;
+            margin-top: .75rem;
+            padding: 2rem 2.25rem;
+            color: var(--red);
+            background: rgba(255, 252, 235, .96);
+            border: 1px solid var(--red);
+            border-left: 7px solid var(--red);
+            border-radius: 8px;
+        }
+
+        .login-required-panel h2 {
+            margin: 0 0 .55rem;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .login-required-icon {
+            flex: 0 0 auto;
+            color: var(--red);
+            font-size: 3.4rem;
+            line-height: 1;
+        }
+
+        .login-required-content {
+            max-width: 680px;
+        }
+
+        .login-required-content > p {
+            margin-bottom: .45rem;
+            color: var(--muted);
+        }
+
+        .login-required-note {
+            font-size: .9rem;
+        }
+
+        .login-required-content > .btn {
+            margin-top: .7rem;
+        }
+
+        .login-required-actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: .75rem 1.1rem;
+            margin-top: .9rem;
+        }
+
+        .login-required-actions span {
+            color: var(--muted);
+            font-size: .88rem;
+        }
+
+        .login-required-actions span a {
+            color: #151719;
+            font-weight: 600;
         }
 
         .date-navigation {
@@ -401,6 +513,15 @@
                 flex-direction: column;
             }
 
+            .login-required-panel {
+                gap: 1rem;
+                padding: 1.5rem;
+            }
+
+            .login-required-icon {
+                font-size: 2.75rem;
+            }
+
             .date-navigation .form-control {
                 flex: 1;
                 width: 100%;
@@ -424,6 +545,16 @@
         }
 
         @media (max-width: 420px) {
+            .login-required-panel {
+                align-items: center;
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .login-required-actions {
+                justify-content: center;
+            }
+
             .time-slots {
                 grid-template-columns: repeat(2, 1fr);
             }
@@ -444,6 +575,7 @@
             minDate: @json(now()->format('Y-m-d')),
             maxDate: @json($maxBookingDate->format('Y-m-d')),
             maxAdvanceDays: @json($maxAdvanceBookingDays),
+            canViewCalendar: @json($canViewCalendar),
             slotMinutes: 30
         };
 
@@ -663,7 +795,18 @@
             `;
 
             if (free > 0 && !isPast) {
-                button.addEventListener('click', () => openModal(axis, dateString, startTime));
+                button.addEventListener('click', () => {
+                    if (!bookingConfig.canViewCalendar) {
+                        document.getElementById('loginRequiredNotice')
+                            ?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center'
+                            });
+                        return;
+                    }
+
+                    openModal(axis, dateString, startTime);
+                });
             }
 
             return button;
@@ -844,6 +987,10 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            if (!bookingConfig.canViewCalendar) {
+                return;
+            }
+
             renderDay();
 
             document.getElementById('previousDay').addEventListener('click', async () => {

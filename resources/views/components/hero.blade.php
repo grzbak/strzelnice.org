@@ -115,7 +115,18 @@
                                     tabindex="0"
                                     role="link"
                                 >
-                                    <td><strong>{{ $shootingRange->name }}</strong></td>
+                                    <td>
+                                        <strong>{{ $shootingRange->name }}</strong>
+                                        @if (! $shootingRange->is_public_access)
+                                            <span
+                                                class="badge bg-warning text-dark ms-1"
+                                                title="Rezerwacje są dostępne wyłącznie dla zaakceptowanych użytkowników"
+                                            >
+                                                <i class="bi bi-lock-fill me-1" aria-hidden="true"></i>
+                                                Grupa zamknięta
+                                            </span>
+                                        @endif
+                                    </td>
                                     <td>
                                         {{ $shootingRange->street }} {{ $shootingRange->houseNumber }},
                                         {{ $shootingRange->zipCode }} {{ $shootingRange->town }}
@@ -158,7 +169,18 @@
                         >
                             <div class="gap-3 d-flex align-items-start justify-content-between">
                                 <div class="min-w-0">
-                                    <h5 class="mb-1 search-result-mobile-title">{{ $shootingRange->name }}</h5>
+                                    <div class="flex-wrap gap-2 mb-1 d-flex align-items-center">
+                                        <h5 class="mb-0 search-result-mobile-title">{{ $shootingRange->name }}</h5>
+                                        @if (! $shootingRange->is_public_access)
+                                            <span
+                                                class="badge bg-warning text-dark"
+                                                title="Rezerwacje są dostępne wyłącznie dla zaakceptowanych użytkowników"
+                                            >
+                                                <i class="bi bi-lock-fill me-1" aria-hidden="true"></i>
+                                                Grupa zamknięta
+                                            </span>
+                                        @endif
+                                    </div>
                                     <div class="text-muted small">
                                         <i class="bi bi-geo-alt-fill me-1" aria-hidden="true"></i>
                                         {{ $shootingRange->street }} {{ $shootingRange->houseNumber }},

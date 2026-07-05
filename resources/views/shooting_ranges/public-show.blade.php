@@ -66,6 +66,16 @@
                                 Rezerwacje niedostępne
                             </span>
                         @endif
+
+                        @if (! $shootingRange->is_public_access)
+                            <span
+                                class="badge bg-warning text-dark"
+                                title="Rezerwacje są dostępne wyłącznie dla zaakceptowanych użytkowników"
+                            >
+                                <i class="bi bi-lock-fill me-1"></i>
+                                Rezerwacje dla zamkniętej grupy użytkowników
+                            </span>
+                        @endif
                     </div>
                 </div>
 
@@ -126,7 +136,7 @@
             </li>
 
             @if ($canReserve)
-                <li class="nav-item flex-fill" role="presentation">
+                <!--li class="nav-item flex-fill" role="presentation">
                     <button
                         class="nav-link w-100"
                         data-bs-toggle="tab"
@@ -138,7 +148,7 @@
                         <i class="bi bi-calendar-check"></i>
                         <span class="tab-label ms-1">Rezerwacje</span>
                     </button>
-                </li>
+                </li-->
             @endif
         </ul>
 

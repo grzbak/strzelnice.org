@@ -52,7 +52,8 @@ class ShootingRangeAvailabilityService
         ShootingRange $shootingRange,
         Carbon $date,
         int $minimumLaneLength = 0,
-        ?User $user = null
+        ?User $user = null,
+        bool $requireUserAccess = true
     ): array {
         $basicResult = $this->basicRequirements($shootingRange, $date);
 
@@ -64,7 +65,10 @@ class ShootingRangeAvailabilityService
             return $this->denied('Wybrana data znajduje się poza dozwolonym terminem rezerwacji.');
         }
 
-        if (! $this->canUserAccessRange($shootingRange, $user, $date)) {
+        if (
+            $requireUserAccess
+            && ! $this->canUserAccessRange($shootingRange, $user, $date)
+        ) {
             return $this->denied('Strzelnica wymaga aktywnego zaproszenia.');
         }
 

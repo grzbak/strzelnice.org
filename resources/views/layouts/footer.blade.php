@@ -1,6 +1,6 @@
 
 
-<footer class="py-3 mt-auto bg-dark text-light">
+<footer class="py-3 mt-auto bg-black text-light">
     <div class="container">
         <div class="row align-items-center">
 

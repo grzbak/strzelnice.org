@@ -197,7 +197,8 @@ class ShootingsController extends Controller
                         $shootingRange,
                         $date,
                         $laneLength,
-                        $user
+                        $user,
+                        false
                     )['allowed'];
                 })
                 ->map(function (ShootingRange $shootingRange) use ($date) {
@@ -354,22 +355,9 @@ class ShootingsController extends Controller
             ])
             ->orderBy('name')
             ->get()
-            ->filter(
-                fn (ShootingRange $shootingRange) => $this->availability
-                    ->canUserAccessRange(
-                        $shootingRange,
-                        $request->user(),
-                        $today
-                    )
-            )
-            ->map(function (ShootingRange $shootingRange) use ($today, $request) {
+            ->map(function (ShootingRange $shootingRange) use ($today) {
                 $shootingRange->can_reserve_online = $this->availability
-                    ->availableForSearch(
-                        $shootingRange,
-                        $today,
-                        0,
-                        $request->user()
-                    )['allowed'];
+                    ->basicRequirements($shootingRange, $today)['allowed'];
 
                 return $shootingRange;
             })
@@ -426,69 +414,11 @@ class ShootingsController extends Controller
             ])
             ->firstOrFail();
 
-        if (! $this->availability->canUserAccessRange(
+        $availability = $this->availability->basicRequirements(
             $shootingRange,
-            auth()->user(),
             $today
-        )) {
-            if (! auth()->check()) {
-                return redirect()
-                    ->route('login')
-                    ->with(
-                        'error',
-                        'Zaloguj się, aby uzyskać dostęp do tej strzelnicy.'
-                    );
-            }
-
-            abort(403, 'Nie posiadasz aktywnego zaproszenia do tej strzelnicy.');
-        }
-
-        $hasActiveAdmin = $shootingRange->employees->contains(function (User $employee) {
-            return $employee->pivot->role === 'admin'
-                && (bool) $employee->pivot->is_approved
-                && (bool) $employee->is_approved;
-        });
-
-        $hasValidInterval = $shootingRange->intervals->contains(function ($interval) use ($today) {
-            return $interval->is_active
-                && $interval->start_date->lte($today)
-                && $interval->end_date->gte($today);
-        });
-
-        $hasOpeningHours = $shootingRange->openingHours->isNotEmpty();
-        $hasLanes = $shootingRange->lanes->isNotEmpty();
-        $hasPrivateAccess = true;
-
-        if (! $shootingRange->is_public_access) {
-            $user = auth()->user();
-
-            $hasPrivateAccess = $user
-                && $shootingRange->invitations->contains(function ($invitation) use ($user) {
-                    $belongsToUser = (int) $invitation->user_id === (int) $user->id
-                        || mb_strtolower($invitation->email) === mb_strtolower($user->email);
-
-                    return $belongsToUser && $invitation->isActive();
-                });
-        }
-
-        $availability = $this->availability->availableForSearch(
-            $shootingRange,
-            $today,
-            0,
-            auth()->user()
         );
         $canReserve = $availability['allowed'];
-
-        $reservationUnavailableReason = match (true) {
-            ! $hasActiveAdmin => 'Strzelnica nie posiada aktywnego administratora.',
-            ! $hasValidInterval => 'Strzelnica nie posiada aktywnego przedziału rezerwacji.',
-            ! $hasOpeningHours => 'Strzelnica nie ma zdefiniowanych godzin otwarcia.',
-            ! $hasLanes => 'Strzelnica nie posiada dostępnych osi strzeleckich.',
-            ! $hasPrivateAccess => auth()->check()
-                ? 'Nie posiadasz aktywnego zaproszenia do tej strzelnicy.'
-                : 'Rezerwacja wymaga zalogowania i aktywnego zaproszenia.',
-            default => '',
-        };
         $reservationUnavailableReason = $availability['reason'] ?? '';
 
         return view('shooting_ranges.public-show', compact(

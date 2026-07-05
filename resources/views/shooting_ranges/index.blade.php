@@ -76,6 +76,16 @@
                                             Online
                                         </span>
                                     @endif
+
+                                    @if (! $shootingRange->is_public_access)
+                                        <span
+                                            class="shooting-private-status"
+                                            title="Rezerwacje są dostępne wyłącznie dla zaakceptowanych użytkowników"
+                                        >
+                                            <i class="bi bi-lock-fill" aria-hidden="true"></i>
+                                            Grupa zamknięta
+                                        </span>
+                                    @endif
                                 </div>
 
                                 <div>
@@ -265,6 +275,16 @@
             border-radius: 50%;
             box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.45);
             animation: shooting-online-pulse 1.8s infinite;
+        }
+
+        .shooting-private-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            color: #8a5b00;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
         }
 
         @keyframes shooting-online-pulse {

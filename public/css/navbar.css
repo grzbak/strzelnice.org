@@ -61,7 +61,7 @@
 @media (max-width: 991px) {
     .mobile-user-bar {
         color: #fff;
-        background: #212529;
+        background: #000;
         border-bottom-color: #3c4248;
     }
 

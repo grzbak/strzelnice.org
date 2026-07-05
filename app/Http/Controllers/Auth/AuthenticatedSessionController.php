@@ -44,11 +44,11 @@ class AuthenticatedSessionController extends Controller
         }
 
         if ($user->isAdmin()) {
-            return redirect()->intended('/admin');
+            return redirect()->intended('/panel/rezerwacje');
         }
 
         if ($user->isEmployee()) {
-            return redirect()->intended('/pracownik');
+            return redirect()->intended('/panel/rezerwacje');
         }
 
         return redirect()->intended('/klient');

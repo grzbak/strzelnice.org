@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\ShootingsController;
 use App\Models\Reservation;
 use App\Models\User;
 use Carbon\Carbon;
@@ -55,11 +56,37 @@ class ReservationWorkflowTest extends TestCase
         Schema::create('shooting_ranges', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->string('endpoint')->nullable();
             $table->string('town')->nullable();
             $table->boolean('is_visible')->default(true);
             $table->boolean('is_public_access')->default(true);
             $table->boolean('is_archived')->default(false);
             $table->unsignedSmallInteger('max_advance_booking_days')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('shooting_range_gallery_categories', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('shooting_range_id')->unique();
+            $table->string('name');
+            $table->string('folder_path')->unique();
+            $table->unsignedBigInteger('capacity_bytes')->default(52428800);
+            $table->boolean('is_visible')->default(true);
+            $table->boolean('is_deletable')->default(false);
+            $table->boolean('allow_upload')->default(true);
+            $table->boolean('allow_delete')->default(true);
+            $table->timestamps();
+        });
+
+        Schema::create('shooting_range_gallery_photos', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('category_id');
+            $table->string('stored_name')->unique();
+            $table->string('original_name');
+            $table->text('full_url');
+            $table->text('description')->nullable();
+            $table->unsignedBigInteger('size_bytes');
+            $table->string('format', 20);
             $table->timestamps();
         });
 
@@ -497,6 +524,95 @@ class ReservationWorkflowTest extends TestCase
             'line_id' => $laneId,
             'start' => $bookingDate->toDateString().' 10:00:00',
         ]);
+    }
+
+    public function test_list_and_public_page_allow_booking_when_range_is_closed_today(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', true);
+        $endpoint = 'strzelnica_testowa';
+
+        DB::table('shooting_ranges')
+            ->where('id', $rangeId)
+            ->update(['endpoint' => $endpoint]);
+        DB::table('shooting_range_opening_hours')
+            ->where('shooting_range_id', $rangeId)
+            ->where('day_of_week', today()->isoWeekday())
+            ->delete();
+
+        $this->get(route('shootings.list'))
+            ->assertOk()
+            ->assertSee('data-online="1"', false)
+            ->assertSee(
+                url('/rezerwacje/'.$rangeId).'?date='.today()->format('Y-m-d'),
+                false
+            );
+
+        $view = app(ShootingsController::class)->publicShow($endpoint);
+
+        $this->assertTrue($view->getData()['canReserve']);
+        $this->assertSame(
+            '',
+            $view->getData()['reservationUnavailableReason']
+        );
+    }
+
+    public function test_private_range_is_publicly_visible_with_closed_group_label(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        $endpoint = 'prywatna_strzelnica';
+
+        DB::table('shooting_ranges')
+            ->where('id', $rangeId)
+            ->update(['endpoint' => $endpoint]);
+
+        $this->get(route('shootings.list'))
+            ->assertOk()
+            ->assertSee('Strzelnica testowa')
+            ->assertSee('Online')
+            ->assertSee('Grupa zamknięta');
+
+        $this->get(route('index', [
+            'date' => today()->toDateString(),
+        ]))
+            ->assertOk()
+            ->assertSee('Strzelnica testowa')
+            ->assertSee('Grupa zamknięta');
+
+        $view = app(ShootingsController::class)->publicShow($endpoint);
+
+        $this->assertTrue($view->getData()['canReserve']);
+        $this->assertStringContainsString(
+            'Rezerwacje dla zamkniętej grupy użytkowników',
+            $view->render()
+        );
+
+        $this->get(route('rezerwacje.calendar', $rangeId))
+            ->assertOk()
+            ->assertSee('Zaloguj się, aby zarezerwować')
+            ->assertSee('Nie masz konta?')
+            ->assertSee(route('login'), false)
+            ->assertSee(route('register'), false)
+            ->assertDontSee('id="daySummary"', false);
+
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        $this->actingAs($client)
+            ->get(route('rezerwacje.calendar', $rangeId))
+            ->assertOk()
+            ->assertSee('Rezerwacje dla zamkniętej grupy')
+            ->assertSee('Twoje konto nie posiada aktywnego dostępu.')
+            ->assertSee(route('shootings.list'), false)
+            ->assertDontSee('id="daySummary"', false);
+
+        $this->actingAs($client)
+            ->getJson(route('rezerwacje.availability', [
+                'id' => $rangeId,
+                'date' => today()->toDateString(),
+            ]))
+            ->assertForbidden();
     }
 
     public function test_expired_current_payment_due_date_blocks_new_booking(): void

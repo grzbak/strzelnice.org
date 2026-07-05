@@ -49,16 +49,12 @@ class ReservationsController extends Controller
         }
 
         $user = auth()->user();
-
-        if (! $this->availability->canUserAccessRange($shootingRange, $user, $requestedDate)) {
-            if (! $user) {
-                return redirect()
-                    ->route('login')
-                    ->with('error', 'Zaloguj się, aby uzyskać dostęp do rezerwacji tej strzelnicy.');
-            }
-
-            abort(403, 'Nie posiadasz aktywnego zaproszenia do tej strzelnicy.');
-        }
+        $canViewCalendar = $user !== null
+            && $this->availability->canUserAccessRange(
+                $shootingRange,
+                $user,
+                $requestedDate
+            );
 
         $requirements = $this->availability->basicRequirements(
             $shootingRange,
@@ -70,24 +66,27 @@ class ReservationsController extends Controller
         }
 
         $calendarDate = $requestedDate->format('Y-m-d');
-        $reservations = Reservation::query()
-            ->where('shooting_range_id', $shootingRange->id)
-            ->whereIn('status', [
-                Reservation::STATUS_PENDING,
-                Reservation::STATUS_APPROVED,
-            ])
-            ->whereDate('start', $requestedDate)
-            ->get()
-            ->map(fn (Reservation $reservation) => $this->publicReservationData(
-                $reservation
-            ));
+        $reservations = $canViewCalendar
+            ? Reservation::query()
+                ->where('shooting_range_id', $shootingRange->id)
+                ->whereIn('status', [
+                    Reservation::STATUS_PENDING,
+                    Reservation::STATUS_APPROVED,
+                ])
+                ->whereDate('start', $requestedDate)
+                ->get()
+                ->map(fn (Reservation $reservation) => $this->publicReservationData(
+                    $reservation
+                ))
+            : collect();
 
-        return view('reservation.calendar-day-test', compact(
+        return view('reservation.calendar', compact(
             'shootingRange',
             'calendarDate',
             'reservations',
             'maxAdvanceBookingDays',
-            'maxBookingDate'
+            'maxBookingDate',
+            'canViewCalendar'
         ));
     }
 
