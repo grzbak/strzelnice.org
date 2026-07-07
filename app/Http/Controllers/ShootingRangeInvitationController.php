@@ -6,10 +6,12 @@ use App\Mail\ShootingRangeInvitationMail;
 use App\Mail\ShootingRangeInvitationRevokedMail;
 use App\Models\ShootingRangeInvitation;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ShootingRangeInvitationController extends Controller
 {
@@ -22,17 +24,60 @@ class ShootingRangeInvitationController extends Controller
             ->firstOrFail();
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $shootingRange = $this->userShootingRange();
 
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'sort' => ['nullable', 'string', 'in:name,email,status,expires_at,created_at'],
+            'direction' => ['nullable', 'string', 'in:asc,desc'],
+            'per_page' => ['nullable', 'integer', 'in:10,20,50'],
+        ]);
+        $search = trim($validated['search'] ?? '');
+        $sort = $validated['sort'] ?? 'created_at';
+        $direction = $validated['direction'] ?? 'desc';
+        $perPage = (int) ($validated['per_page'] ?? 20);
+        $searchTerms = preg_split(
+            '/\s+/u',
+            $search,
+            -1,
+            PREG_SPLIT_NO_EMPTY
+        ) ?: [];
+
         $invitations = $shootingRange->invitations()
-            ->orderByDesc('created_at')
-            ->get();
+            ->when($searchTerms, function ($query) use ($searchTerms) {
+                foreach ($searchTerms as $term) {
+                    $query->where(function ($query) use ($term) {
+                        $like = '%'.$term.'%';
+
+                        $query
+                            ->where('first_name', 'like', $like)
+                            ->orWhere('last_name', 'like', $like)
+                            ->orWhere('email', 'like', $like);
+                    });
+                }
+            })
+            ->when($sort === 'name', function ($query) use ($direction) {
+                $query
+                    ->orderBy('last_name', $direction)
+                    ->orderBy('first_name', $direction)
+                    ->orderBy('email', $direction);
+            })
+            ->when($sort !== 'name', function ($query) use ($sort, $direction) {
+                $query->orderBy($sort, $direction);
+            })
+            ->orderByDesc('id')
+            ->paginate($perPage)
+            ->withQueryString();
 
         return view('admin.shooting_ranges.invitations.index', compact(
             'shootingRange',
-            'invitations'
+            'invitations',
+            'search',
+            'sort',
+            'direction',
+            'perPage'
         ));
     }
 
@@ -44,20 +89,31 @@ class ShootingRangeInvitationController extends Controller
             'first_name' => ['nullable', 'string', 'max:255'],
             'last_name' => ['nullable', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255'],
-            'expires_at' => ['nullable', 'date'],
         ]);
+        $email = mb_strtolower(trim($validated['email']));
 
-        $shootingRange->invitations()->updateOrCreate(
-            ['email' => $validated['email']],
-            [
-                'first_name' => $validated['first_name'] ?? null,
-                'last_name' => $validated['last_name'] ?? null,
-                'expires_at' => $validated['expires_at'] ?? null,
-                'expires_soon_notified_at' => null,
-                'status' => ShootingRangeInvitation::STATUS_NONE,
-                'invited_by' => auth()->id(),
-            ]
-        );
+        $existingInvitation = $shootingRange->invitations()
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->first();
+
+        if ($existingInvitation) {
+            return redirect()
+                ->route('shooting.invitations.index', ['search' => $email])
+                ->with(
+                    'warning',
+                    "Użytkownik z adresem {$email} jest już na liście. Nie wprowadzono zmian."
+                );
+        }
+
+        $shootingRange->invitations()->create([
+            'first_name' => $validated['first_name'] ?? null,
+            'last_name' => $validated['last_name'] ?? null,
+            'email' => $email,
+            'expires_at' => now()->addDays(self::RENEWED_INVITATION_DAYS),
+            'expires_soon_notified_at' => null,
+            'status' => ShootingRangeInvitation::STATUS_NONE,
+            'invited_by' => auth()->id(),
+        ]);
 
         return back()->with('success', 'Dodano zaproszenie.');
     }
@@ -67,15 +123,24 @@ class ShootingRangeInvitationController extends Controller
         $shootingRange = $this->userShootingRange();
 
         $request->validate([
-            'file' => ['required', 'file', 'mimes:csv,txt'],
-            'expires_at' => ['nullable', 'date'],
+            'file' => ['required', 'file', 'mimes:xls,xlsx'],
         ]);
 
-        $handle = fopen($request->file('file')->getRealPath(), 'r');
+        $worksheet = IOFactory::load($request->file('file')->getRealPath())
+            ->getActiveSheet();
         $imported = 0;
+        $rowNumber = 0;
 
-        while (($row = fgetcsv($handle, 1000, ',')) !== false) {
-            [$firstName, $lastName, $email] = array_pad($row, 3, null);
+        foreach ($worksheet->toArray(null, true, true, false) as $row) {
+            $rowNumber++;
+            [$firstName, $lastName, $email] = array_map(
+                fn ($value) => is_string($value) ? trim($value) : $value,
+                array_pad($row, 3, null)
+            );
+
+            if ($rowNumber === 1 && $this->isInvitationImportHeader($row)) {
+                continue;
+            }
 
             if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 continue;
@@ -86,7 +151,7 @@ class ShootingRangeInvitationController extends Controller
                 [
                     'first_name' => $firstName,
                     'last_name' => $lastName,
-                    'expires_at' => $request->expires_at,
+                    'expires_at' => now()->addDays(self::RENEWED_INVITATION_DAYS),
                     'expires_soon_notified_at' => null,
                     'status' => ShootingRangeInvitation::STATUS_NONE,
                     'invited_by' => auth()->id(),
@@ -96,36 +161,44 @@ class ShootingRangeInvitationController extends Controller
             $imported++;
         }
 
-        fclose($handle);
-
         return back()->with('success', "Zaimportowano zaproszenia: {$imported}.");
+    }
+
+    public function downloadTemplate()
+    {
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Zaproszenia');
+        $sheet->fromArray([
+            ['Imię', 'Nazwisko', 'Email'],
+            ['Jan', 'Kowalski', 'jan.kowalski@example.com'],
+        ]);
+        $sheet->getColumnDimension('A')->setWidth(20);
+        $sheet->getColumnDimension('B')->setWidth(24);
+        $sheet->getColumnDimension('C')->setWidth(36);
+        $sheet->getStyle('A1:C1')->getFont()->setBold(true);
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            (new Xlsx($spreadsheet))->save('php://output');
+        }, 'szablon-zaproszen.xlsx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
     }
 
     public function generateLink(Request $request, ShootingRangeInvitation $invitation)
     {
         $this->authorizeInvitation($invitation);
 
-        $validated = $request->validate([
-            'expires_at' => ['nullable', 'date', 'after:now'],
-        ], [], [
-            'expires_at' => 'data ważności',
-        ]);
-
         if ($invitation->isAccepted()) {
             return back()->with('error', 'Nie można wygenerować nowego linku dla zaakceptowanego zaproszenia.');
         }
 
-        $renewedExpiry = $this->refreshInvitationLink($invitation, $validated['expires_at'] ?? null);
+        $this->refreshInvitationLink($invitation);
 
-        $message = 'Wygenerowano nowy link zaproszenia.';
-
-        if (! empty($validated['expires_at'])) {
-            $message .= ' Ustawiono wybraną datę ważności.';
-        } elseif ($renewedExpiry) {
-            $message .= ' Poprzednia data ważności minęła, dlatego ustawiono ważność nowego linku na 7 dni.';
-        }
-
-        return back()->with('success', $message);
+        return back()->with(
+            'success',
+            'Wygenerowano nowy link zaproszenia ważny przez 7 dni.'
+        );
     }
 
     public function send(ShootingRangeInvitation $invitation)
@@ -160,15 +233,27 @@ class ShootingRangeInvitationController extends Controller
         return back()->with('success', 'Odwołano zaproszenie i wysłano informację do klienta.');
     }
 
+    public function destroy(ShootingRangeInvitation $invitation)
+    {
+        $this->authorizeInvitation($invitation);
+
+        $email = $invitation->email;
+        $invitation->delete();
+
+        return redirect()
+            ->route('shooting.invitations.index')
+            ->with(
+                'success',
+                "Usunięto użytkownika {$email} z listy strzelnicy."
+            );
+    }
+
     public function bulk(Request $request)
     {
         $validated = $request->validate([
             'ids' => ['required', 'array'],
             'ids.*' => ['integer'],
-            'action' => ['required', 'in:generate,send,revoke'],
-            'expires_at' => ['nullable', 'date', 'after:now'],
-        ], [], [
-            'expires_at' => 'data ważności',
+            'action' => ['required', 'in:generate,send,revoke,delete'],
         ]);
 
         $invitations = ShootingRangeInvitation::whereIn('id', $validated['ids'])->get();
@@ -185,7 +270,7 @@ class ShootingRangeInvitationController extends Controller
                     continue;
                 }
 
-                $this->refreshInvitationLink($invitation, $validated['expires_at'] ?? null);
+                $this->refreshInvitationLink($invitation);
                 $done++;
             }
 
@@ -196,7 +281,7 @@ class ShootingRangeInvitationController extends Controller
                     continue;
                 }
 
-                $this->refreshInvitationLink($invitation, $validated['expires_at'] ?? null);
+                $this->refreshInvitationLink($invitation);
                 Mail::to($invitation->email)->send(new ShootingRangeInvitationMail($invitation->fresh('shootingRange')));
                 $done++;
             }
@@ -214,6 +299,11 @@ class ShootingRangeInvitationController extends Controller
                 ]);
 
                 Mail::to($invitation->email)->send(new ShootingRangeInvitationRevokedMail($invitation->fresh('shootingRange')));
+                $done++;
+            }
+
+            if ($validated['action'] === 'delete') {
+                $invitation->delete();
                 $done++;
             }
         }
@@ -275,29 +365,29 @@ class ShootingRangeInvitationController extends Controller
             ->with('success', 'Zaproszenie zaakceptowane.');
     }
 
-    private function refreshInvitationLink(ShootingRangeInvitation $invitation, ?string $expiresAt = null): bool
+    private function refreshInvitationLink(ShootingRangeInvitation $invitation): void
     {
-        $selectedExpiry = $expiresAt ? Carbon::parse($expiresAt) : null;
-        $renewExpiredDate = ! $selectedExpiry && $invitation->expires_at && $invitation->expires_at->isPast();
-
-        $updates = [
+        $invitation->update([
             'token' => Str::random(64),
             'status' => ShootingRangeInvitation::STATUS_PENDING,
+            'expires_at' => now()->addDays(self::RENEWED_INVITATION_DAYS),
+            'expires_soon_notified_at' => null,
             'revoked_at' => null,
-        ];
+        ]);
 
-        if ($selectedExpiry) {
-            $updates['expires_at'] = $selectedExpiry;
-            $updates['expires_soon_notified_at'] = null;
-        } elseif ($renewExpiredDate) {
-            $updates['expires_at'] = now()->addDays(self::RENEWED_INVITATION_DAYS);
-            $updates['expires_soon_notified_at'] = null;
-        }
-
-        $invitation->update($updates);
         $invitation->refresh();
+    }
 
-        return (bool) $renewExpiredDate;
+    private function isInvitationImportHeader(array $row): bool
+    {
+        $columns = array_map(
+            fn ($value) => Str::lower(trim((string) $value)),
+            array_slice($row, 0, 3)
+        );
+
+        return in_array($columns[0] ?? '', ['imię', 'imie', 'first_name', 'first name'], true)
+            && in_array($columns[1] ?? '', ['nazwisko', 'last_name', 'last name'], true)
+            && in_array($columns[2] ?? '', ['email', 'e-mail'], true);
     }
 
     private function authorizeInvitation(ShootingRangeInvitation $invitation): void

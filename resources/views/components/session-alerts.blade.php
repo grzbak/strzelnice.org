@@ -12,6 +12,13 @@
         ];
     }
 
+    if (session('warning')) {
+        $alerts[] = [
+            'class' => 'alert-warning',
+            'message' => session('warning'),
+        ];
+    }
+
     if (session('error')) {
         $alerts[] = [
             'class' => 'alert-danger',

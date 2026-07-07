@@ -13,13 +13,48 @@ class PageController extends Controller
 {
     private const MEDIA_DIRECTORY = 'img/pages';
 
-    public function index(): View
+    public function index(Request $request): View
     {
-        $pages = Page::query()
-            ->orderBy('display_name')
-            ->get();
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'sort' => ['nullable', 'in:id,navigation_name,display_name,is_active,updated_at'],
+            'direction' => ['nullable', 'in:asc,desc'],
+            'per_page' => ['nullable', 'integer', 'in:10,20,50'],
+        ]);
 
-        return view('superAdmin.pages.index', compact('pages'));
+        $search = trim((string) ($validated['search'] ?? ''));
+        $sort = $validated['sort'] ?? 'display_name';
+        $direction = $validated['direction'] ?? 'asc';
+        $perPage = (int) ($validated['per_page'] ?? 20);
+
+        $query = Page::query();
+
+        foreach (preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY) as $term) {
+            $query->where(function ($query) use ($term) {
+                $query
+                    ->where('navigation_name', 'like', "%{$term}%")
+                    ->orWhere('display_name', 'like', "%{$term}%")
+                    ->orWhere('content', 'like', "%{$term}%");
+            });
+        }
+
+        match ($sort) {
+            'id' => $query->orderBy('id', $direction),
+            'navigation_name' => $query->orderBy('navigation_name', $direction)->orderBy('display_name'),
+            'is_active' => $query->orderBy('is_active', $direction)->orderBy('display_name'),
+            'updated_at' => $query->orderBy('updated_at', $direction)->orderBy('display_name'),
+            default => $query->orderBy('display_name', $direction),
+        };
+
+        $pages = $query->paginate($perPage)->withQueryString();
+
+        return view('superAdmin.pages.index', compact(
+            'pages',
+            'search',
+            'sort',
+            'direction',
+            'perPage'
+        ));
     }
 
     public function create(): View
@@ -138,10 +173,10 @@ class PageController extends Controller
         File::ensureDirectoryExists($directory);
 
         $file = $request->file($field);
-        $filename = Str::uuid() . '.' . $file->getClientOriginalExtension();
+        $filename = Str::uuid().'.'.$file->getClientOriginalExtension();
         $file->move($directory, $filename);
 
-        return self::MEDIA_DIRECTORY . '/' . $filename;
+        return self::MEDIA_DIRECTORY.'/'.$filename;
     }
 
     private function deletePublicFile(?string $path): void
@@ -152,7 +187,7 @@ class PageController extends Controller
 
         $relativePath = str_replace('\\', '/', $path);
 
-        if (! str_starts_with($relativePath, self::MEDIA_DIRECTORY . '/')) {
+        if (! str_starts_with($relativePath, self::MEDIA_DIRECTORY.'/')) {
             return;
         }
 

@@ -25,74 +25,303 @@
 
     @include('components.breadcrumb')
 
-    <div class="container py-2">
-        <div class="pt-2 mb-3 row bg-light">
-            <div class=" col-md-4">
-                <input type="text" id="search" class="form-control" placeholder="Szukaj...">
-            </div>
+    @php
+        $shootingColumns = [
+            ['key' => 'name', 'label' => 'Nazwa', 'sortable' => true, 'class' => 'shooting-name-column'],
+            ['key' => 'town', 'label' => 'Adres', 'sortable' => true, 'class' => 'shooting-address-column'],
+            ['key' => 'voivodeship', 'label' => 'Województwo', 'sortable' => true],
+            ['key' => 'status', 'label' => 'Status'],
+            ['key' => 'actions', 'label' => 'Akcje', 'class' => 'shooting-actions-column'],
+        ];
 
-            <div class="col-md-3">
-                <select id="sort" class="form-select">
-                    <option value="">Sortuj</option>
-                    <option value="name">Nazwa</option>
-                    <option value="town">Miasto</option>
-                    <option value="voivodeship">Województwo</option>
-                </select>
-            </div>
+        $normalizeDate = fn ($value) => $value ? \Illuminate\Support\Carbon::parse($value)->toDateString() : null;
+        $today = now()->toDateString();
 
-            <div class="col-md-3">
-                <select id="perPage" class="form-select">
-                    <option value="10">10 na stronę</option>
-                    <option value="50">50 na stronę</option>
-                    <option value="100">100 na stronę</option>
-                </select>
-            </div>
+        $shootingRangeStatus = function ($shootingRange) use ($normalizeDate, $today) {
+            $activeInterval = $shootingRange->activeInterval;
 
-            <div class="col-md-2">
-                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#importRangesModal">
-                    <i class="bi bi-filetype-xls action-icon" data-bs-toggle="tooltip" data-bs-placement="top" title="Import z pliku *.xls(x)"></i>
-                </button>
-                <button class="btn btn-success" onclick="window.location='{{ route('admin.shootings.create') }}'">
-                    <i class="bi bi-house-add-fill action-icon" data-bs-toggle="tooltip" data-bs-placement="top" title="Dodaj nową strzelnicę"></i>
-                </button>
-            </div>
-            <div class="mt-2">
-                <form id="bulkDeleteForm" method="POST" action="{{ route('admin.shootings.bulk-destroy') }}" class="mb-2">
-                    @csrf
-                    <input type="hidden" name="archive_with_reservations" id="bulkArchiveWithReservations" value="0">
-                    <div id="bulkDeleteIds"></div>
+            if (! $activeInterval) {
+                return [
+                    'icon' => 'bi-calendar-x',
+                    'color' => 'text-secondary',
+                    'text' => 'Brak aktywnych przedziałów',
+                ];
+            }
 
-                    <button type="submit" class="btn btn-outline-danger btn-sm" id="bulkDeleteButton" disabled>
-                        <i class="bi bi-trash3 me-1"></i>
-                        Usuń zaznaczone
+            if ($activeInterval->datePaid) {
+                return [
+                    'icon' => 'bi-check-circle-fill',
+                    'color' => 'text-success',
+                    'text' => sprintf(
+                        'Aktywny przedział od %s do %s. Opłacony.',
+                        $normalizeDate($activeInterval->start_date),
+                        $normalizeDate($activeInterval->end_date)
+                    ),
+                ];
+            }
+
+            $paymentDueDate = $normalizeDate($activeInterval->payment_due_date);
+
+            if ($paymentDueDate && $paymentDueDate >= $today) {
+                return [
+                    'icon' => 'bi-clock-fill',
+                    'color' => 'text-warning',
+                    'text' => sprintf(
+                        'Aktywny przedział od %s do %s. Termin płatności: %s',
+                        $normalizeDate($activeInterval->start_date),
+                        $normalizeDate($activeInterval->end_date),
+                        $paymentDueDate
+                    ),
+                ];
+            }
+
+            return [
+                'icon' => 'bi-exclamation-triangle-fill',
+                'color' => 'text-danger',
+                'text' => $paymentDueDate
+                    ? sprintf(
+                        'Aktywny przedział od %s do %s. Termin płatności: %s',
+                        $normalizeDate($activeInterval->start_date),
+                        $normalizeDate($activeInterval->end_date),
+                        $paymentDueDate
+                    )
+                    : 'Aktywny przedział nieopłacony. Brak terminu płatności.',
+            ];
+        };
+    @endphp
+
+    <div class="container py-4">
+        <header class="p-4 text-white rounded bg-secondary">
+            <div class="gap-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+                <div>
+                    <div class="gap-2 mb-2 d-flex align-items-center">
+                        <i class="bi bi-buildings-fill fs-4"></i>
+                        <span class="opacity-75 text-uppercase small">
+                            Panel superadmina
+                        </span>
+                    </div>
+
+                    <h1 class="mb-0 h3">
+                        Strzelnice
+                    </h1>
+                </div>
+
+                <div class="gap-2 d-flex flex-wrap justify-content-md-end">
+                    <button
+                        type="button"
+                        class="btn btn-light shooting-header-action"
+                        data-bs-toggle="modal"
+                        data-bs-target="#importRangesModal"
+                        title="Import z pliku *.xls(x)"
+                        aria-label="Import z pliku *.xls(x)"
+                    >
+                        <i class="bi bi-file-earmark-arrow-up-fill" aria-hidden="true"></i>
+                        <span>Import</span>
                     </button>
 
-                    <small class="ms-2 text-muted">
-                        Usunięcie obejmuje przedziały czasowe, galerie, zdjęcia, godziny pracy, dni wolne i zaproszenia.
-                    </small>
-                </form>
+                    <a
+                        href="{{ route('admin.shootings.create') }}"
+                        class="btn btn-success shooting-header-action"
+                        title="Dodaj nową strzelnicę"
+                        aria-label="Dodaj nową strzelnicę"
+                    >
+                        <i class="bi bi-house-add-fill" aria-hidden="true"></i>
+                        <span>Dodaj</span>
+                    </a>
+                </div>
             </div>
-        </div>
+        </header>
 
+        <x-data-table
+            id="shooting-ranges-table"
+            :action="route('admin.shootings')"
+            :columns="$shootingColumns"
+            :paginator="$shootings"
+            :search="$search"
+            search-label="Wyszukaj strzelnicę"
+            search-placeholder="Nazwa, miasto, województwo lub adres"
+            :sort="$sort"
+            :direction="$direction"
+            :per-page="$perPage"
+            :per-page-options="[10, 20, 50]"
+            selectable
+            bulk-form-id="bulkDeleteForm"
+            :bulk-action="route('admin.shootings.bulk-destroy')"
+        >
+            <x-slot:bulkActions>
+                <input
+                    type="hidden"
+                    name="archive_with_reservations"
+                    id="bulkArchiveWithReservations"
+                    value="0"
+                    form="bulkDeleteForm"
+                >
 
+                <button
+                    type="submit"
+                    class="btn btn-outline-danger btn-sm data-table-icon-button"
+                    id="bulkDeleteButton"
+                    form="bulkDeleteForm"
+                    data-bs-toggle="tooltip"
+                    data-bs-title="Usuń lub archiwizuj zaznaczone strzelnice"
+                    aria-label="Usuń lub archiwizuj zaznaczone strzelnice"
+                >
+                    <i class="bi bi-trash3" aria-hidden="true"></i>
+                </button>
 
-        <table class="table bg-white shadow-sm table-hover">
-            <thead class="table-light">
-                <tr>
-                    <th style="width: 40px;"><input type="checkbox" id="selectAllShootings"></th>
-                    <th>Nazwa</th>
-                    <th>Adres</th>
-                    <th>Województwo</th>
-                    <th>Status</th>
-                    <th>Akcje</th>
+                <small class="text-muted shooting-bulk-info">
+                    Usunięcie obejmuje przedziały czasowe, galerie, zdjęcia, godziny pracy, dni wolne i zaproszenia.
+                </small>
+            </x-slot:bulkActions>
+
+            @forelse ($shootings as $shootingRange)
+                @php
+                    $status = $shootingRangeStatus($shootingRange);
+                    $administratorsCount = (int) $shootingRange->active_admins_count;
+                    $administratorStatus = $administratorsCount > 0
+                        ? [
+                            'icon' => 'bi-person-check-fill',
+                            'color' => 'text-success',
+                            'text' => $administratorsCount === 1
+                                ? 'Przypisano aktywnego administratora.'
+                                : "Przypisani aktywni administratorzy: {$administratorsCount}.",
+                        ]
+                        : [
+                            'icon' => 'bi-person-x-fill',
+                            'color' => 'text-danger',
+                            'text' => 'Brak aktywnego administratora strzelnicy.',
+                        ];
+                    $reservationsCount = (int) $shootingRange->reservations_count;
+                @endphp
+
+                <tr class="align-middle">
+                    <td class="shooting-check-cell" data-label="Zaznacz">
+                        <input
+                            type="checkbox"
+                            name="shooting_range_ids[]"
+                            value="{{ $shootingRange->id }}"
+                            class="shooting-ranges-table-check"
+                            form="bulkDeleteForm"
+                            data-range-name="{{ $shootingRange->name }}"
+                            data-reservations-count="{{ $reservationsCount }}"
+                            aria-label="Zaznacz strzelnicę {{ $shootingRange->name }}"
+                        >
+                    </td>
+
+                    <td data-label="Nazwa">
+                        <div class="d-flex flex-column gap-1">
+                            <strong>{{ $shootingRange->name }}</strong>
+
+                            @if ($reservationsCount > 0)
+                                <span class="badge bg-warning text-dark shooting-reservation-badge">
+                                    rezerwacje: {{ $reservationsCount }}
+                                </span>
+                            @endif
+                        </div>
+                    </td>
+
+                    <td data-label="Adres">
+                        {{ $shootingRange->street }} {{ $shootingRange->houseNumber }},
+                        {{ $shootingRange->zipCode }} {{ $shootingRange->town }}
+                    </td>
+
+                    <td data-label="Województwo">
+                        {{ $shootingRange->voivodeship }}
+                    </td>
+
+                    <td data-label="Status">
+                        <div class="gap-2 d-flex align-items-center">
+                            <i
+                                class="bi {{ $status['icon'] }} action-icon {{ $status['color'] }}"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="top"
+                                title="{{ $status['text'] }}"
+                            ></i>
+                            <i
+                                class="bi {{ $administratorStatus['icon'] }} action-icon {{ $administratorStatus['color'] }}"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="top"
+                                title="{{ $administratorStatus['text'] }}"
+                            ></i>
+                        </div>
+                    </td>
+
+                    <td data-label="Akcje">
+                        <div class="shooting-actions">
+                            <form method="POST" action="{{ route('admin.shootings.visibility', $shootingRange) }}" class="m-0">
+                                @csrf
+                                @method('PATCH')
+                                <button
+                                    type="submit"
+                                    class="btn btn-sm btn-outline-secondary data-table-icon-button"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-title="{{ $shootingRange->is_visible ? 'Ukryj na stronie' : 'Pokaż na stronie' }}"
+                                    aria-label="{{ $shootingRange->is_visible ? 'Ukryj na stronie' : 'Pokaż na stronie' }}"
+                                >
+                                    <i class="bi {{ $shootingRange->is_visible ? 'bi-eye' : 'bi-eye-slash' }} {{ $shootingRange->is_visible ? 'text-success' : 'text-danger' }}" aria-hidden="true"></i>
+                                </button>
+                            </form>
+
+                            <a href="{{ route('admin.shootings.intervals', $shootingRange) }}" class="btn btn-sm btn-outline-warning data-table-icon-button" data-bs-toggle="tooltip" data-bs-title="Zarządzaj przedziałami" aria-label="Zarządzaj przedziałami">
+                                <i class="bi bi-clock" aria-hidden="true"></i>
+                            </a>
+
+                            <a href="{{ route('admin.shootings.edit', $shootingRange) }}" class="btn btn-sm btn-outline-dark data-table-icon-button" data-bs-toggle="tooltip" data-bs-title="Edytuj" aria-label="Edytuj">
+                                <i class="bi bi-pencil" aria-hidden="true"></i>
+                            </a>
+
+                            <a href="{{ route('shooting.gallery.index', $shootingRange) }}" class="btn btn-sm btn-outline-primary data-table-icon-button" data-bs-toggle="tooltip" data-bs-title="Zarządzaj galerią" aria-label="Zarządzaj galerią">
+                                <i class="bi bi-images" aria-hidden="true"></i>
+                            </a>
+
+                            <a href="{{ route('shooting.staff.index', $shootingRange) }}" class="btn btn-sm btn-outline-info data-table-icon-button" data-bs-toggle="tooltip" data-bs-title="Zarządzaj personelem strzelnicy" aria-label="Zarządzaj personelem strzelnicy">
+                                <i class="bi bi-people-fill" aria-hidden="true"></i>
+                            </a>
+
+                            <a href="{{ route('admin.reservations.calendar', ['shooting_range_id' => $shootingRange->id]) }}" class="btn btn-sm btn-outline-success data-table-icon-button" data-bs-toggle="tooltip" data-bs-title="Rezerwacje strzelnicy" aria-label="Rezerwacje strzelnicy">
+                                <i class="bi bi-calendar3" aria-hidden="true"></i>
+                            </a>
+
+                            <a href="{{ route('admin.reservations.archive', ['shooting_range_id' => $shootingRange->id]) }}" class="btn btn-sm btn-outline-secondary data-table-icon-button" data-bs-toggle="tooltip" data-bs-title="Archiwum rezerwacji strzelnicy" aria-label="Archiwum rezerwacji strzelnicy">
+                                <i class="bi bi-archive" aria-hidden="true"></i>
+                            </a>
+
+                            <form
+                                method="POST"
+                                action="{{ route('admin.shootings.destroy', $shootingRange) }}"
+                                class="m-0 shooting-delete-form"
+                                data-range-name="{{ $shootingRange->name }}"
+                                data-reservations-count="{{ $reservationsCount }}"
+                            >
+                                @csrf
+                                @method('DELETE')
+                                <input type="hidden" name="archive_with_reservations" value="0">
+
+                                <button
+                                    type="submit"
+                                    class="btn btn-sm btn-outline-danger data-table-icon-button"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-title="Usuń lub archiwizuj strzelnicę"
+                                    aria-label="Usuń lub archiwizuj strzelnicę"
+                                >
+                                    <i class="bi bi-trash3" aria-hidden="true"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
                 </tr>
-            </thead>
-            <tbody id="shootingTable"></tbody>
-        </table>
-
-        <nav>
-            <ul class="pagination" id="pagination"></ul>
-        </nav>
+            @empty
+                <tr>
+                    <td colspan="{{ count($shootingColumns) + 1 }}" class="py-4 text-center text-muted">
+                        @if ($search !== '')
+                            Brak strzelnic pasujących do wyszukiwania.
+                        @else
+                            Brak strzelnic do wyświetlenia.
+                        @endif
+                    </td>
+                </tr>
+            @endforelse
+        </x-data-table>
     </div>
 
     <div class="modal fade" id="importRangesModal" tabindex="-1">
@@ -126,242 +355,75 @@
         </div>
     </div>
 
+    <style>
+        .shooting-header-action {
+            display: inline-flex;
+            align-items: center;
+            gap: .45rem;
+            min-height: 38px;
+            font-weight: 700;
+        }
+
+        .shooting-header-action i {
+            font-size: 1.1rem;
+            line-height: 1;
+        }
+
+        .shooting-actions-column {
+            width: 180px;
+        }
+
+        .shooting-actions {
+            display: grid;
+            grid-template-columns: repeat(4, 32px);
+            gap: .35rem;
+            align-items: center;
+            justify-content: start;
+        }
+
+        .shooting-actions form {
+            margin: 0;
+        }
+
+        .shooting-reservation-badge {
+            width: fit-content;
+        }
+
+        .shooting-bulk-info {
+            align-self: center;
+        }
+
+        @media (max-width: 767.98px) {
+            .shooting-actions {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                align-items: stretch;
+            }
+
+            .shooting-actions .data-table-icon-button {
+                width: 100%;
+            }
+
+            .shooting-check-cell {
+                grid-template-columns: minmax(6.5rem, 38%) auto !important;
+                align-items: center !important;
+            }
+        }
+    </style>
+
     <script>
-        const shootings = @json($shootings);
-        const selectedShootingIds = new Set();
-        const deleteBaseUrl = @json(url('/strzelnice'));
-        const reservationsBaseUrl = @json(route('admin.reservations.calendar'));
-        const reservationArchiveBaseUrl = @json(route('admin.reservations.archive'));
-        const staffBaseUrl = @json(url('/strzelnice'));
-        let currentPage = 1;
-
-        function todayDate() {
-            return new Date().toISOString().slice(0, 10);
-        }
-
-        function normalizeDate(value) {
-            return value ? String(value).slice(0, 10) : null;
-        }
-
-        function escapeHtml(value) {
-            const div = document.createElement('div');
-            div.textContent = value ?? '';
-            return div.innerHTML;
-        }
-
-        function getActiveInterval(shootingRange) {
-            return shootingRange.active_interval ?? null;
-        }
-
-        function shootingRangeStatus(shootingRange) {
-            const activeInterval = getActiveInterval(shootingRange);
-
-            if (!activeInterval) {
-                return {
-                    icon: 'bi-calendar-x',
-                    color: 'text-secondary',
-                    text: 'Brak aktywnych przedziałów',
-                };
-            }
-
-            if (activeInterval.datePaid) {
-                return {
-                    icon: 'bi-check-circle-fill',
-                    color: 'text-success',
-                    text: `Aktywny przedział od ${normalizeDate(activeInterval.start_date)} do ${normalizeDate(activeInterval.end_date)}. Opłacony.`,
-                };
-            }
-
-            const paymentDueDate = normalizeDate(activeInterval.payment_due_date);
-            const today = todayDate();
-
-            if (paymentDueDate && paymentDueDate >= today) {
-                return {
-                    icon: 'bi-clock-fill',
-                    color: 'text-warning',
-                    text: `Aktywny przedział od ${normalizeDate(activeInterval.start_date)} do ${normalizeDate(activeInterval.end_date)}. Termin płatności: ${paymentDueDate}`,
-                };
-            }
-
-            return {
-                icon: 'bi-exclamation-triangle-fill',
-                color: 'text-danger',
-                text: paymentDueDate
-                    ? `Aktywny przedział od ${normalizeDate(activeInterval.start_date)} do ${normalizeDate(activeInterval.end_date)}. Termin płatności: ${paymentDueDate}`
-                    : 'Aktywny przedział nieopłacony. Brak terminu płatności.',
+        document.addEventListener('DOMContentLoaded', () => {
+            const dependentDeleteWarningText = (rangeText) => {
+                return `${rangeText}\n\nRazem ze strzelnicami zostaną usunięte przedziały czasowe, galerie, zdjęcia, godziny pracy, dni wolne i zaproszenia.\n\nCzy na pewno kontynuować?`;
             };
-        }
 
-        function renderStatusIcon(shootingRange) {
-            const status = shootingRangeStatus(shootingRange);
-            const administratorsCount = Number(
-                shootingRange.active_admins_count || 0
-            );
-            const administratorStatus = administratorsCount > 0
-                ? {
-                    icon: 'bi-person-check-fill',
-                    color: 'text-success',
-                    text: administratorsCount === 1
-                        ? 'Przypisano aktywnego administratora.'
-                        : `Przypisani aktywni administratorzy: ${administratorsCount}.`,
-                }
-                : {
-                    icon: 'bi-person-x-fill',
-                    color: 'text-danger',
-                    text: 'Brak aktywnego administratora strzelnicy.',
-                };
+            const confirmArchiveText = (rangeText) => {
+                return `${rangeText}\n\nDo wybranych strzelnic istnieją rezerwacje, dlatego nie zostaną usunięte. Można je zarchiwizować - wtedy parametr archiwum zostanie ustawiony na 1, a strzelnice zostaną ukryte.\n\nCzy chcesz je zarchiwizować?`;
+            };
 
-            return `
-                <i
-                    class="bi ${status.icon} action-icon ${status.color}"
-                    data-bs-toggle="tooltip"
-                    data-bs-placement="top"
-                    title="${escapeHtml(status.text)}"
-                ></i>
-                <i
-                    class="bi ${administratorStatus.icon} action-icon ${administratorStatus.color}"
-                    data-bs-toggle="tooltip"
-                    data-bs-placement="top"
-                    title="${escapeHtml(administratorStatus.text)}"
-                ></i>
-            `;
-        }
+            document.addEventListener('submit', (event) => {
+                const form = event.target;
 
-        function refreshTooltips() {
-            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(element => {
-                const oldTooltip = bootstrap.Tooltip.getInstance(element);
-
-                if (oldTooltip) {
-                    oldTooltip.dispose();
-                }
-
-                new bootstrap.Tooltip(element);
-            });
-        }
-
-        function dependentDeleteWarningText(rangeText) {
-            return `${rangeText}\n\nRazem ze strzelnicami zostaną usunięte przedziały czasowe, galerie, zdjęcia, godziny pracy, dni wolne i zaproszenia.\n\nCzy na pewno kontynuować?`;
-        }
-
-        function confirmArchiveText(rangeText) {
-            return `${rangeText}\n\nDo wybranych strzelnic istnieją rezerwacje, dlatego nie zostaną usunięte. Można je zarchiwizować - wtedy parametr archiwum zostanie ustawiony na 1, a strzelnice zostaną ukryte.\n\nCzy chcesz je zarchiwizować?`;
-        }
-
-        function refreshBulkDeleteState() {
-            const button = document.getElementById('bulkDeleteButton');
-            const selectAll = document.getElementById('selectAllShootings');
-            const visibleCheckboxes = document.querySelectorAll('.shooting-select');
-
-            button.disabled = selectedShootingIds.size === 0;
-
-            if (selectAll) {
-                selectAll.checked = visibleCheckboxes.length > 0
-                    && Array.from(visibleCheckboxes).every(checkbox => checkbox.checked);
-            }
-        }
-
-        function render() {
-            let filtered = [...shootings];
-
-            const search = document.getElementById('search').value.toLowerCase();
-            const sort = document.getElementById('sort').value;
-            const perPage = parseInt(document.getElementById('perPage').value);
-
-            if (search) {
-                filtered = filtered.filter(s =>
-                    String(s.name ?? '').toLowerCase().includes(search) ||
-                    String(s.voivodeship ?? '').toLowerCase().includes(search) ||
-                    String(s.town ?? '').toLowerCase().includes(search) ||
-                    String(s.street ?? '').toLowerCase().includes(search) ||
-                    String(s.houseNumber ?? '').toLowerCase().includes(search)
-                );
-            }
-
-            if (sort === 'name') {
-                filtered.sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
-            }
-
-            if (sort === 'voivodeship') {
-                filtered.sort((a, b) => String(a.voivodeship ?? '').localeCompare(String(b.voivodeship ?? '')));
-            }
-
-            if (sort === 'town') {
-                filtered.sort((a, b) => String(a.town ?? '').localeCompare(String(b.town ?? '')));
-            }
-
-            const start = (currentPage - 1) * perPage;
-            const paginated = filtered.slice(start, start + perPage);
-            const table = document.getElementById('shootingTable');
-
-            table.innerHTML = '';
-
-            paginated.forEach(s => {
-                const reservationsCount = Number(s.reservations_count || 0);
-                const escapedName = escapeHtml(s.name ?? '');
-
-                table.innerHTML += `
-                    <tr class="align-middle">
-                        <td>
-                            <input type="checkbox" class="shooting-select" value="${s.id}" ${selectedShootingIds.has(String(s.id)) ? 'checked' : ''}>
-                        </td>
-                        <td>
-                            <div class="d-flex align-items-center">
-                                <div><strong>${escapedName}</strong></div>
-                                ${reservationsCount > 0 ? `<span class="ms-2 badge bg-warning text-dark">rezerwacje: ${reservationsCount}</span>` : ''}
-                            </div>
-                        </td>
-                        <td>${escapeHtml(s.street ?? '')} ${escapeHtml(s.houseNumber ?? '')}, ${escapeHtml(s.zipCode ?? '')} ${escapeHtml(s.town ?? '')}</td>
-                        <td>${escapeHtml(s.voivodeship ?? '')}</td>
-                        <td>${renderStatusIcon(s)}</td>
-                        <td>
-                            <form method="POST" action="${deleteBaseUrl}/${s.id}/widocznosc" class="d-inline">
-                                <input type="hidden" name="_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="_method" value="PATCH">
-                                <button type="submit" class="p-0 bg-transparent border-0" title="${s.is_visible ? 'Ukryj na stronie' : 'Pokaż na stronie'}">
-                                    <i class="bi ${s.is_visible ? 'bi-eye' : 'bi-eye-slash'} action-icon ${s.is_visible ? 'text-success' : 'text-danger'}" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-original-title="${s.is_visible ? 'Ukryj na stronie' : 'Pokaż na stronie'}"></i>
-                                </button>
-                            </form>
-
-                            <i class="bi bi-clock action-icon text-warning" onclick="window.location.href='${deleteBaseUrl}/${s.id}/przedzialy'" data-bs-toggle="tooltip" data-bs-placement="top" title="Zarządzaj przedziałami"></i>
-                            <i class="bi bi-pencil action-icon text-dark" onclick="window.location.href='${deleteBaseUrl}/${s.id}/edytuj'" data-bs-toggle="tooltip" data-bs-placement="top" title="Edytuj"></i>
-                            <i class="bi bi-images action-icon text-primary" onclick="window.location.href='${deleteBaseUrl}/${s.id}/galeria'" data-bs-toggle="tooltip" data-bs-placement="top" title="Zarządzaj galerią"></i>
-                            <a href="${staffBaseUrl}/${s.id}/pracownicy" class="text-decoration-none">
-                                <i class="bi bi-people-fill action-icon text-info" data-bs-toggle="tooltip" data-bs-placement="top" title="Zarządzaj personelem strzelnicy"></i>
-                            </a>
-
-                            <a href="${reservationsBaseUrl}?shooting_range_id=${encodeURIComponent(s.id)}" class="text-decoration-none">
-                                <i class="bi bi-calendar3 action-icon text-success" data-bs-toggle="tooltip" data-bs-placement="top" title="Rezerwacje strzelnicy"></i>
-                            </a>
-                            <a href="${reservationArchiveBaseUrl}?shooting_range_id=${encodeURIComponent(s.id)}" class="text-decoration-none">
-                                <i class="bi bi-archive action-icon text-secondary" data-bs-toggle="tooltip" data-bs-placement="top" title="Archiwum rezerwacji strzelnicy"></i>
-                            </a>
-
-                            <form method="POST" action="${deleteBaseUrl}/${s.id}" class="d-inline shooting-delete-form" data-range-name="${escapedName}" data-reservations-count="${reservationsCount}">
-                                <input type="hidden" name="_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="_method" value="DELETE">
-                                <input type="hidden" name="archive_with_reservations" value="0">
-                                <button type="submit" class="p-0 bg-transparent border-0" data-bs-toggle="tooltip" data-bs-placement="top" title="Usuń lub archiwizuj strzelnicę">
-                                    <i class="bi bi-trash3 action-icon text-danger"></i>
-                                </button>
-                            </form>
-                        </td>
-                    </tr>`;
-            });
-
-            table.querySelectorAll('.shooting-select').forEach(checkbox => {
-                checkbox.addEventListener('change', () => {
-                    if (checkbox.checked) {
-                        selectedShootingIds.add(checkbox.value);
-                    } else {
-                        selectedShootingIds.delete(checkbox.value);
-                    }
-
-                    refreshBulkDeleteState();
-                });
-            });
-
-            table.querySelectorAll('.shooting-delete-form').forEach(form => {
-                form.addEventListener('submit', (event) => {
+                if (form.matches('.shooting-delete-form')) {
                     const reservationsCount = Number(form.dataset.reservationsCount || 0);
                     const rangeName = form.dataset.rangeName || 'wybraną strzelnicę';
                     const archiveInput = form.querySelector('input[name="archive_with_reservations"]');
@@ -379,104 +441,47 @@
                     if (!confirm(dependentDeleteWarningText(`Strzelnica: ${rangeName}`))) {
                         event.preventDefault();
                     }
-                });
-            });
 
-            renderPagination(filtered.length, perPage);
-            refreshBulkDeleteState();
-            refreshTooltips();
-        }
-
-        function renderPagination(total, perPage) {
-            const pages = Math.ceil(total / perPage);
-            const pag = document.getElementById('pagination');
-            pag.innerHTML = '';
-
-            for (let i = 1; i <= pages; i++) {
-                pag.innerHTML += `
-                    <li class="page-item ${i === currentPage ? 'active' : ''}">
-                        <a class="page-link" href="#" onclick="goPage(${i}); return false;">${i}</a>
-                    </li>`;
-            }
-        }
-
-        function goPage(p) {
-            currentPage = p;
-            render();
-        }
-
-        document.getElementById('selectAllShootings').addEventListener('change', function () {
-            document.querySelectorAll('.shooting-select').forEach(checkbox => {
-                checkbox.checked = this.checked;
-
-                if (checkbox.checked) {
-                    selectedShootingIds.add(checkbox.value);
-                } else {
-                    selectedShootingIds.delete(checkbox.value);
-                }
-            });
-
-            refreshBulkDeleteState();
-        });
-
-        document.getElementById('bulkDeleteForm').addEventListener('submit', function (event) {
-            if (selectedShootingIds.size === 0) {
-                event.preventDefault();
-                return;
-            }
-
-            const selectedRanges = shootings.filter(s => selectedShootingIds.has(String(s.id)));
-            const withReservations = selectedRanges.filter(s => Number(s.reservations_count || 0) > 0);
-            const bulkIds = document.getElementById('bulkDeleteIds');
-            const archiveInput = document.getElementById('bulkArchiveWithReservations');
-
-            if (withReservations.length > 0) {
-                const names = withReservations.map(s => `- ${s.name}`).join('\n');
-                const withoutReservationsCount = selectedRanges.length - withReservations.length;
-                const deleteInfo = withoutReservationsCount > 0
-                    ? `\n\nPozostałe wybrane strzelnice bez rezerwacji (${withoutReservationsCount}) zostaną usunięte razem z przedziałami czasowymi, galeriami, zdjęciami, godzinami pracy, dniami wolnymi i zaproszeniami.`
-                    : '';
-
-                if (!confirm(`${confirmArchiveText(`Wybrane strzelnice z rezerwacjami:\n${names}`)}${deleteInfo}`)) {
-                    event.preventDefault();
                     return;
                 }
 
-                archiveInput.value = '1';
-            } else {
-                if (!confirm(dependentDeleteWarningText(`Wybrano ${selectedRanges.length} strzelnic.`))) {
-                    event.preventDefault();
-                    return;
+                if (form.id === 'bulkDeleteForm') {
+                    const selectedRanges = Array.from(document.querySelectorAll('.shooting-ranges-table-check:checked'));
+                    const archiveInput = document.getElementById('bulkArchiveWithReservations');
+
+                    if (selectedRanges.length === 0) {
+                        event.preventDefault();
+                        return;
+                    }
+
+                    const withReservations = selectedRanges.filter((checkbox) => Number(checkbox.dataset.reservationsCount || 0) > 0);
+
+                    if (withReservations.length > 0) {
+                        const names = withReservations
+                            .map((checkbox) => `- ${checkbox.dataset.rangeName || checkbox.value}`)
+                            .join('\n');
+                        const withoutReservationsCount = selectedRanges.length - withReservations.length;
+                        const deleteInfo = withoutReservationsCount > 0
+                            ? `\n\nPozostałe wybrane strzelnice bez rezerwacji (${withoutReservationsCount}) zostaną usunięte razem z przedziałami czasowymi, galeriami, zdjęciami, godzinami pracy, dniami wolnymi i zaproszeniami.`
+                            : '';
+
+                        if (!confirm(`${confirmArchiveText(`Wybrane strzelnice z rezerwacjami:\n${names}`)}${deleteInfo}`)) {
+                            event.preventDefault();
+                            return;
+                        }
+
+                        archiveInput.value = '1';
+                        return;
+                    }
+
+                    if (!confirm(dependentDeleteWarningText(`Wybrano ${selectedRanges.length} strzelnic.`))) {
+                        event.preventDefault();
+                        return;
+                    }
+
+                    archiveInput.value = '0';
                 }
-
-                archiveInput.value = '0';
-            }
-
-            bulkIds.innerHTML = '';
-            selectedShootingIds.forEach(id => {
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = 'shooting_range_ids[]';
-                input.value = id;
-                bulkIds.appendChild(input);
             });
         });
-
-        document.getElementById('search').addEventListener('input', () => {
-            currentPage = 1;
-            render();
-        });
-
-        document.getElementById('sort').addEventListener('change', () => {
-            currentPage = 1;
-            render();
-        });
-
-        document.getElementById('perPage').addEventListener('change', () => {
-            currentPage = 1;
-            render();
-        });
-
-        render();
     </script>
 </x-app-layout>

@@ -7,8 +7,11 @@ use App\Models\Reservation;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
 
 class ReservationWorkflowTest extends TestCase
@@ -613,6 +616,320 @@ class ReservationWorkflowTest extends TestCase
                 'date' => today()->toDateString(),
             ]))
             ->assertForbidden();
+    }
+
+    public function test_invitation_list_can_be_searched_and_is_paginated(): void
+    {
+        [$admin, $rangeId] = $this->createBookableRange('admin', false);
+
+        for ($number = 1; $number <= 25; $number++) {
+            DB::table('shooting_range_invitations')->insert([
+                'shooting_range_id' => $rangeId,
+                'first_name' => $number === 25 ? 'Anna' : 'Klient',
+                'last_name' => $number === 25 ? 'Kowalska' : "Numer {$number}",
+                'email' => $number === 25
+                    ? 'anna.kowalska@example.com'
+                    : "klient{$number}@example.com",
+                'status' => 'none',
+                'invited_by' => $admin->id,
+                'created_at' => now()->addSeconds($number),
+                'updated_at' => now()->addSeconds($number),
+            ]);
+        }
+
+        $firstPage = $this->actingAs($admin)
+            ->get(route('shooting.invitations.index'))
+            ->assertOk()
+            ->assertSee('id="page"', false);
+
+        $this->assertSame(20, $firstPage->viewData('invitations')->count());
+        $this->assertSame(25, $firstPage->viewData('invitations')->total());
+
+        $secondPage = $this->actingAs($admin)
+            ->get(route('shooting.invitations.index', ['page' => 2]))
+            ->assertOk();
+
+        $this->assertSame(5, $secondPage->viewData('invitations')->count());
+
+        $tenPerPage = $this->actingAs($admin)
+            ->get(route('shooting.invitations.index', ['per_page' => 10]))
+            ->assertOk();
+
+        $this->assertSame(10, $tenPerPage->viewData('invitations')->count());
+        $this->assertSame(10, $tenPerPage->viewData('perPage'));
+        $this->assertSame(3, $tenPerPage->viewData('invitations')->lastPage());
+
+        $fullNameSearch = $this->actingAs($admin)
+            ->get(route('shooting.invitations.index', [
+                'search' => 'Anna Kowalska',
+            ]))
+            ->assertOk()
+            ->assertSee('anna.kowalska@example.com');
+
+        $this->assertSame(
+            1,
+            $fullNameSearch->viewData('invitations')->total()
+        );
+
+        $emailSearch = $this->actingAs($admin)
+            ->get(route('shooting.invitations.index', [
+                'search' => 'anna.kowalska@',
+            ]))
+            ->assertOk();
+
+        $this->assertSame(1, $emailSearch->viewData('invitations')->total());
+
+        $emailAscending = $this->actingAs($admin)
+            ->get(route('shooting.invitations.index', [
+                'sort' => 'email',
+                'direction' => 'asc',
+                'per_page' => 10,
+            ]))
+            ->assertOk();
+
+        $this->assertSame('email', $emailAscending->viewData('sort'));
+        $this->assertSame('asc', $emailAscending->viewData('direction'));
+        $this->assertSame(10, $emailAscending->viewData('perPage'));
+        $this->assertSame(
+            'anna.kowalska@example.com',
+            $emailAscending->viewData('invitations')->first()->email
+        );
+
+        $emailDescending = $this->actingAs($admin)
+            ->get(route('shooting.invitations.index', [
+                'sort' => 'email',
+                'direction' => 'desc',
+            ]))
+            ->assertOk();
+
+        $this->assertSame(
+            'klient9@example.com',
+            $emailDescending->viewData('invitations')->first()->email
+        );
+    }
+
+    public function test_existing_invitation_is_not_changed_and_is_shown_in_search(): void
+    {
+        [$admin, $rangeId] = $this->createBookableRange('admin', false);
+        $invitationId = DB::table('shooting_range_invitations')->insertGetId([
+            'shooting_range_id' => $rangeId,
+            'first_name' => 'Anna',
+            'last_name' => 'Kowalska',
+            'email' => 'anna.kowalska@example.com',
+            'status' => 'accepted',
+            'accepted_at' => now()->subDay(),
+            'invited_by' => $admin->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($admin)
+            ->post(route('shooting.invitations.store'), [
+                'first_name' => 'Zmienione',
+                'last_name' => 'Dane',
+                'email' => 'ANNA.KOWALSKA@EXAMPLE.COM',
+                'expires_at' => now()->addMonth()->format('Y-m-d H:i:s'),
+            ]);
+
+        $response
+            ->assertRedirect(route('shooting.invitations.index', [
+                'search' => 'anna.kowalska@example.com',
+            ]))
+            ->assertSessionHas(
+                'warning',
+                'Użytkownik z adresem anna.kowalska@example.com jest już na liście. Nie wprowadzono zmian.'
+            );
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'id' => $invitationId,
+            'first_name' => 'Anna',
+            'last_name' => 'Kowalska',
+            'email' => 'anna.kowalska@example.com',
+            'status' => 'accepted',
+        ]);
+        $this->assertSame(
+            1,
+            DB::table('shooting_range_invitations')
+                ->where('shooting_range_id', $rangeId)
+                ->count()
+        );
+
+        $filteredList = $this->actingAs($admin)
+            ->get($response->headers->get('Location'))
+            ->assertOk()
+            ->assertSee('anna.kowalska@example.com');
+
+        $this->assertSame(
+            1,
+            $filteredList->viewData('invitations')->total()
+        );
+    }
+
+    public function test_new_and_imported_invitations_expire_after_seven_days(): void
+    {
+        [$admin, $rangeId] = $this->createBookableRange('admin', false);
+        $expectedExpiry = now()->addDays(7)->format('Y-m-d H:i:s');
+
+        $this->actingAs($admin)
+            ->post(route('shooting.invitations.store'), [
+                'first_name' => 'Jan',
+                'last_name' => 'Nowy',
+                'email' => 'jan.nowy@example.com',
+                'expires_at' => now()->addMonth()->format('Y-m-d H:i:s'),
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'shooting_range_id' => $rangeId,
+            'email' => 'jan.nowy@example.com',
+            'expires_at' => $expectedExpiry,
+        ]);
+
+        $spreadsheet = new Spreadsheet;
+        $spreadsheet->getActiveSheet()->fromArray([
+            ['Imię', 'Nazwisko', 'Email'],
+            ['Anna', 'Importowana', 'anna.importowana@example.com'],
+        ]);
+        $excelPath = tempnam(sys_get_temp_dir(), 'invitations').'.xlsx';
+        (new Xlsx($spreadsheet))->save($excelPath);
+
+        $this->actingAs($admin)
+            ->post(route('shooting.invitations.import'), [
+                'file' => new UploadedFile(
+                    $excelPath,
+                    'invitations.xlsx',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    null,
+                    true
+                ),
+                'expires_at' => now()->addMonth()->format('Y-m-d H:i:s'),
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'shooting_range_id' => $rangeId,
+            'email' => 'anna.importowana@example.com',
+            'expires_at' => $expectedExpiry,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('shooting.invitations.template'))
+            ->assertOk()
+            ->assertDownload('szablon-zaproszen.xlsx');
+    }
+
+    public function test_generated_invitation_links_expire_after_seven_days(): void
+    {
+        [$admin, $rangeId] = $this->createBookableRange('admin', false);
+        $expectedExpiry = now()->addDays(7)->format('Y-m-d H:i:s');
+
+        $singleInvitationId = DB::table('shooting_range_invitations')
+            ->insertGetId([
+                'shooting_range_id' => $rangeId,
+                'first_name' => 'Jan',
+                'last_name' => 'Testowy',
+                'email' => 'jan.testowy@example.com',
+                'status' => 'none',
+                'expires_at' => null,
+                'invited_by' => $admin->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        $bulkInvitationId = DB::table('shooting_range_invitations')
+            ->insertGetId([
+                'shooting_range_id' => $rangeId,
+                'first_name' => 'Anna',
+                'last_name' => 'Testowa',
+                'email' => 'anna.testowa@example.com',
+                'status' => 'none',
+                'expires_at' => now()->subDay(),
+                'invited_by' => $admin->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        $this->actingAs($admin)
+            ->patch(route('shooting.invitations.link', $singleInvitationId), [
+                'expires_at' => now()->addMonth()->format('Y-m-d H:i:s'),
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'id' => $singleInvitationId,
+            'status' => 'pending',
+            'expires_at' => $expectedExpiry,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('shooting.invitations.bulk'), [
+                'ids' => [$bulkInvitationId],
+                'action' => 'generate',
+                'expires_at' => now()->addMonth()->format('Y-m-d H:i:s'),
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'id' => $bulkInvitationId,
+            'status' => 'pending',
+            'expires_at' => $expectedExpiry,
+        ]);
+    }
+
+    public function test_invitations_can_be_deleted_regardless_of_status(): void
+    {
+        [$admin, $rangeId] = $this->createBookableRange('admin', false);
+        $invitationIds = [];
+
+        foreach (['accepted', 'revoked', 'pending'] as $status) {
+            $invitationIds[$status] = DB::table(
+                'shooting_range_invitations'
+            )->insertGetId([
+                'shooting_range_id' => $rangeId,
+                'first_name' => 'Klient',
+                'last_name' => ucfirst($status),
+                'email' => "{$status}@example.com",
+                'status' => $status,
+                'revoked_at' => $status === 'revoked' ? now() : null,
+                'accepted_at' => $status === 'accepted' ? now() : null,
+                'invited_by' => $admin->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $this->actingAs($admin)
+            ->delete(route(
+                'shooting.invitations.destroy',
+                $invitationIds['accepted']
+            ))
+            ->assertRedirect(route('shooting.invitations.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('shooting_range_invitations', [
+            'id' => $invitationIds['accepted'],
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('shooting.invitations.bulk'), [
+                'ids' => [
+                    $invitationIds['revoked'],
+                    $invitationIds['pending'],
+                ],
+                'action' => 'delete',
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('shooting_range_invitations', [
+            'id' => $invitationIds['revoked'],
+        ]);
+        $this->assertDatabaseMissing('shooting_range_invitations', [
+            'id' => $invitationIds['pending'],
+        ]);
     }
 
     public function test_expired_current_payment_due_date_blocks_new_booking(): void

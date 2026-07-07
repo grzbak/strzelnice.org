@@ -489,9 +489,21 @@ if (ShootingRangeInterval::hasOverlap(
     // ==================================================================================
 
     // LISTA STRZELNIC W PANELU SUPERADMINA
-    public function listSuperAdmin()
+    public function listSuperAdmin(Request $request)
     {
-        $shootings = ShootingRange::query()
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'sort' => ['nullable', 'in:name,town,voivodeship,created_at'],
+            'direction' => ['nullable', 'in:asc,desc'],
+            'per_page' => ['nullable', 'integer', 'in:10,20,50'],
+        ]);
+
+        $search = trim((string) ($validated['search'] ?? ''));
+        $sort = $validated['sort'] ?? 'name';
+        $direction = $validated['direction'] ?? 'asc';
+        $perPage = (int) ($validated['per_page'] ?? 20);
+
+        $query = ShootingRange::query()
             ->where('is_archived', false)
             ->with('activeInterval')
             ->withCount('reservations')
@@ -500,11 +512,36 @@ if (ShootingRangeInterval::hasOverlap(
                     ->where('shooting_range_employee.role', 'admin')
                     ->where('shooting_range_employee.is_approved', true)
                     ->where('users.is_approved', true),
-            ])
-            ->orderBy('name')
-            ->get();
+            ]);
 
-        return view('superAdmin.shooting_ranges.index', compact('shootings'));
+        foreach (preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY) as $term) {
+            $query->where(function ($query) use ($term) {
+                $query
+                    ->where('name', 'like', "%{$term}%")
+                    ->orWhere('town', 'like', "%{$term}%")
+                    ->orWhere('voivodeship', 'like', "%{$term}%")
+                    ->orWhere('street', 'like', "%{$term}%")
+                    ->orWhere('houseNumber', 'like', "%{$term}%")
+                    ->orWhere('zipCode', 'like', "%{$term}%");
+            });
+        }
+
+        match ($sort) {
+            'town' => $query->orderBy('town', $direction)->orderBy('name'),
+            'voivodeship' => $query->orderBy('voivodeship', $direction)->orderBy('name'),
+            'created_at' => $query->orderBy('created_at', $direction)->orderBy('name'),
+            default => $query->orderBy('name', $direction),
+        };
+
+        $shootings = $query->paginate($perPage)->withQueryString();
+
+        return view('superAdmin.shooting_ranges.index', compact(
+            'shootings',
+            'search',
+            'sort',
+            'direction',
+            'perPage'
+        ));
     }
 
     // IMPORT STRZELNIC Z EXCELA

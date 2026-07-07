@@ -26,111 +26,127 @@
             </div>
         </section>
 
-        <section class="p-4 bg-white border rounded shadow-sm">
-            @if ($staff->isEmpty())
-                <div class="mb-0 alert alert-info">
-                    Do strzelnicy nie przypisano jeszcze administratorów ani pracowników.
-                </div>
-            @else
-                <div class="table-responsive">
-                    <table class="table mb-0 align-middle table-hover">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Imię i nazwisko</th>
-                                <th>E-mail</th>
-                                <th>Rola w strzelnicy</th>
-                                <th>Status konta</th>
-                                <th class="text-end">Akcje</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($staff as $staffMember)
-                                @php($isRangeAdmin = $staffMember->pivot->role === 'admin')
-                                @php(
-                                    $cannotDemoteLastAdministrator = $isRangeAdmin
-                                        && $staffMember->is_approved
-                                        && $activeAdministratorsCount <= 1
-                                )
-                                <tr>
-                                    <td class="fw-semibold">{{ $staffMember->name }}</td>
-                                    <td>{{ $staffMember->email }}</td>
-                                    <td>
-                                        <span class="badge {{ $isRangeAdmin ? 'text-bg-primary' : 'text-bg-secondary' }}">
-                                            {{ $isRangeAdmin ? 'Administrator' : 'Pracownik' }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <span class="{{ $staffMember->is_approved ? 'text-success' : 'text-danger' }}">
-                                            <i class="bi {{ $staffMember->is_approved ? 'bi-check-circle-fill' : 'bi-x-circle-fill' }} me-1"></i>
-                                            {{ $staffMember->is_approved ? 'Aktywne' : 'Nieaktywne' }}
-                                        </span>
-                                    </td>
-                                    <td class="text-end">
-                                        @if ($canManageAdministrators)
-                                            <form
-                                                method="POST"
-                                                action="{{ route('shooting.staff.update-role', [$shootingRange, $staffMember]) }}"
-                                                class="d-inline change-role-form"
-                                                data-user-name="{{ $staffMember->name }}"
-                                                data-target-role="{{ $isRangeAdmin ? 'pracownika' : 'administratora' }}"
-                                            >
-                                                @csrf
-                                                @method('PATCH')
-                                                <input
-                                                    type="hidden"
-                                                    name="role"
-                                                    value="{{ $isRangeAdmin ? 'pracownik' : 'admin' }}"
-                                                >
-                                                <button
-                                                    type="submit"
-                                                    class="btn btn-sm btn-outline-primary"
-                                                    @disabled($cannotDemoteLastAdministrator)
-                                                    title="{{ $cannotDemoteLastAdministrator
-                                                        ? 'Najpierw przypisz drugiego aktywnego administratora'
-                                                        : ($isRangeAdmin ? 'Zmień na pracownika' : 'Zmień na administratora') }}"
-                                                >
-                                                    <i class="bi bi-arrow-left-right"></i>
-                                                    <span class="visually-hidden">Zmień rolę</span>
-                                                </button>
-                                            </form>
-                                        @endif
+        @php
+            $staffColumns = [
+                ['key' => 'name', 'label' => 'Imię i nazwisko', 'sortable' => true],
+                ['key' => 'email', 'label' => 'E-mail', 'sortable' => true],
+                ['key' => 'staff_role', 'label' => 'Rola w strzelnicy', 'sortable' => true],
+                ['key' => 'account_status', 'label' => 'Status konta', 'sortable' => true],
+                ['key' => 'actions', 'label' => 'Akcje', 'class' => 'text-end'],
+            ];
+        @endphp
 
-                                        @if ($canManageAdministrators || ! $isRangeAdmin)
-                                            <form
-                                                method="POST"
-                                                action="{{ route('shooting.staff.destroy', [$shootingRange, $staffMember]) }}"
-                                                class="d-inline remove-staff-form"
-                                                data-user-name="{{ $staffMember->name }}"
-                                                data-role="{{ $isRangeAdmin ? 'administratora' : 'pracownika' }}"
-                                            >
-                                                @csrf
-                                                @method('DELETE')
-                                                <button
-                                                    type="submit"
-                                                    class="btn btn-sm btn-outline-danger"
-                                                    title="Usuń ze strzelnicy"
-                                                >
-                                                    <i class="bi bi-person-dash-fill"></i>
-                                                    <span class="visually-hidden">Usuń ze strzelnicy</span>
-                                                </button>
-                                            </form>
-                                        @else
-                                            <span
-                                                class="text-secondary"
-                                                data-bs-toggle="tooltip"
-                                                title="Administrator może być usunięty tylko przez superadmina"
-                                            >
-                                                <i class="bi bi-shield-lock-fill"></i>
-                                            </span>
-                                        @endif
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
+        <x-data-table
+            id="staff-table"
+            :action="route('shooting.staff.index', $shootingRange)"
+            :columns="$staffColumns"
+            :paginator="$staff"
+            :search="$search"
+            search-label="Wyszukaj osobę"
+            search-placeholder="Imię, nazwisko lub adres e-mail"
+            :sort="$sort"
+            :direction="$direction"
+            :per-page="$perPage"
+        >
+            @if ($staff->isEmpty())
+                <tr>
+                    <td colspan="{{ count($staffColumns) }}" class="py-4 text-center text-secondary">
+                        @if ($search !== '')
+                            Nie znaleziono personelu pasującego do wyszukiwania.
+                        @else
+                            Do strzelnicy nie przypisano jeszcze administratorów ani pracowników.
+                        @endif
+                    </td>
+                </tr>
+            @else
+                @foreach ($staff as $staffMember)
+                    @php($isRangeAdmin = $staffMember->pivot->role === 'admin')
+                    @php(
+                        $cannotDemoteLastAdministrator = $isRangeAdmin
+                            && $staffMember->is_approved
+                            && $activeAdministratorsCount <= 1
+                    )
+                    <tr>
+                        <td data-label="Imię i nazwisko" class="fw-semibold">{{ $staffMember->name }}</td>
+                        <td data-label="E-mail">{{ $staffMember->email }}</td>
+                        <td data-label="Rola w strzelnicy">
+                            <span class="badge {{ $isRangeAdmin ? 'text-bg-primary' : 'text-bg-secondary' }}">
+                                {{ $isRangeAdmin ? 'Administrator' : 'Pracownik' }}
+                            </span>
+                        </td>
+                        <td data-label="Status konta">
+                            <span class="{{ $staffMember->is_approved ? 'text-success' : 'text-danger' }}">
+                                <i class="bi {{ $staffMember->is_approved ? 'bi-check-circle-fill' : 'bi-x-circle-fill' }} me-1"></i>
+                                {{ $staffMember->is_approved ? 'Aktywne' : 'Nieaktywne' }}
+                            </span>
+                        </td>
+                        <td data-label="Akcje" class="text-end">
+                            <div class="gap-1 d-inline-flex flex-wrap justify-content-end">
+                                @if ($canManageAdministrators)
+                                    <form
+                                        method="POST"
+                                        action="{{ route('shooting.staff.update-role', [$shootingRange, $staffMember]) }}"
+                                        class="d-inline change-role-form"
+                                        data-user-name="{{ $staffMember->name }}"
+                                        data-target-role="{{ $isRangeAdmin ? 'pracownika' : 'administratora' }}"
+                                    >
+                                        @csrf
+                                        @method('PATCH')
+                                        <input
+                                            type="hidden"
+                                            name="role"
+                                            value="{{ $isRangeAdmin ? 'pracownik' : 'admin' }}"
+                                        >
+                                        <button
+                                            type="submit"
+                                            class="btn btn-sm btn-outline-primary data-table-icon-button"
+                                            @disabled($cannotDemoteLastAdministrator)
+                                            data-bs-toggle="tooltip"
+                                            data-bs-title="{{ $cannotDemoteLastAdministrator
+                                                ? 'Najpierw przypisz drugiego aktywnego administratora'
+                                                : ($isRangeAdmin ? 'Zmień na pracownika' : 'Zmień na administratora') }}"
+                                            aria-label="{{ $isRangeAdmin ? 'Zmień na pracownika' : 'Zmień na administratora' }}"
+                                        >
+                                            <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                                        </button>
+                                    </form>
+                                @endif
+
+                                @if ($canManageAdministrators || ! $isRangeAdmin)
+                                    <form
+                                        method="POST"
+                                        action="{{ route('shooting.staff.destroy', [$shootingRange, $staffMember]) }}"
+                                        class="d-inline remove-staff-form"
+                                        data-user-name="{{ $staffMember->name }}"
+                                        data-role="{{ $isRangeAdmin ? 'administratora' : 'pracownika' }}"
+                                    >
+                                        @csrf
+                                        @method('DELETE')
+                                        <button
+                                            type="submit"
+                                            class="btn btn-sm btn-outline-danger data-table-icon-button"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-title="Usuń ze strzelnicy"
+                                            aria-label="Usuń ze strzelnicy"
+                                        >
+                                            <i class="bi bi-person-dash-fill" aria-hidden="true"></i>
+                                        </button>
+                                    </form>
+                                @else
+                                    <span
+                                        class="text-secondary"
+                                        data-bs-toggle="tooltip"
+                                        data-bs-title="Administrator może być usunięty tylko przez superadmina"
+                                    >
+                                        <i class="bi bi-shield-lock-fill"></i>
+                                    </span>
+                                @endif
+                            </div>
+                        </td>
+                    </tr>
+                @endforeach
             @endif
-        </section>
+        </x-data-table>
     </main>
 
     <div class="modal fade" id="addStaffModal" tabindex="-1" aria-hidden="true">
@@ -319,24 +335,26 @@
                 addForm.submit();
             });
 
-            document.querySelectorAll('.change-role-form').forEach(form => {
-                form.addEventListener('submit', event => {
+            document.addEventListener('submit', event => {
+                const form = event.target;
+
+                if (form.matches('.change-role-form')) {
                     if (!confirm(
                         `Czy na pewno chcesz zmienić rolę użytkownika ${form.dataset.userName} na ${form.dataset.targetRole}?`
                     )) {
                         event.preventDefault();
                     }
-                });
-            });
 
-            document.querySelectorAll('.remove-staff-form').forEach(form => {
-                form.addEventListener('submit', event => {
+                    return;
+                }
+
+                if (form.matches('.remove-staff-form')) {
                     if (!confirm(
                         `Czy na pewno chcesz usunąć ${form.dataset.role} ${form.dataset.userName} z tej strzelnicy?`
                     )) {
                         event.preventDefault();
                     }
-                });
+                }
             });
 
             document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(

@@ -19,12 +19,57 @@ class ShootingRangeStaffController extends Controller
     {
         $this->authorizeStaffManagement($request->user(), $shootingRange);
 
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'sort' => ['nullable', 'string', 'in:name,email,staff_role,account_status'],
+            'direction' => ['nullable', 'string', 'in:asc,desc'],
+            'per_page' => ['nullable', 'integer', 'in:10,20,50'],
+        ]);
+        $search = trim($validated['search'] ?? '');
+        $sort = $validated['sort'] ?? 'staff_role';
+        $direction = $validated['direction'] ?? 'asc';
+        $perPage = (int) ($validated['per_page'] ?? 20);
+        $searchTerms = preg_split(
+            '/\s+/u',
+            $search,
+            -1,
+            PREG_SPLIT_NO_EMPTY
+        ) ?: [];
+
         $staff = $shootingRange->employees()
-            ->orderByRaw(
-                "CASE shooting_range_employee.role WHEN 'admin' THEN 0 ELSE 1 END"
-            )
-            ->orderBy('users.name')
-            ->get();
+            ->when($searchTerms, function ($query) use ($searchTerms): void {
+                foreach ($searchTerms as $term) {
+                    $query->where(function ($query) use ($term): void {
+                        $like = '%'.$term.'%';
+
+                        $query
+                            ->where('users.name', 'like', $like)
+                            ->orWhere('users.email', 'like', $like);
+                    });
+                }
+            })
+            ->when($sort === 'staff_role', function ($query) use ($direction): void {
+                $query
+                    ->orderByRaw(
+                        "CASE shooting_range_employee.role WHEN 'admin' THEN 0 ELSE 1 END "
+                        .($direction === 'asc' ? 'ASC' : 'DESC')
+                    )
+                    ->orderBy('users.name');
+            })
+            ->when($sort === 'name', function ($query) use ($direction): void {
+                $query->orderBy('users.name', $direction);
+            })
+            ->when($sort === 'email', function ($query) use ($direction): void {
+                $query->orderBy('users.email', $direction);
+            })
+            ->when($sort === 'account_status', function ($query) use ($direction): void {
+                $query
+                    ->orderBy('users.is_approved', $direction)
+                    ->orderBy('users.name');
+            })
+            ->orderBy('users.id')
+            ->paginate($perPage)
+            ->withQueryString();
         $activeAdministratorsCount = $this->activeAdministratorsCount(
             $shootingRange
         );
@@ -35,6 +80,10 @@ class ShootingRangeStaffController extends Controller
             'canManageAdministrators' => $request->user()->isSuperAdmin(),
             'activeAdministratorsCount' => $activeAdministratorsCount,
             'hasActiveAdministrator' => $activeAdministratorsCount > 0,
+            'search' => $search,
+            'sort' => $sort,
+            'direction' => $direction,
+            'perPage' => $perPage,
         ]);
     }
 

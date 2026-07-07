@@ -260,6 +260,9 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
         Route::post('/strzelnica/zaproszenia/import', [ShootingRangeInvitationController::class, 'import'])
             ->name('shooting.invitations.import');
 
+        Route::get('/strzelnica/zaproszenia/szablon', [ShootingRangeInvitationController::class, 'downloadTemplate'])
+            ->name('shooting.invitations.template');
+
         Route::patch('/strzelnica/zaproszenia/{invitation}/link', [ShootingRangeInvitationController::class, 'generateLink'])
             ->name('shooting.invitations.link');
 
@@ -268,6 +271,9 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
 
         Route::patch('/strzelnica/zaproszenia/{invitation}/revoke', [ShootingRangeInvitationController::class, 'revoke'])
             ->name('shooting.invitations.revoke');
+
+        Route::delete('/strzelnica/zaproszenia/{invitation}', [ShootingRangeInvitationController::class, 'destroy'])
+            ->name('shooting.invitations.destroy');
 
         Route::post('/strzelnica/zaproszenia/bulk', [ShootingRangeInvitationController::class, 'bulk'])
             ->name('shooting.invitations.bulk');

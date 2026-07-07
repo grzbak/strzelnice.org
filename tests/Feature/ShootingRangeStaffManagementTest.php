@@ -218,6 +218,66 @@ class ShootingRangeStaffManagementTest extends TestCase
         ]);
     }
 
+    public function test_staff_index_supports_table_search_sorting_and_page_size(): void
+    {
+        $superadmin = $this->createUser('superadmin', 'table.root@example.test');
+        $rangeId = $this->createRange();
+
+        for ($number = 1; $number <= 12; $number++) {
+            $user = $this->createUser(
+                'pracownik',
+                "staff{$number}@example.test"
+            );
+            $user->update([
+                'name' => $number === 12 ? 'Anna Sortowana' : "Personel {$number}",
+            ]);
+            $this->attach(
+                $rangeId,
+                $user->id,
+                $number === 1 ? 'admin' : 'pracownik'
+            );
+        }
+
+        $tenPerPage = $this->actingAs($superadmin)
+            ->get(route('shooting.staff.index', [
+                'shootingRange' => $rangeId,
+                'per_page' => 10,
+            ]))
+            ->assertOk()
+            ->assertSee('staff-table-search-form');
+
+        $this->assertSame(10, $tenPerPage->viewData('staff')->count());
+        $this->assertSame(10, $tenPerPage->viewData('perPage'));
+        $this->assertSame(2, $tenPerPage->viewData('staff')->lastPage());
+
+        $search = $this->actingAs($superadmin)
+            ->get(route('shooting.staff.index', [
+                'shootingRange' => $rangeId,
+                'search' => 'Anna Sortowana',
+            ]))
+            ->assertOk()
+            ->assertSee('Anna Sortowana');
+
+        $this->assertSame(1, $search->viewData('staff')->total());
+
+        $emailDescending = $this->actingAs($superadmin)
+            ->get(route('shooting.staff.index', [
+                'shootingRange' => $rangeId,
+                'sort' => 'email',
+                'direction' => 'desc',
+                'per_page' => 10,
+            ]))
+            ->assertOk();
+
+        $this->assertSame('email', $emailDescending->viewData('sort'));
+        $this->assertSame('desc', $emailDescending->viewData('direction'));
+        $this->assertSame(10, $emailDescending->viewData('perPage'));
+        $this->assertSame(
+            'staff9@example.test',
+            $emailDescending->viewData('staff')->first()->email
+        );
+    }
+
     public function test_employee_cannot_manage_range_staff(): void
     {
         $employee = $this->createUser('pracownik', 'employee@example.test');
