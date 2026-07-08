@@ -93,7 +93,7 @@
             -webkit-backdrop-filter: blur(2px);
         }
 
-        .cms-page-content :where(h1, h2, h3, h4, h5, h6, h7, p) {
+        .cms-page-content :where(h1, h2, h3, h4, h5, h6, h7, p, ul, ol, li) {
             all: revert;
         }
 

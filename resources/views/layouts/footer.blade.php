@@ -1,6 +1,5 @@
-
-
-<footer class="py-3 mt-auto bg-black text-light">
+<footer class="pb-3 mt-auto bg-black text-light">
+    @include('components.shooting-range-zone-footer')
     <div class="container">
         <div class="row align-items-center">
 

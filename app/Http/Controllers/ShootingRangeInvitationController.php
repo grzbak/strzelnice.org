@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Mail\ShootingRangeInvitationMail;
 use App\Mail\ShootingRangeInvitationRevokedMail;
 use App\Models\ShootingRangeInvitation;
+use App\Models\User;
+use App\Support\PendingInvitationSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
@@ -319,10 +321,22 @@ class ShootingRangeInvitationController extends Controller
 
     public function accept(string $token)
     {
-        $invitation = ShootingRangeInvitation::where('token', $token)->firstOrFail();
+        $invitation = ShootingRangeInvitation::where('token', $token)->first();
+
+        if (! $invitation) {
+            return $this->invitationStatusView(
+                'Zaproszenie jest nieaktualne',
+                'Ten link jest nieprawidłowy albo został zastąpiony nowym linkiem. Skorzystaj z najnowszej wiadomości lub poproś strzelnicę o ponowne wysłanie zaproszenia.',
+                'invalid'
+            );
+        }
 
         if ($invitation->isRevoked()) {
-            abort(403, 'Zaproszenie zostało odwołane.');
+            return $this->invitationStatusView(
+                'Zaproszenie zostało odwołane',
+                'Ten link nie jest już aktywny. Skontaktuj się ze strzelnicą, jeśli uważasz, że to pomyłka.',
+                'revoked'
+            );
         }
 
         if ($invitation->isExpired()) {
@@ -330,7 +344,11 @@ class ShootingRangeInvitationController extends Controller
                 'status' => ShootingRangeInvitation::STATUS_EXPIRED,
             ]);
 
-            abort(403, 'Zaproszenie wygasło.');
+            return $this->invitationStatusView(
+                'Zaproszenie wygasło',
+                'Termin ważności tego linku minął. Poproś strzelnicę o wygenerowanie nowego zaproszenia.',
+                'expired'
+            );
         }
 
         if ($invitation->isAccepted()) {
@@ -339,20 +357,42 @@ class ShootingRangeInvitationController extends Controller
         }
 
         if (! auth()->check()) {
-            session(['pending_invitation_token' => $token]);
+            $email = mb_strtolower((string) $invitation->email);
+            PendingInvitationSession::storeSingle(request(), $invitation, true);
 
-            return redirect()->route('login')
-                ->with('success', 'Zaloguj się, aby zaakceptować zaproszenie.');
+            $existingUser = User::query()
+                ->whereRaw('LOWER(email) = ?', [$email])
+                ->exists();
+
+            if ($existingUser) {
+                return redirect()->route('login')
+                    ->with('success', 'Zaloguj się, aby zaakceptować zaproszenie.');
+            }
+
+            return redirect()->route('register')
+                ->with('success', 'Utwórz konto, aby zaakceptować zaproszenie do strzelnicy.');
         }
 
         if (
             mb_strtolower((string) auth()->user()->email)
             !== mb_strtolower((string) $invitation->email)
         ) {
-            abort(
-                403,
-                'Zaproszenie zostało wystawione dla innego adresu e-mail.'
+            return $this->invitationStatusView(
+                'Zaproszenie jest przypisane do innego adresu e-mail',
+                'Jesteś zalogowany na konto z innym adresem e-mail niż ten, dla którego wystawiono zaproszenie. Wyloguj się i zaloguj na właściwe konto albo skontaktuj się ze strzelnicą.',
+                'wrong-account'
             );
+        }
+
+        if (! request()->boolean('confirm')) {
+            session([
+                'pending_invitation_token' => $token,
+                'pending_invitation_open_modal' => true,
+            ]);
+
+            PendingInvitationSession::syncForUser(request(), auth()->user());
+
+            return redirect()->route('index');
         }
 
         $invitation->update([
@@ -361,8 +401,51 @@ class ShootingRangeInvitationController extends Controller
             'user_id' => auth()->id(),
         ]);
 
+        PendingInvitationSession::syncForUser(request(), auth()->user());
+
         return redirect()->route('index')
             ->with('success', 'Zaproszenie zaakceptowane.');
+    }
+
+    public function decline(string $token)
+    {
+        $invitation = ShootingRangeInvitation::where('token', $token)->first();
+
+        if (! $invitation) {
+            PendingInvitationSession::syncForUser(request(), auth()->user());
+
+            return redirect()->route('index')
+                ->with('warning', 'Zaproszenie jest nieaktualne.');
+        }
+
+        if (
+            mb_strtolower((string) auth()->user()->email)
+            !== mb_strtolower((string) $invitation->email)
+        ) {
+            return redirect()->route('index')
+                ->with('error', 'Zaproszenie jest przypisane do innego adresu e-mail.');
+        }
+
+        if (! $invitation->isAccepted()) {
+            $invitation->update([
+                'status' => ShootingRangeInvitation::STATUS_REVOKED,
+                'revoked_at' => now(),
+            ]);
+        }
+
+        PendingInvitationSession::syncForUser(request(), auth()->user());
+
+        return redirect()->route('index')
+            ->with('success', 'Odrzucono zaproszenie do strzelnicy.');
+    }
+
+    private function invitationStatusView(string $title, string $message, string $type)
+    {
+        return response()->view('shooting_ranges.invitations.status', [
+            'title' => $title,
+            'message' => $message,
+            'type' => $type,
+        ]);
     }
 
     private function refreshInvitationLink(ShootingRangeInvitation $invitation): void

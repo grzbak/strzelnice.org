@@ -10,7 +10,7 @@
 <section class="shooting-cities" aria-labelledby="shooting-cities-title">
     <div class="container">
         <h4 id="shooting-cities-title" class="shooting-cities-title">
-            Znajdź strzelnicę wg miasta
+            Znajdź strzelnicę według miasta
         </h4>
 
         <div class="shooting-cities-grid">

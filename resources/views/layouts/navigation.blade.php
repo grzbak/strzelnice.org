@@ -41,6 +41,8 @@
                 </ul>
             </!--div-->
 
+            <x-user-notifications id-suffix="mobile" />
+
             {{-- USTAWIENIA --}}
             <div class="dropdown">
                 <a href="#" data-bs-toggle="dropdown">
@@ -75,7 +77,7 @@
 
 
 {{-- NAVBAR --}}
-<nav class="shadow-sm bg-black navbar navbar-expand-lg navbar-dark">
+<nav class="bg-black shadow-sm navbar navbar-expand-lg navbar-dark">
     <div class="container">
 
         <a class="navbar-brand fw-bold" href="{{ url('/') }}">
@@ -210,8 +212,10 @@
                 @endguest
 
                 @auth
+                    <div class="d-none d-lg-block"><x-user-notifications id-suffix="desktop" /></div>
+
                     {{-- WIADOMOŚCI --}}
-                    <div class="dropdown d-none d-lg-block">
+                    <!--div class="dropdown d-none d-lg-block">
                         <a href="#" class="position-relative fs-5" data-bs-toggle="dropdown">
                             <i class="bi bi-chat-dots"></i>
 
@@ -235,7 +239,7 @@
                                 </li>
                             @endforeach
                         </ul>
-                    </div>
+                    </div-->
 
                     {{-- USER --}}
                     <div class="dropdown d-none d-lg-block">

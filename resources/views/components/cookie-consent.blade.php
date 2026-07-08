@@ -6,7 +6,13 @@
     z-index:99999;
     cursor:pointer;
 ">
-    <img src="/images/cookie.png" width="60" alt="Cookies" onclick="openCookieModal()">
+    <!--img src="/images/cookie.png" width="60" alt="Cookies" onclick="openCookieModal()"-->
+     <span onclick="openCookieModal()"
+        title="Zarządzaj plikami cookie"
+        aria-label="Cookies"
+    >
+        <i class="text-white bi bi-link-45deg display-4" aria-hidden="true"></i>
+     </span>
 </div>
 
 {{-- MODAL --}}

@@ -29,6 +29,10 @@ Route::post('/kontakt', [SystemConfigurationController::class, 'sendContact'])
     ->name('contact.send');
 Route::get('/zaproszenia/{token}', [ShootingRangeInvitationController::class, 'accept'])
     ->name('shooting.invitations.accept');
+Route::post('/zaproszenia/{token}/odrzuc', [ShootingRangeInvitationController::class, 'decline'])
+    ->middleware('auth')
+    ->name('shooting.invitations.decline');
+
 // Route::get('/s/{endpoint}', [ShootingsController::class, 'publicShow'])
 // ->name('shooting.public.show');
 

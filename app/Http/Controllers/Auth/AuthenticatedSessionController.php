@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Support\PendingInvitationSession;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -29,15 +30,7 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         $user = $request->user();
-        $pendingInvitationToken = $request->session()
-            ->pull('pending_invitation_token');
-
-        if ($pendingInvitationToken) {
-            return redirect()->route(
-                'shooting.invitations.accept',
-                $pendingInvitationToken
-            );
-        }
+        PendingInvitationSession::syncForUser($request, $user);
 
         if ($user->isSuperAdmin()) {
             return redirect()->intended('/superAdmin');

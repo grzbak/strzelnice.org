@@ -989,7 +989,110 @@ class ReservationWorkflowTest extends TestCase
 
         $this->actingAs($client)
             ->get(route('shooting.invitations.accept', 'test-token'))
-            ->assertForbidden();
+            ->assertOk()
+            ->assertSee('Zaproszenie jest przypisane do innego adresu e-mail')
+            ->assertSee('Wróć na stronę główną');
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'token' => 'test-token',
+            'status' => 'pending',
+            'user_id' => null,
+        ]);
+    }
+
+    public function test_missing_or_old_invitation_token_shows_dedicated_status_page(): void
+    {
+        $this->get(route('shooting.invitations.accept', 'missing-or-old-token'))
+            ->assertOk()
+            ->assertSee('Zaproszenie jest nieaktualne')
+            ->assertSee('Wróć na stronę główną');
+    }
+
+    public function test_revoked_invitation_shows_dedicated_status_page(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        DB::table('shooting_range_invitations')->insert([
+            'shooting_range_id' => $rangeId,
+            'email' => 'zaproszony@example.test',
+            'token' => 'revoked-token',
+            'status' => 'revoked',
+            'expires_at' => today()->addDays(2),
+            'revoked_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->get(route('shooting.invitations.accept', 'revoked-token'))
+            ->assertOk()
+            ->assertSee('Zaproszenie zostało odwołane')
+            ->assertSee('Wróć na stronę główną');
+    }
+
+    public function test_expired_invitation_shows_dedicated_status_page_and_marks_invitation_expired(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        DB::table('shooting_range_invitations')->insert([
+            'shooting_range_id' => $rangeId,
+            'email' => 'zaproszony@example.test',
+            'token' => 'expired-token',
+            'status' => 'pending',
+            'expires_at' => today()->subDay(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->get(route('shooting.invitations.accept', 'expired-token'))
+            ->assertOk()
+            ->assertSee('Zaproszenie wygasło')
+            ->assertSee('Wróć na stronę główną');
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'token' => 'expired-token',
+            'status' => 'expired',
+        ]);
+    }
+
+    public function test_guest_with_existing_account_is_sent_to_login_for_invitation_acceptance(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        User::factory()->create([
+            'email' => 'zaproszony@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        DB::table('shooting_range_invitations')->insert([
+            'shooting_range_id' => $rangeId,
+            'email' => 'ZAPROSZONY@example.test',
+            'token' => 'existing-account-token',
+            'status' => 'pending',
+            'expires_at' => today()->addDays(2),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->get(route('shooting.invitations.accept', 'existing-account-token'))
+            ->assertRedirect(route('login'))
+            ->assertSessionHas('pending_invitation_token', 'existing-account-token')
+            ->assertSessionHas('pending_invitation_email', 'zaproszony@example.test');
+    }
+
+    public function test_guest_without_account_is_sent_to_registration_for_invitation_acceptance(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        DB::table('shooting_range_invitations')->insert([
+            'shooting_range_id' => $rangeId,
+            'email' => 'nowy@example.test',
+            'token' => 'new-account-token',
+            'status' => 'pending',
+            'expires_at' => today()->addDays(2),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->get(route('shooting.invitations.accept', 'new-account-token'))
+            ->assertRedirect(route('register'))
+            ->assertSessionHas('pending_invitation_token', 'new-account-token')
+            ->assertSessionHas('pending_invitation_email', 'nowy@example.test');
     }
 
     public function test_staff_customer_search_finds_user_by_phone(): void
@@ -1067,7 +1170,112 @@ class ReservationWorkflowTest extends TestCase
             );
     }
 
-    public function test_login_continues_pending_invitation_acceptance(): void
+    public function test_login_from_empty_session_finds_pending_invitation_once(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        $client = User::factory()->create([
+            'email' => 'zaproszony@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        DB::table('shooting_range_invitations')->insert([
+            'shooting_range_id' => $rangeId,
+            'email' => 'ZAPROSZONY@example.test',
+            'token' => 'empty-session-token',
+            'status' => 'pending',
+            'expires_at' => today()->addDays(2),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->post('/login', [
+            'email' => $client->email,
+            'password' => 'password',
+        ])->assertRedirect('/klient')
+            ->assertSessionHas('pending_invitation_token', 'empty-session-token')
+            ->assertSessionHas('pending_invitation_email', 'zaproszony@example.test');
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'token' => 'empty-session-token',
+            'user_id' => null,
+            'status' => 'pending',
+        ]);
+
+        $this->get(route('index'))
+            ->assertOk()
+            ->assertSee('Czeka zaproszenie do strzelnicy');
+    }
+
+    public function test_login_from_empty_session_finds_all_pending_invitations(): void
+    {
+        [, $firstRangeId] = $this->createBookableRange('admin', false);
+        [, $secondRangeId] = $this->createBookableRange('admin2', false);
+        $client = User::factory()->create([
+            'email' => 'wiele-zaproszen@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        DB::table('shooting_range_invitations')->insert([
+            [
+                'shooting_range_id' => $firstRangeId,
+                'email' => $client->email,
+                'token' => 'first-empty-session-token',
+                'status' => 'pending',
+                'expires_at' => today()->addDays(2),
+                'created_at' => now(),
+                'updated_at' => now()->subMinute(),
+            ],
+            [
+                'shooting_range_id' => $secondRangeId,
+                'email' => $client->email,
+                'token' => 'second-empty-session-token',
+                'status' => 'pending',
+                'expires_at' => today()->addDays(2),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $this->post('/login', [
+            'email' => $client->email,
+            'password' => 'password',
+        ])->assertRedirect('/klient')
+            ->assertSessionHas('pending_invitations.0.token', 'second-empty-session-token')
+            ->assertSessionHas('pending_invitations.1.token', 'first-empty-session-token');
+
+        $this->get(route('index'))
+            ->assertOk()
+            ->assertSee('>2</span>', false)
+            ->assertSee('first-empty-session-token')
+            ->assertSee('second-empty-session-token');
+    }
+
+    public function test_invitation_link_login_opens_pending_invitation_modal(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        User::factory()->create([
+            'email' => 'modal@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        DB::table('shooting_range_invitations')->insert([
+            'shooting_range_id' => $rangeId,
+            'email' => 'modal@example.test',
+            'token' => 'modal-token',
+            'status' => 'pending',
+            'expires_at' => today()->addDays(2),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->get(route('shooting.invitations.accept', 'modal-token'))
+            ->assertRedirect(route('login'))
+            ->assertSessionHas('pending_invitation_open_modal', true)
+            ->assertSessionHas('pending_invitations.0.token', 'modal-token');
+    }
+
+    public function test_login_shows_pending_invitation_notification_without_accepting_automatically(): void
     {
         [, $rangeId] = $this->createBookableRange('admin', false);
         $client = User::factory()->create([
@@ -1087,23 +1295,117 @@ class ReservationWorkflowTest extends TestCase
 
         $this->withSession([
             'pending_invitation_token' => 'pending-login-token',
+            'pending_invitation_email' => $client->email,
         ])->post('/login', [
             'email' => $client->email,
             'password' => 'password',
-        ])->assertRedirect(route(
-            'shooting.invitations.accept',
-            'pending-login-token'
-        ));
+        ])->assertRedirect('/klient')
+            ->assertSessionHas('pending_invitation_token', 'pending-login-token');
 
-        $this->get(route(
-            'shooting.invitations.accept',
-            'pending-login-token'
-        ))->assertRedirect(route('index'));
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'token' => 'pending-login-token',
+            'user_id' => null,
+            'status' => 'pending',
+        ]);
+
+        $this->get(route('index'))
+            ->assertOk()
+            ->assertSee('Czeka zaproszenie do strzelnicy');
+
+        $this->get(route('shooting.invitations.accept', [
+            'token' => 'pending-login-token',
+            'confirm' => 1,
+        ]))->assertRedirect(route('index'));
 
         $this->assertDatabaseHas('shooting_range_invitations', [
             'token' => 'pending-login-token',
             'user_id' => $client->id,
             'status' => 'accepted',
+        ]);
+    }
+
+    public function test_logged_user_invitation_link_opens_modal_before_acceptance(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        $client = User::factory()->create([
+            'email' => 'logged-link@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        DB::table('shooting_range_invitations')->insert([
+            'shooting_range_id' => $rangeId,
+            'email' => $client->email,
+            'token' => 'logged-link-token',
+            'status' => 'pending',
+            'expires_at' => today()->addDays(2),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($client)
+            ->get(route('shooting.invitations.accept', 'logged-link-token'))
+            ->assertRedirect(route('index'))
+            ->assertSessionHas('pending_invitation_open_modal', true)
+            ->assertSessionHas('pending_invitations.0.token', 'logged-link-token');
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'token' => 'logged-link-token',
+            'user_id' => null,
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_pending_invitation_notification_has_not_now_button_without_hiding_icon(): void
+    {
+        $client = User::factory()->create([
+            'email' => 'zaproszony@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        $this->actingAs($client)
+            ->withSession([
+                'pending_invitation_token' => 'pending-not-now-token',
+                'pending_invitation_email' => $client->email,
+            ]);
+
+        $this->get(route('index'))
+            ->assertOk()
+            ->assertSee('Czeka zaproszenie do strzelnicy')
+            ->assertSee('Nie teraz')
+            ->assertSee('data-bs-dismiss="modal"', false);
+    }
+
+    public function test_pending_invitation_notification_can_be_declined(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', false);
+        $client = User::factory()->create([
+            'email' => 'zaproszony@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        DB::table('shooting_range_invitations')->insert([
+            'shooting_range_id' => $rangeId,
+            'email' => $client->email,
+            'token' => 'pending-decline-token',
+            'status' => 'pending',
+            'expires_at' => today()->addDays(2),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($client)
+            ->withSession([
+                'pending_invitation_token' => 'pending-decline-token',
+                'pending_invitation_email' => $client->email,
+            ])
+            ->post(route('shooting.invitations.decline', 'pending-decline-token'))
+            ->assertRedirect(route('index'))
+            ->assertSessionMissing('pending_invitation_token');
+
+        $this->assertDatabaseHas('shooting_range_invitations', [
+            'token' => 'pending-decline-token',
+            'status' => 'revoked',
         ]);
     }
 

@@ -1,12 +1,10 @@
 <?php
 
 use Illuminate\Auth\AuthenticationException;
-use Illuminate\Http\Request;
-use Illuminate\Session\TokenMismatchException;
-
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
-use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -24,15 +22,25 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (TokenMismatchException $exception, Request $request) {
+            $message = $request->user()
+                ? 'Formularz stracił ważność. Odśwież stronę i spróbuj ponownie.'
+                : 'Sesja wygasła. Zaloguj się ponownie.';
+
             if ($request->expectsJson()) {
                 return response()->json([
-                    'message' => 'Sesja wygasła. Zaloguj się ponownie.',
+                    'message' => $message,
                 ], 419);
+            }
+
+            if ($request->user()) {
+                return back()
+                    ->with('status', $message)
+                    ->with('status_type', 'warning');
             }
 
             return redirect()
                 ->route('login')
-                ->with('status', 'Sesja wygasła. Ze względów bezpieczeństwa zaloguj się ponownie.')
+                ->with('status', $message)
                 ->with('status_type', 'warning');
         });
 

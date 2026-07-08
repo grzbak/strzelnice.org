@@ -2,7 +2,7 @@
     <div class="container mb-4 text-center">
 
         <h3 class="mt-4 mb-3 mt-md-0 display-4 fw-bold">
-            <i class="bi bi-calendar-check text-danger"></i> sprawdzasz .klikasz .strzelasz
+            <i class="bi bi-calendar-check text-danger"></i> sprawdzasz. klikasz. strzelasz
         </h3>
 
         <p class="mb-4 lead">

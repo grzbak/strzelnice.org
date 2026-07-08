@@ -4,14 +4,15 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\PendingInvitationSession;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rules;
 use Illuminate\View\View;
-use Illuminate\Support\Facades\Http;
 
 class RegisteredUserController extends Controller
 {
@@ -21,10 +22,11 @@ class RegisteredUserController extends Controller
     public function create(): View
     {
         $admins = User::where('role', 'superadmin')->get();
-        $role = "klient";
-        if($admins->count()==0){
-            $role = "superadmin";
+        $role = 'klient';
+        if ($admins->count() == 0) {
+            $role = 'superadmin';
         }
+
         return view('auth.register', compact('role'));
     }
 
@@ -35,7 +37,7 @@ class RegisteredUserController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        //dd($request);
+        // dd($request);
         $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
@@ -68,13 +70,14 @@ class RegisteredUserController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'telephone' => $request->telephone,
-            'role'        => $request->input('role', 'klient'),
+            'role' => $request->input('role', 'klient'),
             'is_approved' => $request->input('is_approved', true),
         ]);
 
         event(new Registered($user));
 
         Auth::login($user);
+        PendingInvitationSession::syncForUser($request, $user);
 
         return redirect(route('dashboard', absolute: false));
     }
