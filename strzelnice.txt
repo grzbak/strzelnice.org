@@ -48,3 +48,4 @@ e3ab997 Add shooting range staff management
 Add reusable admin data tables and invitation list refinements
 commit: Refine invitation notifications and session expiry handling
 commit: Refine reservation flow and notification settings
+commit: Add shooting range zone landing page

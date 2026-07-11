@@ -78,12 +78,20 @@
     <div class="stz-inner">
 
       <nav class="stz-footer-links">
-        <a href="/o-nas">O nas</a>
+        @auth
+            @if (auth()->user()->isAdmin() || auth()->user()->isEmployee())
+                <a href="/regulamin_partnera">Regulamin partnera</a>
+            @endif
+        @endauth
         <a href="/regulamin_serwisu_dla_uzytkownikow">Regulamin</a>
         <a href="/mapa-strzelnic">Mapa strzelnic</a>
         <a href="/polityka_prywatnosci">Polityka prywatności</a>
         <a href="/strefa-strzelnic">Strefa strzelnic</a>
-        <a href="/dpa">DPA</a>
+        @auth
+            @if (auth()->user()->isAdmin() || auth()->user()->isEmployee())
+                <a href="/dpa">DPA</a>
+            @endif
+        @endauth
         <a href="/kontakt">Kontakt</a>
       </nav>
 
