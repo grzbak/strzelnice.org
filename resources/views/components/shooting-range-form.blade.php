@@ -200,6 +200,27 @@
 </div>
 
 <div class="mb-4">
+    <input type="hidden" name="requires_reservation_confirmation" value="0">
+
+    <label class="flex items-center gap-2">
+        <input
+            type="checkbox"
+            name="requires_reservation_confirmation"
+            value="1"
+            @checked((bool) $fieldValue('requires_reservation_confirmation', true))
+        >
+        Wymagaj potwierdzenia rezerwacji przez personel
+    </label>
+
+    <div class="mt-1 text-sm text-muted">
+        Po wyłączeniu tej opcji rezerwacje złożone przez klientów będą automatycznie zatwierdzane.
+        Zmiana lub anulowanie rezerwacji przez klienta nadal wymaga obsługi personelu.
+    </div>
+
+    <x-input-error :messages="$errors->get('requires_reservation_confirmation')" class="mt-1"/>
+</div>
+
+<div class="mb-4">
     @php
         $globalBookingDays = \App\Models\SystemConfiguration::query()
             ->active()

@@ -40,11 +40,7 @@
 
                     <div class="text-muted">
                         <i class="bi bi-geo-alt-fill me-1"></i>
-
-                        {{ $shootingRange->street }}
-                        {{ $shootingRange->houseNumber }},
-                        {{ $shootingRange->zipCode }}
-                        {{ $shootingRange->town }}
+                        {{ $shootingRange->full_address }}
                     </div>
 
                     <div class="flex-wrap gap-2 mt-3 d-flex justify-content-center justify-content-md-start">
@@ -183,12 +179,7 @@
 
                                 <tr>
                                     <th>Adres</th>
-                                    <td>
-                                        {{ $shootingRange->street }}
-                                        {{ $shootingRange->houseNumber }},
-                                        {{ $shootingRange->zipCode }}
-                                        {{ $shootingRange->town }}
-                                    </td>
+                                    <td>{{ $shootingRange->full_address }}</td>
                                 </tr>
 
                                 <tr>
@@ -515,10 +506,7 @@
                 content: `
                     <div style="max-width: 240px;">
                         <strong>${@json($shootingRange->name)}</strong><br>
-                        ${@json($shootingRange->street)}
-                        ${@json($shootingRange->houseNumber)}<br>
-                        ${@json($shootingRange->zipCode)}
-                        ${@json($shootingRange->town)}
+                        ${@json($shootingRange->full_address)}
                     </div>
                 `,
             });

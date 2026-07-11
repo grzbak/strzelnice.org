@@ -147,6 +147,8 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
             ->name('admin.reservations.customers.search');
         Route::post('/panel/rezerwacje', [ReservationsController::class, 'storeByStaff'])
             ->name('admin.reservations.store');
+        Route::patch('/panel/rezerwacje/powiadomienia', [ReservationsController::class, 'updateReservationNotifications'])
+            ->name('admin.reservations.notifications');
         Route::patch('/panel/rezerwacje/{reservation}', [ReservationsController::class, 'updateByStaff'])
             ->name('admin.reservations.update');
         Route::patch('/panel/rezerwacje/{reservation}/status', [ReservationsController::class, 'updateStatus'])
@@ -317,6 +319,9 @@ Route::get('/dashboard', function () {
 Route::get('/rezerwacje/{id}/dostepnosc', [ReservationsController::class, 'availability'])
     ->whereNumber('id')
     ->name('rezerwacje.availability');
+
+Route::post('/rezerwacje/intencja', [ReservationsController::class, 'storeIntent'])
+    ->name('rezerwacje.intent.store');
 
 Route::get('/rezerwacje/{id}', [ReservationsController::class, 'callendar'])
     ->whereNumber('id')

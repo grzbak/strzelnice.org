@@ -2,17 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\ReservationNotificationMail;
 use App\Models\Lane;
 use App\Models\Reservation;
 use App\Models\ReservationArchive;
 use App\Models\ShootingRange;
 use App\Models\User;
 use App\Services\ShootingRangeAvailabilityService;
+use App\Support\ReservationIntentSession;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -25,6 +30,10 @@ class ReservationsController extends Controller
 
     public function callendar(int $id): View|RedirectResponse
     {
+        $validated = request()->validate([
+            'date' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+
         $shootingRange = ShootingRange::query()
             ->where('is_visible', true)
             ->where('is_archived', false)
@@ -33,8 +42,9 @@ class ReservationsController extends Controller
 
         $maxAdvanceBookingDays = $shootingRange->effectiveMaxAdvanceBookingDays();
         $maxBookingDate = $shootingRange->latestBookableDate();
-        $requestedDate = Carbon::parse(
-            request('date', now()->format('Y-m-d'))
+        $requestedDate = Carbon::createFromFormat(
+            'Y-m-d',
+            $validated['date'] ?? now()->format('Y-m-d')
         )->startOfDay();
 
         if ($requestedDate->lt(today())) {
@@ -49,12 +59,14 @@ class ReservationsController extends Controller
         }
 
         $user = auth()->user();
-        $canViewCalendar = $user !== null
-            && $this->availability->canUserAccessRange(
-                $shootingRange,
-                $user,
-                $requestedDate
-            );
+        $canAccessRange = $this->availability->canUserAccessRange(
+            $shootingRange,
+            $user,
+            $requestedDate
+        );
+        $requiresLoginToReserve = $user === null
+            && (bool) $shootingRange->is_public_access;
+        $canViewCalendar = $canAccessRange || $requiresLoginToReserve;
 
         $requirements = $this->availability->basicRequirements(
             $shootingRange,
@@ -86,7 +98,8 @@ class ReservationsController extends Controller
             'reservations',
             'maxAdvanceBookingDays',
             'maxBookingDate',
-            'canViewCalendar'
+            'canViewCalendar',
+            'requiresLoginToReserve'
         ));
     }
 
@@ -108,11 +121,16 @@ class ReservationsController extends Controller
             ], 422);
         }
 
-        if (! $this->availability->canUserAccessRange(
+        $canAccessRange = $this->availability->canUserAccessRange(
             $shootingRange,
             $request->user(),
             $date
-        )) {
+        );
+
+        if (
+            ! $canAccessRange
+            && ! ($request->user() === null && (bool) $shootingRange->is_public_access)
+        ) {
             return response()->json([
                 'message' => 'Nie posiadasz dostępu do tej strzelnicy.',
             ], 403);
@@ -144,6 +162,55 @@ class ReservationsController extends Controller
 
         return response()->json([
             'reservations' => $reservations,
+        ]);
+    }
+
+    public function storeIntent(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'shooting_range_id' => ['required', 'integer', 'exists:shooting_ranges,id'],
+            'date' => ['required', 'date_format:Y-m-d'],
+            'lane_id' => [
+                'nullable',
+                'integer',
+                'exists:lanes,id',
+            ],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_time' => [
+                'nullable',
+                'regex:/^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/',
+            ],
+        ]);
+
+        if (
+            ! empty($validated['lane_id'])
+            && ! Lane::query()
+                ->whereKey($validated['lane_id'])
+                ->where('shooting_range_id', $validated['shooting_range_id'])
+                ->where('is_archived', false)
+                ->exists()
+        ) {
+            throw ValidationException::withMessages([
+                'lane_id' => 'Wybrana oś nie należy do wskazanej strzelnicy.',
+            ]);
+        }
+
+        if (
+            ! empty($validated['start_time'])
+            && ! empty($validated['end_time'])
+            && $this->timeToMinutes($validated['end_time'])
+                <= $this->timeToMinutes($validated['start_time'])
+        ) {
+            throw ValidationException::withMessages([
+                'end_time' => 'Godzina zakończenia musi być późniejsza niż godzina rozpoczęcia.',
+            ]);
+        }
+
+        ReservationIntentSession::store($request, $validated);
+
+        return response()->json([
+            'login_url' => route('login'),
+            'register_url' => route('register'),
         ]);
     }
 
@@ -302,9 +369,12 @@ class ReservationsController extends Controller
     ): View {
         $this->authorizeCustomerReservation($request, $reservation);
         abort_unless(
-            $reservation->status === Reservation::STATUS_PENDING,
+            in_array($reservation->status, [
+                Reservation::STATUS_PENDING,
+                Reservation::STATUS_APPROVED,
+            ], true),
             403,
-            'Można edytować wyłącznie rezerwację oczekującą.'
+            'Można edytować wyłącznie przyszłą rezerwację oczekującą lub zatwierdzoną.'
         );
         abort_unless(
             $reservation->canBeEdited(),
@@ -344,7 +414,10 @@ class ReservationsController extends Controller
                     ->firstOrFail();
 
                 if (
-                    $lockedReservation->status !== Reservation::STATUS_PENDING
+                    ! in_array($lockedReservation->status, [
+                        Reservation::STATUS_PENDING,
+                        Reservation::STATUS_APPROVED,
+                    ], true)
                     || ! $lockedReservation->canBeEdited()
                 ) {
                     $this->throwReservationError(
@@ -396,11 +469,19 @@ class ReservationsController extends Controller
                     'end' => $end,
                     'positions_count' => $positionsCount,
                     'is_dynamic_shooting' => $isDynamicShooting,
+                    'status' => Reservation::STATUS_PENDING,
+                    'approved_by_user_id' => null,
+                    'approved_at' => null,
                 ]);
             });
         } catch (ValidationException $exception) {
             return $this->reservationValidationRedirect($exception);
         }
+
+        $this->sendReservationNotifications(
+            $reservation->fresh(),
+            ReservationNotificationMail::EVENT_UPDATED
+        );
 
         return redirect()
             ->route('rezerwacje.mine')
@@ -473,6 +554,20 @@ class ReservationsController extends Controller
             'Nie masz uprawnień do tej strzelnicy.'
         );
 
+        $reservationNotificationsEnabled = false;
+
+        if (
+            ! $user->isSuperAdmin()
+            && Schema::hasColumn(
+                'shooting_range_employee',
+                'receives_reservation_notifications'
+            )
+        ) {
+            $reservationNotificationsEnabled = (bool) $user->shootingRanges()
+                ->whereKey($shootingRange->id)
+                ->value('shooting_range_employee.receives_reservation_notifications');
+        }
+
         $viewMode = $validated['view'] ?? 'day';
         $selectedDate = Carbon::parse(
             $validated['date'] ?? now()->toDateString()
@@ -522,7 +617,7 @@ class ReservationsController extends Controller
                 'end' => $reservation->end->format('Y-m-d H:i'),
                 'date' => $reservation->start->format('Y-m-d'),
                 'start_time' => $reservation->start->format('H:i'),
-                'end_time' => $reservation->end->format('H:i'),
+                'end_time' => $this->reservationEndTimeForCalendar($reservation),
                 'positions_count' => $reservation->positions_count,
                 'is_dynamic_shooting' => $reservation->is_dynamic_shooting,
                 'status' => $reservation->status,
@@ -561,6 +656,7 @@ class ReservationsController extends Controller
             'periodStart' => $periodStart->format('Y-m-d'),
             'periodEnd' => $periodEnd->format('Y-m-d'),
             'maxBookingDate' => $shootingRange->latestBookableDate(),
+            'reservationNotificationsEnabled' => $reservationNotificationsEnabled,
         ]);
     }
 
@@ -704,7 +800,7 @@ class ReservationsController extends Controller
         $actor = $request->user();
 
         try {
-            DB::transaction(function () use ($validated, $actor) {
+            $reservation = DB::transaction(function () use ($validated, $actor): Reservation {
                 $shootingRange = ShootingRange::findOrFail(
                     $validated['shooting_range_id']
                 );
@@ -734,7 +830,13 @@ class ReservationsController extends Controller
                     $isDynamicShooting
                 );
 
-                Reservation::create([
+                $requiresConfirmation = (bool) $shootingRange
+                    ->requires_reservation_confirmation;
+                $status = $requiresConfirmation
+                    ? Reservation::STATUS_PENDING
+                    : Reservation::STATUS_APPROVED;
+
+                return Reservation::create([
                     'user_id' => $actor->id,
                     'mod_id' => $actor->id,
                     'customer_user_id' => $actor->id,
@@ -749,14 +851,29 @@ class ReservationsController extends Controller
                     'end' => $end,
                     'positions_count' => $positionsCount,
                     'is_dynamic_shooting' => $isDynamicShooting,
-                    'status' => Reservation::STATUS_PENDING,
+                    'status' => $status,
+                    'approved_at' => $requiresConfirmation ? null : now(),
                 ]);
             });
         } catch (ValidationException $exception) {
             return $this->reservationValidationRedirect($exception);
         }
 
-        return back()->with('success', 'Rezerwacja została dodana i oczekuje na zatwierdzenie.');
+        $this->sendReservationNotifications(
+            $reservation,
+            ReservationNotificationMail::EVENT_CREATED
+        );
+
+        $message = $reservation->isApproved()
+            ? 'Dziękujemy za złożenie rezerwacji. Termin został automatycznie zatwierdzony.'
+            : 'Dziękujemy za złożenie rezerwacji. Termin oczekuje na zatwierdzenie przez obsługę strzelnicy.';
+
+        return redirect()
+            ->route('rezerwacje.calendar', [
+                'id' => $reservation->shooting_range_id,
+                'date' => $reservation->start->format('Y-m-d'),
+            ])
+            ->with('success', $message);
     }
 
     public function storeByStaff(Request $request): RedirectResponse
@@ -766,7 +883,7 @@ class ReservationsController extends Controller
         $actor = $request->user();
 
         try {
-            DB::transaction(function () use ($validated, $actor) {
+            $reservation = DB::transaction(function () use ($validated, $actor): Reservation {
                 $shootingRange = ShootingRange::findOrFail(
                     $validated['shooting_range_id']
                 );
@@ -803,7 +920,7 @@ class ReservationsController extends Controller
                     : null;
                 $isGuest = $customer === null;
 
-                Reservation::create([
+                return Reservation::create([
                     // Kolumny zgodnościowe pozostają do czasu drugiego etapu migracji.
                     'user_id' => $customer?->id ?? $actor->id,
                     'mod_id' => $actor->id,
@@ -833,6 +950,11 @@ class ReservationsController extends Controller
         } catch (ValidationException $exception) {
             return $this->reservationValidationRedirect($exception);
         }
+
+        $this->sendReservationNotifications(
+            $reservation,
+            ReservationNotificationMail::EVENT_CREATED
+        );
 
         return back()->with('success', 'Rezerwacja została zapisana i zatwierdzona.');
     }
@@ -938,6 +1060,11 @@ class ReservationsController extends Controller
             return $this->reservationValidationRedirect($exception);
         }
 
+        $this->sendReservationNotifications(
+            $reservation->fresh(),
+            ReservationNotificationMail::EVENT_UPDATED
+        );
+
         return back()->with('success', 'Rezerwacja została zaktualizowana.');
     }
 
@@ -986,42 +1113,12 @@ class ReservationsController extends Controller
             Reservation::STATUS_NO_SHOW => [],
         ];
 
-        if ($validated['status'] === $reservation->status) {
-            return back()->with('success', 'Status rezerwacji nie wymagał zmiany.');
-        }
-
-        if (! in_array(
-            $validated['status'],
-            $allowedTransitions[$reservation->status] ?? [],
-            true
-        )) {
-            return back()->with(
-                'error',
-                'Ta zmiana statusu rezerwacji jest niedozwolona.'
-            );
-        }
-
-        $isFinalStatus = in_array($validated['status'], [
-            Reservation::STATUS_COMPLETED,
-            Reservation::STATUS_NO_SHOW,
-        ], true);
-
-        if ($isFinalStatus && $reservation->end->isFuture()) {
-            return back()->with(
-                'error',
-                'Status realizacji można ustawić dopiero po zakończeniu rezerwacji.'
-            );
-        }
-
-        if (! $isFinalStatus && ! $reservation->start->isFuture()) {
-            return back()->with(
-                'error',
-                'Po rozpoczęciu rezerwacji można ustawić wyłącznie status realizacji.'
-            );
-        }
+        $statusChanged = false;
 
         try {
             DB::transaction(function () use (
+                $allowedTransitions,
+                &$statusChanged,
                 $request,
                 $reservation,
                 $validated
@@ -1030,6 +1127,37 @@ class ReservationsController extends Controller
                     ->whereKey($reservation->id)
                     ->lockForUpdate()
                     ->firstOrFail();
+
+                if ($validated['status'] === $lockedReservation->status) {
+                    return;
+                }
+
+                if (! in_array(
+                    $validated['status'],
+                    $allowedTransitions[$lockedReservation->status] ?? [],
+                    true
+                )) {
+                    $this->throwReservationError(
+                        'Ta zmiana statusu rezerwacji jest niedozwolona.'
+                    );
+                }
+
+                $lockedIsFinalStatus = in_array($validated['status'], [
+                    Reservation::STATUS_COMPLETED,
+                    Reservation::STATUS_NO_SHOW,
+                ], true);
+
+                if ($lockedIsFinalStatus && $lockedReservation->end->isFuture()) {
+                    $this->throwReservationError(
+                        'Status realizacji można ustawić dopiero po zakończeniu rezerwacji.'
+                    );
+                }
+
+                if (! $lockedIsFinalStatus && ! $lockedReservation->start->isFuture()) {
+                    $this->throwReservationError(
+                        'Po rozpoczęciu rezerwacji można ustawić wyłącznie status realizacji.'
+                    );
+                }
 
                 if (in_array($validated['status'], [
                     Reservation::STATUS_PENDING,
@@ -1094,17 +1222,150 @@ class ReservationsController extends Controller
                 }
 
                 $lockedReservation->update($attributes);
+                $statusChanged = true;
             });
         } catch (ValidationException $exception) {
             return $this->reservationValidationRedirect($exception);
         }
 
-        return back()->with('success', 'Status rezerwacji został zmieniony.');
+        if ($statusChanged) {
+            $this->sendReservationNotifications(
+                $reservation->fresh(),
+                ReservationNotificationMail::EVENT_STATUS_CHANGED,
+                notifyStaff: false
+            );
+        }
+
+        return back()->with(
+            'success',
+            $statusChanged
+                ? 'Status rezerwacji został zmieniony.'
+                : 'Status rezerwacji nie wymagał zmiany.'
+        );
+    }
+
+    public function updateReservationNotifications(
+        Request $request
+    ): RedirectResponse {
+        $validated = $request->validate([
+            'shooting_range_id' => ['required', 'integer', 'exists:shooting_ranges,id'],
+            'receives_reservation_notifications' => ['nullable', 'boolean'],
+        ]);
+
+        $shootingRange = ShootingRange::findOrFail(
+            $validated['shooting_range_id']
+        );
+        $user = $request->user();
+
+        abort_unless(
+            ! $user->isSuperAdmin() && $user->managesShootingRange($shootingRange),
+            403
+        );
+
+        abort_unless(
+            Schema::hasColumn(
+                'shooting_range_employee',
+                'receives_reservation_notifications'
+            ),
+            503,
+            'Ustawienia powiadomień wymagają uruchomienia migracji bazy danych.'
+        );
+
+        $user->shootingRanges()->updateExistingPivot($shootingRange->id, [
+            'receives_reservation_notifications' => $request->boolean(
+                'receives_reservation_notifications'
+            ),
+        ]);
+
+        return back()->with(
+            'success',
+            'Zapisano ustawienia powiadomień o rezerwacjach.'
+        );
+    }
+
+    private function sendReservationNotifications(
+        ?Reservation $reservation,
+        string $eventType,
+        bool $notifyStaff = true
+    ): void {
+        if (! $reservation) {
+            return;
+        }
+
+        $reservation->loadMissing([
+            'shootingRange',
+            'lane',
+            'customer',
+            'user',
+        ]);
+
+        $recipients = [];
+        $customerEmail = $reservation->customer_email
+            ?? $reservation->customer?->email
+            ?? $reservation->user?->email;
+
+        if ($customerEmail && filter_var($customerEmail, FILTER_VALIDATE_EMAIL)) {
+            $recipients[mb_strtolower($customerEmail)] = [
+                'email' => $customerEmail,
+                'type' => 'customer',
+            ];
+        }
+
+        $staffMembers = collect();
+
+        if (
+            $notifyStaff
+            &&
+            Schema::hasColumn(
+                'shooting_range_employee',
+                'receives_reservation_notifications'
+            )
+        ) {
+            $staffMembers = $reservation->shootingRange?->employees()
+                ->wherePivot('is_approved', true)
+                ->wherePivot('receives_reservation_notifications', true)
+                ->where('users.is_approved', true)
+                ->get(['users.id', 'users.email']) ?? collect();
+        }
+
+        foreach ($staffMembers as $staffMember) {
+            if (! filter_var($staffMember->email, FILTER_VALIDATE_EMAIL)) {
+                continue;
+            }
+
+            $recipients[mb_strtolower($staffMember->email)] = [
+                'email' => $staffMember->email,
+                'type' => 'staff',
+            ];
+        }
+
+        foreach ($recipients as $recipient) {
+            try {
+                Mail::to($recipient['email'])->send(
+                    new ReservationNotificationMail(
+                        $reservation,
+                        $eventType,
+                        $recipient['type']
+                    )
+                );
+            } catch (\Throwable $exception) {
+                Log::warning('Nie udało się wysłać maila o rezerwacji.', [
+                    'reservation_id' => $reservation->id,
+                    'event_type' => $eventType,
+                    'recipient_type' => $recipient['type'],
+                    'recipient_email' => $recipient['email'],
+                    'exception' => $exception->getMessage(),
+                ]);
+            }
+        }
     }
 
     private function validateReservationInput(Request $request): array
     {
-        return $request->validate($this->reservationRules());
+        $validated = $request->validate($this->reservationRules());
+        $this->ensureReservationEndIsAfterStart($validated);
+
+        return $validated;
     }
 
     private function validateStaffReservationInput(Request $request): array
@@ -1117,7 +1378,7 @@ class ReservationsController extends Controller
             array_unshift($customerPhoneRules, 'required_without:customer_email');
         }
 
-        return $request->validate([
+        $validated = $request->validate([
             ...$this->reservationRules(),
             'customer_type' => ['required', Rule::in(['account', 'guest'])],
             'customer_user_id' => [
@@ -1135,6 +1396,9 @@ class ReservationsController extends Controller
             'customer_phone' => $customerPhoneRules,
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
+        $this->ensureReservationEndIsAfterStart($validated);
+
+        return $validated;
     }
 
     private function reservationValidationRedirect(
@@ -1155,7 +1419,10 @@ class ReservationsController extends Controller
             'line_id' => ['required', 'integer', 'exists:lanes,id'],
             'date' => ['required', 'date_format:Y-m-d'],
             'start_time' => ['required', 'date_format:H:i'],
-            'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
+            'end_time' => [
+                'required',
+                'regex:/^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/',
+            ],
             'positions_count' => ['required', 'integer', 'min:1'],
             'is_dynamic_shooting' => ['nullable', 'boolean'],
         ];
@@ -1179,7 +1446,7 @@ class ReservationsController extends Controller
             'line_id' => $reservation->line_id,
             'start_date' => $reservation->start->format('Y-m-d'),
             'start_time' => $reservation->start->format('H:i'),
-            'end_time' => $reservation->end->format('H:i'),
+            'end_time' => $this->reservationEndTimeForCalendar($reservation),
             'status' => $reservation->status,
             'positions_count' => $reservation->positions_count ?? 1,
             'is_dynamic_shooting' => $reservation->is_dynamic_shooting,
@@ -1189,16 +1456,60 @@ class ReservationsController extends Controller
 
     private function reservationPeriod(array $validated): array
     {
-        return [
-            Carbon::createFromFormat(
-                'Y-m-d H:i',
-                $validated['date'].' '.$validated['start_time']
-            ),
-            Carbon::createFromFormat(
+        $start = Carbon::createFromFormat(
+            'Y-m-d H:i',
+            $validated['date'].' '.$validated['start_time']
+        );
+
+        $end = $validated['end_time'] === '24:00'
+            ? Carbon::createFromFormat('Y-m-d', $validated['date'])
+                ->addDay()
+                ->startOfDay()
+            : Carbon::createFromFormat(
                 'Y-m-d H:i',
                 $validated['date'].' '.$validated['end_time']
-            ),
+            );
+
+        return [
+            $start,
+            $end,
         ];
+    }
+
+    private function ensureReservationEndIsAfterStart(array $validated): void
+    {
+        if (
+            $this->timeToMinutes($validated['end_time'])
+            <= $this->timeToMinutes($validated['start_time'])
+        ) {
+            $this->throwReservationError(
+                'Godzina zakończenia musi być późniejsza niż godzina rozpoczęcia.'
+            );
+        }
+    }
+
+    private function timeToMinutes(string $time): int
+    {
+        if ($time === '24:00') {
+            return 24 * 60;
+        }
+
+        [$hours, $minutes] = array_map('intval', explode(':', $time));
+
+        return ($hours * 60) + $minutes;
+    }
+
+    private function reservationEndTimeForCalendar(Reservation $reservation): string
+    {
+        if (
+            $reservation->end->format('H:i') === '00:00'
+            && $reservation->end->greaterThan($reservation->start)
+            && ! $reservation->end->isSameDay($reservation->start)
+        ) {
+            return '24:00';
+        }
+
+        return $reservation->end->format('H:i');
     }
 
     private function authorizeCustomerReservation(

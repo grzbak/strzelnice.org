@@ -78,6 +78,7 @@ class SystemConfigurationTest extends TestCase
             $table->foreignId('shooting_ranges_id');
             $table->string('role')->nullable();
             $table->boolean('is_approved')->default(false);
+            $table->boolean('receives_reservation_notifications')->default(false);
             $table->timestamps();
         });
 

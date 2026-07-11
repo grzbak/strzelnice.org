@@ -12,7 +12,7 @@
         <form method="GET" action="{{ route('index') }}" class="p-4 bg-white rounded shadow search-box text-dark" id="heroSearchForm">
             <input type="hidden" name="lat" id="searchLat" value="{{ request('lat') }}">
             <input type="hidden" name="lng" id="searchLng" value="{{ request('lng') }}">
-            <input type="hidden" name="location_mode" id="locationMode" value="{{ request('location_mode') }}">
+            <input type="hidden" name="location_mode" id="locationMode" value="{{ request('location_mode', request()->filled('location') ? '' : 'radius') }}">
             <input type="hidden" name="viewport_radius_km" id="viewportRadiusKm" value="{{ request('viewport_radius_km') }}">
 
             <div class="row g-3 align-items-end">
@@ -39,7 +39,7 @@
                             id="heroLocation"
                             class="form-control"
                             placeholder="Województwo lub miasto..."
-                            value="{{ request('location') }}"
+                            value="{{ request('location', 'Moja lokalizacja') }}"
                         >
 
                         <span class="input-group-text">+</span>
@@ -89,7 +89,10 @@
         <div class="container py-4 py-lg-5">
             <div class="mb-4">
                 <h4 class="mb-1">Wyniki wyszukiwania</h4>
-                <p class="mb-0 text-muted small">Znaleziono: {{ $shootings->count() }}</p>
+                <p class="mb-0 text-muted small">
+                    Znaleziono:
+                    {{ method_exists($shootings, 'total') ? $shootings->total() : $shootings->count() }}
+                </p>
             </div>
 
             @if ($shootings->isNotEmpty())
@@ -219,6 +222,12 @@
                         </article>
                     @endforeach
                 </div>
+
+                @if (method_exists($shootings, 'hasPages') && $shootings->hasPages())
+                    <div class="mt-4">
+                        {{ $shootings->links() }}
+                    </div>
+                @endif
             @else
                 <div class="p-4 text-center bg-white search-results-empty">
                     <i class="mb-2 bi bi-search d-block text-muted fs-3" aria-hidden="true"></i>
@@ -313,6 +322,8 @@
         'zachodniopomorskie',
     ];
 
+    const currentLocationLabel = 'Moja lokalizacja';
+
     function normalizeLocationText(value) {
         return String(value ?? '')
             .toLowerCase()
@@ -333,10 +344,59 @@
         return polishVoivodeships.includes(normalizeLocationText(value));
     }
 
+    function isCurrentLocation(value) {
+        return normalizeLocationText(value) === normalizeLocationText(currentLocationLabel);
+    }
+
     function setVoivodeshipMode() {
         document.getElementById('searchLat').value = '';
         document.getElementById('searchLng').value = '';
         document.getElementById('locationMode').value = 'voivodeship';
+    }
+
+    function setCurrentLocationMode() {
+        document.getElementById('locationMode').value = 'radius';
+        document.getElementById('viewportRadiusKm').value = 0;
+    }
+
+    function setCurrentCoordinates(position) {
+        document.getElementById('searchLat').value = position.coords.latitude;
+        document.getElementById('searchLng').value = position.coords.longitude;
+        setCurrentLocationMode();
+    }
+
+    function requestBrowserLocation(form = null) {
+        if (!navigator.geolocation) {
+            return false;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            position => {
+                setCurrentCoordinates(position);
+
+                if (form) {
+                    isSubmittingAfterGeocode = true;
+                    form.submit();
+                }
+            },
+            () => {
+                document.getElementById('searchLat').value = '';
+                document.getElementById('searchLng').value = '';
+                setCurrentLocationMode();
+
+                if (form) {
+                    isSubmittingAfterGeocode = true;
+                    form.submit();
+                }
+            },
+            {
+                enableHighAccuracy: false,
+                timeout: 8000,
+                maximumAge: 300000,
+            }
+        );
+
+        return true;
     }
 
     function setRadiusMode(place) {
@@ -385,6 +445,11 @@
             return;
         }
 
+        if (isCurrentLocation(locationInput.value)) {
+            setCurrentLocationMode();
+            return;
+        }
+
         locationModeInput.value = '';
         latInput.value = '';
         lngInput.value = '';
@@ -421,8 +486,21 @@
         });
 
         locationInput.addEventListener('input', syncLocationModeFromText);
+        setupHeroSearchSubmit();
+    }
 
-        document.getElementById('heroSearchForm').addEventListener('submit', event => {
+    let isHeroSearchSubmitBound = false;
+
+    function setupHeroSearchSubmit() {
+        const searchForm = document.getElementById('heroSearchForm');
+
+        if (!searchForm || isHeroSearchSubmitBound) {
+            return;
+        }
+
+        isHeroSearchSubmitBound = true;
+
+        searchForm.addEventListener('submit', event => {
             if (isSubmittingAfterGeocode) {
                 return;
             }
@@ -438,12 +516,28 @@
                 return;
             }
 
+            if (isCurrentLocation(locationInput.value)) {
+                setCurrentLocationMode();
+
+                if (!latInput.value || !lngInput.value) {
+                    event.preventDefault();
+                    requestBrowserLocation(form);
+                    return;
+                }
+
+                return;
+            }
+
             if (isVoivodeshipLocation(locationInput.value)) {
                 setVoivodeshipMode();
                 return;
             }
 
             if (!latInput.value || !lngInput.value) {
+                if (!window.google?.maps?.Geocoder) {
+                    return;
+                }
+
                 event.preventDefault();
                 geocodeLocationForSubmit(form);
                 return;
@@ -548,6 +642,23 @@
             }
         );
     }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        setupHeroSearchSubmit();
+
+        const locationInput = document.getElementById('heroLocation');
+        const latInput = document.getElementById('searchLat');
+        const lngInput = document.getElementById('searchLng');
+
+        if (
+            locationInput
+            && isCurrentLocation(locationInput.value)
+            && (!latInput.value || !lngInput.value)
+        ) {
+            setCurrentLocationMode();
+            requestBrowserLocation();
+        }
+    });
 
     window.addEventListener('load', initHeroLocationAutocomplete);
 </script>

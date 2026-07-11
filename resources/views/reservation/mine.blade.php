@@ -66,7 +66,10 @@
                                         \App\Models\Reservation::STATUS_NO_SHOW => ['Niezrealizowana', 'secondary'],
                                         default => [$reservation->status, 'secondary'],
                                     };
-                                    $canEdit = $reservation->status === \App\Models\Reservation::STATUS_PENDING
+                                    $canEdit = in_array($reservation->status, [
+                                            \App\Models\Reservation::STATUS_PENDING,
+                                            \App\Models\Reservation::STATUS_APPROVED,
+                                        ], true)
                                         && $reservation->canBeEdited();
                                 @endphp
                                 <tr>

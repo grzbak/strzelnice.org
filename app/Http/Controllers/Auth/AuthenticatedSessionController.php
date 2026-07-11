@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Support\PendingInvitationSession;
+use App\Support\ReservationIntentSession;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -31,6 +32,18 @@ class AuthenticatedSessionController extends Controller
 
         $user = $request->user();
         PendingInvitationSession::syncForUser($request, $user);
+
+        $reservationIntentUrl = ReservationIntentSession::redirectUrl($request);
+
+        if ($reservationIntentUrl && $user->isClient()) {
+            if (! $user->hasVerifiedEmail()) {
+                return redirect()->route('verification.notice');
+            }
+
+            ReservationIntentSession::forget($request);
+
+            return redirect()->to($reservationIntentUrl);
+        }
 
         if ($user->isSuperAdmin()) {
             return redirect()->intended('/superAdmin');

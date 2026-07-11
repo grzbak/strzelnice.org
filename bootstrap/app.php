@@ -14,6 +14,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function ($middleware) {
+        $middleware->web(append: [
+            \App\Http\Middleware\ClearReservationIntentOutsideAuthFlow::class,
+        ]);
+
         $middleware->alias([
             'approved' => \App\Http\Middleware\ApprovedUser::class,
             'role' => \App\Http\Middleware\RoleMiddleware::class,

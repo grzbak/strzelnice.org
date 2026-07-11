@@ -1,3 +1,9 @@
+@php
+    $shootingRangePublicUrl = $shootingRange->endpoint
+        ? route('shooting.public.show', ['endpoint' => $shootingRange->endpoint])
+        : null;
+@endphp
+
 <x-app-layout>
     <div class="page-bg-2"></div>
 
@@ -21,7 +27,15 @@
             <div>
                 <span class="calendar-eyebrow">Panel strzelnicy</span>
                 <h1>Rezerwacje</h1>
-                <p>{{ $shootingRange->name }}</p>
+                <p>
+                    @if ($shootingRangePublicUrl)
+                        <a href="{{ $shootingRangePublicUrl }}">
+                            {{ $shootingRange->name }}
+                        </a>
+                    @else
+                        {{ $shootingRange->name }}
+                    @endif
+                </p>
                 <div id="calendarTitle" class="calendar-period-title"></div>
             </div>
 
@@ -48,6 +62,35 @@
                                 </option>
                             @endforeach
                         </select>
+                    </form>
+                @endif
+
+                @if (! auth()->user()->isSuperAdmin())
+                    <form
+                        method="POST"
+                        action="{{ route('admin.reservations.notifications') }}"
+                        class="reservation-notification-toggle"
+                    >
+                        @csrf
+                        @method('PATCH')
+                        <input type="hidden" name="shooting_range_id" value="{{ $shootingRange->id }}">
+                        <input type="hidden" name="receives_reservation_notifications" value="0">
+
+                        <label
+                            class="form-check form-switch mb-0"
+                            data-bs-toggle="tooltip"
+                            data-bs-title="Powiadomienia e-mail o nowych rezerwacjach, zmianach statusu i anulowaniach"
+                        >
+                            <input
+                                class="form-check-input"
+                                type="checkbox"
+                                name="receives_reservation_notifications"
+                                value="1"
+                                @checked($reservationNotificationsEnabled)
+                                onchange="this.form.submit()"
+                            >
+                            <span class="form-check-label">Powiadomienia</span>
+                        </label>
                     </form>
                 @endif
 
@@ -448,6 +491,16 @@
             font-size: .78rem;
         }
 
+        .calendar-header p a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .calendar-header p a:hover,
+        .calendar-header p a:focus-visible {
+            color: var(--red);
+        }
+
         .calendar-eyebrow {
             color: var(--green);
             font-size: .7rem;
@@ -465,6 +518,19 @@
 
         .calendar-navigation .form-control {
             width: auto;
+        }
+
+        .reservation-notification-toggle {
+            padding: .42rem .65rem;
+            color: #26342d;
+            background: #f7f9f8;
+            border: 1px solid #d7dfdb;
+            border-radius: 6px;
+        }
+
+        .reservation-notification-toggle .form-check-label {
+            font-size: .82rem;
+            font-weight: 600;
         }
 
         .view-switcher {
@@ -1312,6 +1378,12 @@
                 return (hours * 60) + minutes;
             }
 
+            function closingMinutes(value) {
+                return value === '23:59'
+                    ? 24 * 60
+                    : timeMinutes(value);
+            }
+
             function updateStaffEndTimes() {
                 const date = parseDate(staffDate.value);
                 const isoDay = date.getDay() === 0 ? 7 : date.getDay();
@@ -1323,7 +1395,7 @@
                     return;
                 }
 
-                const closing = timeMinutes(hours.closes_at);
+                const closing = closingMinutes(hours.closes_at);
 
                 for (
                     let minutes = timeMinutes(staffStart.value) + 30;
@@ -1355,7 +1427,7 @@
                 const isToday = formatDate(date) === formatDate(now);
                 const currentMinutes = (now.getHours() * 60) + now.getMinutes();
                 const opening = timeMinutes(hours.opens_at);
-                const closing = timeMinutes(hours.closes_at);
+                const closing = closingMinutes(hours.closes_at);
 
                 for (
                     let minutes = opening;

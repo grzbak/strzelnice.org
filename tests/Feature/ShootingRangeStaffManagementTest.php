@@ -54,6 +54,7 @@ class ShootingRangeStaffManagementTest extends TestCase
             $table->foreignId('shooting_ranges_id');
             $table->string('role');
             $table->boolean('is_approved')->default(true);
+            $table->boolean('receives_reservation_notifications')->default(false);
             $table->timestamps();
         });
     }

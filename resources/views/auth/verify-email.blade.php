@@ -9,6 +9,14 @@
             Kliknij go, aby potwierdzić konto i rozpocząć korzystanie z serwisu.
         </p>
 
+        @if (session('reservation_intent'))
+            <div class="registration-message__status" role="status">
+                <i class="bi bi-calendar-check-fill"></i>
+                Po szybkiej weryfikacji wrócisz do wybranego terminu rezerwacji.
+                Wybór jest zapamiętywany przez 30 minut.
+            </div>
+        @endif
+
         @if (session('status') === 'verification-link-sent')
             <div class="registration-message__status" role="status">
                 <i class="bi bi-check-circle-fill"></i>

@@ -6,6 +6,24 @@
     object-fit: cover;
 }
 
+.user-avatar-icon {
+    display: inline-grid;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    place-items: center;
+    color: #fff;
+    font-size: 1.8rem;
+    line-height: 1;
+    border: 1px solid rgba(255, 255, 255, .32);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .08);
+}
+
+.mobile-user-bar .user-avatar-icon {
+    color: #fff;
+}
+
 /* ---------- MOBILE USER BAR ---------- */
 .mobile-user-bar {
     display: none;

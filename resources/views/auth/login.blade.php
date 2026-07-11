@@ -23,6 +23,20 @@
                     </div>
                 </div>
             @endif
+            @if (session('reservation_intent'))
+                <div class="p-3 mb-4 text-sm border rounded invitation-auth-notice">
+                    <div class="d-flex gap-2 align-items-start">
+                        <i class="mt-1 bi bi-calendar-check" aria-hidden="true"></i>
+                        <div>
+                            <strong>Powrót do rezerwacji</strong>
+                            <div>
+                                Po zalogowaniu wrócisz do wybranego terminu, jeżeli wybór jest nadal aktualny.
+                                Link rezerwacji jest zapamiętywany przez 30 minut.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
             <form method="POST" action="{{ route('login') }}">
                 @csrf
 

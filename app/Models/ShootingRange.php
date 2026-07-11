@@ -40,6 +40,7 @@ class ShootingRange extends Model
         'is_visible',
         'is_public_access',
         'max_advance_booking_days',
+        'requires_reservation_confirmation',
         'is_archived',
         'endpoint',
     ];
@@ -50,6 +51,7 @@ class ShootingRange extends Model
         'is_visible' => 'boolean',
         'is_public_access' => 'boolean',
         'max_advance_booking_days' => 'integer',
+        'requires_reservation_confirmation' => 'boolean',
         'is_archived' => 'boolean',
     ];
 
@@ -76,11 +78,26 @@ class ShootingRange extends Model
 
     public function getFullAddressAttribute(): string
     {
-        return trim(
-            "{$this->street} {$this->houseNumber}".
-                ($this->apartamentNumber ? "/{$this->apartamentNumber}" : '').
-                ", {$this->zipCode} {$this->town}"
+        $street = trim(
+            ($this->street ?? '').
+            ($this->houseNumber ? ' '.$this->houseNumber : '').
+            ($this->apartamentNumber ? '/'.$this->apartamentNumber : '')
         );
+
+        $city = trim(
+            ($this->zipCode ?? '').
+            ($this->town ? ' '.$this->town : '')
+        );
+
+        $parts = array_values(array_filter([$street, $city]));
+
+        if (count($parts) < 2) {
+            return $parts[0] ?? '';
+        }
+
+        return $this->zipCode
+            ? implode(', ', $parts)
+            : implode(' ', $parts);
     }
 
     public function getBrandUrlAttribute(): ?string
@@ -102,7 +119,11 @@ class ShootingRange extends Model
             'shooting_range_employee',
             'shooting_ranges_id',
             'employee_id'
-        )->withPivot(['role', 'is_approved'])
+        )->withPivot([
+            'role',
+            'is_approved',
+            'receives_reservation_notifications',
+        ])
             ->withTimestamps();
     }
 

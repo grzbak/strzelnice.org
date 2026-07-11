@@ -47,3 +47,4 @@ e3ab997 Add shooting range staff management
 41c50db Refine shooting range visibility and reservation access
 Add reusable admin data tables and invitation list refinements
 commit: Refine invitation notifications and session expiry handling
+commit: Refine reservation flow and notification settings

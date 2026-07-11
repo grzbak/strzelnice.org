@@ -149,7 +149,10 @@ class ShootingRangeAvailabilityService
             $this->throwError('Wybrana liczba stanowisk przekracza pojemność osi.');
         }
 
-        if ($end->lessThanOrEqualTo($start) || ! $start->isSameDay($end)) {
+        if (
+            $end->lessThanOrEqualTo($start)
+            || ! $this->endsSameDayOrAtMidnight($start, $end)
+        ) {
             $this->throwError('Rezerwacja musi kończyć się później i tego samego dnia.');
         }
 
@@ -288,7 +291,7 @@ class ShootingRangeAvailabilityService
         return $this->openingHoursForDate($shootingRange, $date)
             ->map(function ($openingHour) use ($lane, $date, $reservations) {
                 $slotStart = $this->combineDateAndTime($date, $openingHour->opens_at);
-                $closing = $this->combineDateAndTime($date, $openingHour->closes_at);
+                $closing = $this->combineClosingDateAndTime($date, $openingHour->closes_at);
                 $maximum = 0;
 
                 while ($slotStart->copy()->addMinutes(30)->lessThanOrEqualTo($closing)) {
@@ -379,7 +382,7 @@ class ShootingRangeAvailabilityService
         return $this->openingHoursForDate($shootingRange, $start)
             ->contains(function ($openingHour) use ($start, $end) {
                 $opensAt = $this->combineDateAndTime($start, $openingHour->opens_at);
-                $closesAt = $this->combineDateAndTime($start, $openingHour->closes_at);
+                $closesAt = $this->combineClosingDateAndTime($start, $openingHour->closes_at);
 
                 return $start->greaterThanOrEqualTo($opensAt)
                     && $end->lessThanOrEqualTo($closesAt);
@@ -395,11 +398,29 @@ class ShootingRangeAvailabilityService
             && ((int) $start->diffInMinutes($end)) % 30 === 0;
     }
 
+    private function endsSameDayOrAtMidnight(Carbon $start, Carbon $end): bool
+    {
+        return $start->isSameDay($end)
+            || (
+                $end->isSameDay($start->copy()->addDay())
+                && $end->isStartOfDay()
+            );
+    }
+
     private function combineDateAndTime(Carbon $date, mixed $time): Carbon
     {
         return Carbon::parse(
             $date->format('Y-m-d').' '.Carbon::parse($time)->format('H:i:s')
         );
+    }
+
+    private function combineClosingDateAndTime(Carbon $date, mixed $time): Carbon
+    {
+        $closing = $this->combineDateAndTime($date, $time);
+
+        return $closing->format('H:i') === '23:59'
+            ? $date->copy()->addDay()->startOfDay()
+            : $closing;
     }
 
     private function allowed(): array

@@ -2,6 +2,10 @@
     use Carbon\Carbon;
 
     $calendarDate = $calendarDate ?? now()->format('Y-m-d');
+    $requiresLoginToReserve = $requiresLoginToReserve ?? false;
+    $shootingRangePublicUrl = $shootingRange->endpoint
+        ? route('shooting.public.show', ['endpoint' => $shootingRange->endpoint])
+        : null;
 
     $calendarAxes = $shootingRange->lanes->map(fn ($lane) => [
         'id' => $lane->id,
@@ -58,7 +62,15 @@
         <section class="booking-head">
             <div>
                 <span class="booking-kicker">Rezerwacja online</span>
-                <h1>{{ $shootingRange->name }}</h1>
+                <h1>
+                    @if ($shootingRangePublicUrl)
+                        <a href="{{ $shootingRangePublicUrl }}">
+                            {{ $shootingRange->name }}
+                        </a>
+                    @else
+                        {{ $shootingRange->name }}
+                    @endif
+                </h1>
                 <p class="mb-0">
                     <i class="bi bi-geo-alt"></i>
                     {{ $shootingRange->town }}
@@ -99,7 +111,7 @@
         @if ($canViewCalendar)
             <section id="daySummary" class="day-summary"></section>
             <section id="lanesList" class="lanes-list"></section>
-        @elseif (auth()->check() && ! $shootingRange->is_public_access)
+        @elseif (! $shootingRange->is_public_access)
             <section id="closedGroupNotice" class="login-required-panel">
                 <div class="login-required-icon">
                     <i class="bi bi-shield-lock-fill" aria-hidden="true"></i>
@@ -111,12 +123,29 @@
                         zaproszonych użytkowników.
                     </p>
                     <p class="login-required-note">
-                        Twoje konto nie posiada aktywnego dostępu.
+                        @auth
+                            Twoje konto nie posiada aktywnego dostępu.
+                        @else
+                            Zaloguj się, aby sprawdzić, czy masz dostęp do rezerwacji.
+                        @endauth
                     </p>
-                    <a href="{{ route('shootings.list') }}" class="btn btn-outline-dark">
-                        <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
-                        Wróć do listy strzelnic
-                    </a>
+                    @auth
+                        <a href="{{ route('shootings.list') }}" class="btn btn-outline-dark">
+                            <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                            Wróć do listy strzelnic
+                        </a>
+                    @else
+                        <div class="login-required-actions">
+                            <a href="{{ route('login') }}" class="btn btn-dark reservation-intent-link">
+                                <i class="bi bi-box-arrow-in-right me-1" aria-hidden="true"></i>
+                                Zaloguj się
+                            </a>
+                            <span>
+                                Nie masz konta?
+                                <a href="{{ route('register') }}" class="reservation-intent-link">Zarejestruj się</a>
+                            </span>
+                        </div>
+                    @endauth
                 </div>
             </section>
         @else
@@ -131,13 +160,13 @@
                         użytkowników.
                     </p>
                     <div class="login-required-actions">
-                        <a href="{{ route('login') }}" class="btn btn-dark">
+                            <a href="{{ route('login') }}" class="btn btn-dark reservation-intent-link">
                             <i class="bi bi-box-arrow-in-right me-1" aria-hidden="true"></i>
                             Zaloguj się
                         </a>
                         <span>
                             Nie masz konta?
-                            <a href="{{ route('register') }}">Zarejestruj się</a>
+                            <a href="{{ route('register') }}" class="reservation-intent-link">Zarejestruj się</a>
                         </span>
                     </div>
                 </div>
@@ -145,7 +174,7 @@
         @endif
     </main>
 
-    @if ($canViewCalendar)
+    @if ($canViewCalendar && ! $requiresLoginToReserve)
         <div class="modal fade" id="reservationModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <form method="POST" action="{{ route('rezerwacje.store') }}" class="modal-content">
@@ -223,6 +252,41 @@
         </div>
     @endif
 
+    @if ($requiresLoginToReserve)
+        <div class="modal fade" id="loginToReserveModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <span class="booking-kicker">Rezerwacja online</span>
+                            <h5 class="modal-title">Zaloguj się, aby dokończyć</h5>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-2">
+                            Wybrany termin jest dostępny. Aby złożyć rezerwację,
+                            zaloguj się albo utwórz konto.
+                        </p>
+                        <p class="mb-0 text-muted small">
+                            Kalendarz możesz przeglądać bez logowania, a dane
+                            rezerwacji uzupełnisz po wejściu na konto.
+                        </p>
+                    </div>
+                    <div class="modal-footer">
+                        <a href="{{ route('register') }}" class="btn btn-outline-dark reservation-intent-link">
+                            Zarejestruj się
+                        </a>
+                        <a href="{{ route('login') }}" class="btn btn-danger reservation-intent-link">
+                            <i class="bi bi-box-arrow-in-right me-1" aria-hidden="true"></i>
+                            Zaloguj się
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
     <style>
         .day-booking {
             --line: #e5e9e7;
@@ -250,6 +314,16 @@
             margin: .15rem 0;
             font-size: clamp(1.25rem, 3vw, 1.8rem);
             font-weight: 700;
+        }
+
+        .booking-head h1 a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .booking-head h1 a:hover,
+        .booking-head h1 a:focus-visible {
+            color: var(--red);
         }
 
         .booking-head p {
@@ -569,6 +643,8 @@
             intervals: @json($activeIntervals),
             reservations: @json($reservations ?? []),
             availabilityUrl: @json(route('rezerwacje.availability', $shootingRange->id)),
+            intentUrl: @json(route('rezerwacje.intent.store')),
+            csrfToken: @json(csrf_token()),
             initialDate: @json($calendarDate),
             loadedDate: @json($calendarDate),
             loadError: null,
@@ -576,10 +652,14 @@
             maxDate: @json($maxBookingDate->format('Y-m-d')),
             maxAdvanceDays: @json($maxAdvanceBookingDays),
             canViewCalendar: @json($canViewCalendar),
+            requiresLoginToReserve: @json($requiresLoginToReserve),
+            resumeLaneId: @json(request('lane')),
+            resumeStartTime: @json(request('start')),
             slotMinutes: 30
         };
 
         let currentDate = parseDate(bookingConfig.initialDate);
+        let pendingReservationIntent = null;
 
         function parseDate(value) {
             const [year, month, day] = value.split('-').map(Number);
@@ -608,6 +688,12 @@
             return (hour * 60) + minute;
         }
 
+        function closingTimeToMinutes(time) {
+            return time === '23:59'
+                ? 24 * 60
+                : timeToMinutes(time);
+        }
+
         function minutesToTime(minutes) {
             return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
         }
@@ -618,6 +704,7 @@
 
         function getAvailability(date) {
             const dateString = formatDate(date);
+            const todayString = formatDate(new Date());
 
             if (
                 bookingConfig.loadError
@@ -629,7 +716,7 @@
                 };
             }
 
-            if (dateString < formatDate(new Date())) {
+            if (dateString < todayString) {
                 return { isOpen: false, reason: 'Wybrany dzień już minął' };
             }
 
@@ -642,10 +729,10 @@
 
             const hasInterval = bookingConfig.intervals.some(interval => {
                 const isFinanciallyValid = interval.is_paid
-                    || (interval.payment_due_date && interval.payment_due_date >= dateString);
+                    || (interval.payment_due_date && interval.payment_due_date >= todayString);
 
-                return interval.start_date <= dateString
-                    && interval.end_date >= dateString
+                return interval.start_date <= todayString
+                    && interval.end_date >= todayString
                     && isFinanciallyValid;
             });
 
@@ -770,6 +857,36 @@
             return slotStart <= now;
         }
 
+        function reservationIntentPayload() {
+            return {
+                shooting_range_id: @json($shootingRange->id),
+                date: pendingReservationIntent?.date ?? formatDate(currentDate),
+                lane_id: pendingReservationIntent?.laneId ?? null,
+                start_time: pendingReservationIntent?.startTime ?? null,
+                end_time: pendingReservationIntent?.endTime ?? null
+            };
+        }
+
+        async function storeReservationIntent() {
+            await fetch(bookingConfig.intentUrl, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': bookingConfig.csrfToken
+                },
+                body: JSON.stringify(reservationIntentPayload())
+            });
+        }
+
+        async function storeReservationIntentAndRedirect(url) {
+            try {
+                await storeReservationIntent();
+            } finally {
+                window.location.href = url;
+            }
+        }
+
         function createSlot(axis, dateString, startTime, endTime) {
             const free = getFreePositions(axis, dateString, startTime, endTime);
             const isPast = isPastSlot(dateString, startTime);
@@ -796,12 +913,16 @@
 
             if (free > 0 && !isPast) {
                 button.addEventListener('click', () => {
-                    if (!bookingConfig.canViewCalendar) {
-                        document.getElementById('loginRequiredNotice')
-                            ?.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'center'
-                            });
+                    if (bookingConfig.requiresLoginToReserve) {
+                        pendingReservationIntent = {
+                            laneId: axis.id,
+                            date: dateString,
+                            startTime,
+                            endTime
+                        };
+                        bootstrap.Modal
+                            .getOrCreateInstance(document.getElementById('loginToReserveModal'))
+                            .show();
                         return;
                     }
 
@@ -850,14 +971,14 @@
 
                 for (
                     let minutes = timeToMinutes(availability.opensAt);
-                    minutes < timeToMinutes(availability.closesAt);
+                    minutes < closingTimeToMinutes(availability.closesAt);
                     minutes += bookingConfig.slotMinutes
                 ) {
                     slots.appendChild(createSlot(
                         axis,
                         dateString,
                         minutesToTime(minutes),
-                        minutesToTime(Math.min(minutes + bookingConfig.slotMinutes, timeToMinutes(availability.closesAt)))
+                        minutesToTime(Math.min(minutes + bookingConfig.slotMinutes, closingTimeToMinutes(availability.closesAt)))
                     ));
                 }
 
@@ -883,7 +1004,7 @@
                 return;
             }
 
-            const closing = timeToMinutes(availability.closesAt);
+            const closing = closingTimeToMinutes(availability.closesAt);
 
             for (let minutes = timeToMinutes(start) + 30; minutes <= closing; minutes += 30) {
                 addOption(endSelect, minutesToTime(minutes));
@@ -906,7 +1027,7 @@
 
             for (
                 let minutes = timeToMinutes(availability.opensAt);
-                minutes < timeToMinutes(availability.closesAt);
+                minutes < closingTimeToMinutes(availability.closesAt);
                 minutes += 30
             ) {
                 addOption(select, minutesToTime(minutes));
@@ -969,7 +1090,7 @@
 
         function openModal(axis, date, start) {
             const availability = getAvailability(parseDate(date));
-            const end = minutesToTime(Math.min(timeToMinutes(start) + 60, timeToMinutes(availability.closesAt)));
+            const end = minutesToTime(Math.min(timeToMinutes(start) + 60, closingTimeToMinutes(availability.closesAt)));
 
             document.getElementById('modalHeading').textContent = `${axis.name} · ${date}`;
             document.getElementById('lineId').value = axis.id;
@@ -986,12 +1107,44 @@
             bootstrap.Modal.getOrCreateInstance(document.getElementById('reservationModal')).show();
         }
 
+        function openResumeReservationIntentModal() {
+            if (
+                !bookingConfig.resumeLaneId
+                || !bookingConfig.resumeStartTime
+                || bookingConfig.requiresLoginToReserve
+            ) {
+                return;
+            }
+
+            const axis = getAxis(bookingConfig.resumeLaneId);
+            const dateString = formatDate(currentDate);
+            const availability = getAvailability(currentDate);
+
+            if (
+                !axis
+                || !availability.isOpen
+                || isPastSlot(dateString, bookingConfig.resumeStartTime)
+            ) {
+                return;
+            }
+
+            openModal(axis, dateString, bookingConfig.resumeStartTime);
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.reservation-intent-link').forEach(link => {
+                link.addEventListener('click', event => {
+                    event.preventDefault();
+                    storeReservationIntentAndRedirect(link.href);
+                });
+            });
+
             if (!bookingConfig.canViewCalendar) {
                 return;
             }
 
             renderDay();
+            openResumeReservationIntentModal();
 
             document.getElementById('previousDay').addEventListener('click', async () => {
                 if (formatDate(currentDate) <= bookingConfig.minDate) {
@@ -1016,6 +1169,10 @@
             document.getElementById('selectedDate').addEventListener('change', async event => {
                 await selectCalendarDate(parseDate(event.target.value));
             });
+
+            if (bookingConfig.requiresLoginToReserve) {
+                return;
+            }
 
             document.getElementById('lineId').addEventListener('change', () => {
                 const axis = getAxis(document.getElementById('lineId').value);

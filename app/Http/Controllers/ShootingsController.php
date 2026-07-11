@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\ShootingRangeAvailabilityService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -78,6 +79,7 @@ class ShootingsController extends Controller
             ];
 
             $location = trim($validated['location'] ?? '');
+            $usesCurrentLocation = mb_strtolower($location) === 'moja lokalizacja';
             $voivodeshipKey = $this->detectVoivodeshipKey($location, $voivodeships);
             $isVoivodeshipSearch = $voivodeshipKey !== null;
             $locationMode = $validated['location_mode']
@@ -153,6 +155,7 @@ class ShootingsController extends Controller
                 $location
                 && $locationMode !== 'voivodeship'
                 && $request->filled('radius_km')
+                && ! $usesCurrentLocation
             ) {
                 $coordinates = $this->geocodeLocation($location);
 
@@ -171,18 +174,20 @@ class ShootingsController extends Controller
                 } else {
                     $query->whereRaw('1 = 0');
                 }
-            } elseif ($location) {
+            } elseif ($location && ! $usesCurrentLocation) {
                 $query->where(function ($q) use ($location) {
                     $q->whereRaw('LOWER(town) LIKE ?', ['%'.mb_strtolower($location).'%'])
                         ->orWhereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower($location).'%'])
                         ->orWhereRaw('LOWER(street) LIKE ?', ['%'.mb_strtolower($location).'%']);
                 });
+            } elseif ($usesCurrentLocation) {
+                $query->whereRaw('1 = 0');
             } else {
                 $query->orderBy('name');
             }
 
             $user = $request->user();
-            $shootings = $query
+            $shootingsCollection = $query
                 ->with([
                     'openingHours',
                     'lanes' => function ($q) use ($laneLength) {
@@ -228,6 +233,18 @@ class ShootingsController extends Controller
                 })
                 ->filter(fn ($shootingRange) => $shootingRange->available_lanes->isNotEmpty())
                 ->values();
+
+            $page = LengthAwarePaginator::resolveCurrentPage();
+            $shootings = new LengthAwarePaginator(
+                $shootingsCollection->forPage($page, 10)->values(),
+                $shootingsCollection->count(),
+                10,
+                $page,
+                [
+                    'path' => $request->url(),
+                    'query' => $request->query(),
+                ]
+            );
         }
 
         return view('home', compact('messages', 'shootings', 'searched'));
@@ -677,6 +694,10 @@ if (ShootingRangeInterval::hasOverlap(
         unset($validated['brand']);
 
         $validated['is_public_access'] = $request->boolean('is_public_access');
+        $validated['requires_reservation_confirmation'] = $request->boolean(
+            'requires_reservation_confirmation',
+            true
+        );
 
         if ($brandData = $this->storeBrandFile($request)) {
             $validated = array_merge($validated, $brandData);
@@ -712,6 +733,9 @@ if (ShootingRangeInterval::hasOverlap(
         unset($validated['brand'], $validated['remove_brand']);
 
         $validated['is_public_access'] = $request->boolean('is_public_access');
+        $validated['requires_reservation_confirmation'] = $request->boolean(
+            'requires_reservation_confirmation'
+        );
 
         if ($brandData = $this->storeBrandFile($request)) {
             $this->deleteBrandFile($shootingRange);
@@ -1094,6 +1118,9 @@ if (ShootingRangeInterval::hasOverlap(
         unset($validated['brand'], $validated['remove_brand']);
 
         $validated['is_public_access'] = $request->boolean('is_public_access');
+        $validated['requires_reservation_confirmation'] = $request->boolean(
+            'requires_reservation_confirmation'
+        );
 
         if ($brandData = $this->storeBrandFile($request)) {
             $this->deleteBrandFile($shootingRange);
@@ -1320,6 +1347,10 @@ if (ShootingRangeInterval::hasOverlap(
         unset($validated['brand']);
 
         $validated['is_public_access'] = $request->boolean('is_public_access');
+        $validated['requires_reservation_confirmation'] = $request->boolean(
+            'requires_reservation_confirmation',
+            true
+        );
 
         if ($brandData = $this->storeBrandFile($request)) {
             $oldBrand = session('shooting_range_form.range.brand_file_name');
@@ -1460,6 +1491,7 @@ if (ShootingRangeInterval::hasOverlap(
             'type' => ['required', 'in:otwarta,kryta'],
             'is_public_access' => ['required', 'boolean'],
             'max_advance_booking_days' => ['nullable', 'integer', 'min:0', 'max:365'],
+            'requires_reservation_confirmation' => ['nullable', 'boolean'],
 
             'description' => ['nullable', 'string', 'max:2000'],
         ];

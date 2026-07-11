@@ -65,6 +65,7 @@ class ReservationWorkflowTest extends TestCase
             $table->boolean('is_public_access')->default(true);
             $table->boolean('is_archived')->default(false);
             $table->unsignedSmallInteger('max_advance_booking_days')->nullable();
+            $table->boolean('requires_reservation_confirmation')->default(true);
             $table->timestamps();
         });
 
@@ -99,6 +100,7 @@ class ReservationWorkflowTest extends TestCase
             $table->foreignId('shooting_ranges_id');
             $table->string('role');
             $table->boolean('is_approved')->default(true);
+            $table->boolean('receives_reservation_notifications')->default(false);
             $table->timestamps();
         });
 
@@ -302,6 +304,180 @@ class ReservationWorkflowTest extends TestCase
             );
 
         $this->assertDatabaseCount('reservations', 0);
+    }
+
+    public function test_guest_can_view_public_calendar_but_must_login_after_selecting_slot(): void
+    {
+        [, $rangeId] = $this->createBookableRange('admin', true);
+
+        $this->get(route('rezerwacje.calendar', $rangeId))
+            ->assertOk()
+            ->assertSee('id="daySummary"', false)
+            ->assertSee('id="lanesList"', false)
+            ->assertSee('id="loginToReserveModal"', false)
+            ->assertSee('Zaloguj się, aby dokończyć')
+            ->assertSee(route('login'), false)
+            ->assertSee(route('register'), false)
+            ->assertDontSee('id="loginRequiredNotice"', false);
+
+        $this->getJson(route('rezerwacje.availability', [
+            'id' => $rangeId,
+            'date' => today()->toDateString(),
+        ]))
+            ->assertOk()
+            ->assertJsonStructure(['reservations']);
+    }
+
+    public function test_verified_client_returns_to_selected_reservation_slot_after_login(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'email' => 'client@example.com',
+            'email_verified_at' => now(),
+            'password' => bcrypt('password'),
+        ]);
+
+        $this->post(route('rezerwacje.intent.store'), [
+            'shooting_range_id' => $rangeId,
+            'date' => today()->addDay()->toDateString(),
+            'lane_id' => $laneId,
+            'start_time' => '10:00',
+            'end_time' => '10:30',
+        ])->assertOk();
+
+        $this->post('/login', [
+            'email' => $client->email,
+            'password' => 'password',
+        ])->assertRedirect(
+            route('rezerwacje.calendar', ['id' => $rangeId])
+                .'?date='.today()->addDay()->toDateString()
+                .'&lane='.$laneId
+                .'&start=10%3A00'
+        );
+
+        $this->assertNull(session('reservation_intent'));
+    }
+
+    public function test_old_reservation_intent_is_ignored_after_login(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'email' => 'client@example.com',
+            'email_verified_at' => now(),
+            'password' => bcrypt('password'),
+        ]);
+
+        $this->withSession([
+            'reservation_intent' => [
+                'shooting_range_id' => $rangeId,
+                'date' => today()->addDay()->toDateString(),
+                'lane_id' => $laneId,
+                'start_time' => '10:00',
+                'end_time' => '10:30',
+                'created_at' => now()->subMinutes(31)->timestamp,
+            ],
+        ])->post('/login', [
+            'email' => $client->email,
+            'password' => 'password',
+        ])->assertRedirect('/klient');
+
+        $this->assertNull(session('reservation_intent'));
+    }
+
+    public function test_reservation_intent_is_cleared_when_user_leaves_auth_flow(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+
+        $this->post(route('rezerwacje.intent.store'), [
+            'shooting_range_id' => $rangeId,
+            'date' => today()->addDay()->toDateString(),
+            'lane_id' => $laneId,
+            'start_time' => '10:00',
+            'end_time' => '10:30',
+        ])->assertOk();
+
+        $this->get('/')
+            ->assertOk()
+            ->assertSessionMissing('reservation_intent');
+    }
+
+    public function test_customer_reservation_redirects_to_calendar_date_without_reopening_modal(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+            'email_verified_at' => now(),
+        ]);
+        $date = today()->addDay()->toDateString();
+
+        $this->actingAs($client)
+            ->from(route('rezerwacje.calendar', [
+                'id' => $rangeId,
+                'date' => $date,
+                'lane' => $laneId,
+                'start' => '10:00',
+            ]))
+            ->post(route('rezerwacje.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => $date,
+                'start_time' => '10:00',
+                'end_time' => '10:30',
+                'positions_count' => 1,
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success')
+            ->assertRedirect(route('rezerwacje.calendar', [
+                'id' => $rangeId,
+                'date' => $date,
+            ]));
+    }
+
+    public function test_reservation_can_end_at_midnight_when_range_closes_at_2359(): void
+    {
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+
+        DB::table('shooting_range_opening_hours')
+            ->where('shooting_range_id', $rangeId)
+            ->where('day_of_week', today()->isoWeekday())
+            ->update([
+                'opens_at' => '00:00',
+                'closes_at' => '23:59',
+            ]);
+
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        $this->actingAs($client)
+            ->post(route('rezerwacje.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '23:30',
+                'end_time' => '24:00',
+                'positions_count' => 1,
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reservations', [
+            'shooting_range_id' => $rangeId,
+            'line_id' => $laneId,
+            'start' => today()->setTime(23, 30)->format('Y-m-d H:i:s'),
+            'end' => today()->addDay()->startOfDay()->format('Y-m-d H:i:s'),
+        ]);
+
+        $this->getJson(route('rezerwacje.availability', [
+            'id' => $rangeId,
+            'date' => today()->toDateString(),
+        ]))
+            ->assertOk()
+            ->assertJsonPath('reservations.0.end_time', '24:00');
     }
 
     public function test_client_cannot_use_staff_guest_endpoint(): void
@@ -591,7 +767,8 @@ class ReservationWorkflowTest extends TestCase
 
         $this->get(route('rezerwacje.calendar', $rangeId))
             ->assertOk()
-            ->assertSee('Zaloguj się, aby zarezerwować')
+            ->assertSee('Rezerwacje dla zamkniętej grupy')
+            ->assertSee('Zaloguj się, aby sprawdzić, czy masz dostęp do rezerwacji.')
             ->assertSee('Nie masz konta?')
             ->assertSee(route('login'), false)
             ->assertSee(route('register'), false)
@@ -1714,7 +1891,7 @@ class ReservationWorkflowTest extends TestCase
             ->assertSee(route('rezerwacje.edit', $reservationId));
     }
 
-    public function test_customer_cannot_edit_non_pending_or_started_reservation(): void
+    public function test_customer_can_request_change_for_approved_future_reservation_but_not_started_reservation(): void
     {
         [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
         $client = User::factory()->create([
@@ -1742,7 +1919,28 @@ class ReservationWorkflowTest extends TestCase
 
         $this->actingAs($client)
             ->get(route('rezerwacje.edit', $approvedId))
-            ->assertForbidden();
+            ->assertOk();
+
+        $this->actingAs($client)
+            ->patch(route('rezerwacje.update', $approvedId), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '11:00',
+                'end_time' => '11:30',
+                'positions_count' => 1,
+                'is_dynamic_shooting' => false,
+            ])
+            ->assertRedirect(route('rezerwacje.mine'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $approvedId,
+            'status' => Reservation::STATUS_PENDING,
+            'approved_by_user_id' => null,
+            'approved_at' => null,
+        ]);
+
         $this->actingAs($client)
             ->get(route('rezerwacje.edit', $startedId))
             ->assertForbidden();

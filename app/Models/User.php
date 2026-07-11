@@ -66,7 +66,11 @@ class User extends Authenticatable implements MustVerifyEmail
             'shooting_range_employee',
             'employee_id',
             'shooting_ranges_id'
-        )->withPivot(['role', 'is_approved'])
+        )->withPivot([
+            'role',
+            'is_approved',
+            'receives_reservation_notifications',
+        ])
             ->withTimestamps();
     }
 

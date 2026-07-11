@@ -2,7 +2,9 @@
 @auth
     <div class="shadow-sm mobile-user-bar">
         <div class="gap-2 d-flex align-items-center">
-            <img src="{{ auth()->user()->avatar_url }}" class="avatar">
+            <span class="user-avatar-icon" aria-hidden="true">
+                <i class="bi bi-person-circle"></i>
+            </span>
             <div class="small">
                 <div class="fw-semibold">{{ auth()->user()->name }}</div>
                 <div class="text-muted">{{ auth()->user()->email }}</div>
@@ -245,7 +247,9 @@
                     <div class="dropdown d-none d-lg-block">
                         <a href="#" class="gap-2 d-flex align-items-center dropdown-toggle text-decoration-none"
                             data-bs-toggle="dropdown">
-                            <img src="{{ auth()->user()->avatar_url }}" class="avatar">
+                            <span class="user-avatar-icon" aria-hidden="true">
+                                <i class="bi bi-person-circle"></i>
+                            </span>
                             <span class="fw-semibold">{{ auth()->user()->name }}@if (auth()->user()->isSuperAdmin())
                                     (SA)
                                 @endif
