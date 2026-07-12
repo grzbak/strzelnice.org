@@ -1,4 +1,4 @@
-<x-app-layout>
+<x-app-layout>ermin
     <main class="ssz-main">
         <section class="ssz-hero">
             <div class="ssz-hero-grid"></div>
@@ -215,7 +215,7 @@
                             </div>
                         @endif
 
-                        <a class="ssz-btn ssz-btn-ghost" href="#kontakt">Porozmawiaj z nami</a>
+                        <a class="ssz-btn ssz-btn-ghost" href="/kontakt">Porozmawiaj z nami</a>
                         <div class="ssz-offer-fine">Bez zobowiązania długoterminowego, rezygnacja z miesięcznym wypowiedzeniem.</div>
                     </div>
                 </div>

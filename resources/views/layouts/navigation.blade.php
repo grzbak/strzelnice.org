@@ -114,7 +114,11 @@
                                 ->wherePivot('role', 'admin')
                                 ->first();
                         @endphp
-
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ route('admin.reservations.calendar') }}">
+                                Rezerwacje
+                            </a>
+                        </li>
                         <li class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle" href="{{ route('admin.shootings') }}"
                                 id="shootingsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
@@ -135,11 +139,6 @@
                                 <li>
                                     <a class="dropdown-item" href="{{ route('shooting.time.edit') }}">
                                         Godziny otwarcia
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="{{ route('admin.reservations.calendar') }}">
-                                        Rezerwacje
                                     </a>
                                 </li>
                                 <li>
@@ -187,6 +186,19 @@
                         <li class="nav-item">
                             <a class="nav-link" href="{{ route('admin.reservations.archive') }}">
                                 Archiwum
+                            </a>
+                        </li>
+
+
+                    @elseif(auth()->user()->isClient())
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ route('rezerwacje.mine') }}">
+                                Moje rezerwacje
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ route('maps') }}">
+                                Mapa strzelnic
                             </a>
                         </li>
 
@@ -263,11 +275,13 @@
                             <li>
                                 <hr class="dropdown-divider">
                             </li>
-                            <li>
-                                <a class="dropdown-item" href="{{ route('rezerwacje.mine') }}">
-                                    Moje rezerwacje
-                                </a>
-                            </li>
+                            @if(!auth()->user()->isClient())
+                                <li>
+                                    <a class="dropdown-item" href="{{ route('rezerwacje.mine') }}">
+                                        Moje rezerwacje
+                                    </a>
+                                </li>
+                            @endif
                             <li>
                                 <a class="dropdown-item" href="{{ route('profile.edit') }}">
                                     Edytuj profil

@@ -86,7 +86,6 @@
         <a href="/regulamin_serwisu_dla_uzytkownikow">Regulamin</a>
         <a href="/mapa-strzelnic">Mapa strzelnic</a>
         <a href="/polityka_prywatnosci">Polityka prywatności</a>
-        <a href="/strefa-strzelnic">Strefa strzelnic</a>
         @auth
             @if (auth()->user()->isAdmin() || auth()->user()->isEmployee())
                 <a href="/dpa">DPA</a>
