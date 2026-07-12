@@ -69,6 +69,9 @@
 
                     <td data-label="Nazwa wyświetlana">
                         <strong>{{ $page->display_name }}</strong>
+                        @if ($page->activeRegulations()->exists())
+                            <span class="ms-1 badge text-bg-warning">Regulamin</span>
+                        @endif
                     </td>
 
                     <td data-label="Status">
@@ -121,6 +124,7 @@
                                 action="{{ route('admin.pages.destroy', $page) }}"
                                 class="m-0 delete-page-form"
                                 data-page-name="{{ $page->display_name }}"
+                                data-is-regulation="{{ $page->activeRegulations()->exists() ? '1' : '0' }}"
                             >
                                 @csrf
                                 @method('DELETE')
@@ -217,7 +221,11 @@
 
                 const pageName = form.dataset.pageName || 'wybraną stronę';
 
-                if (!confirm(`Usunąć stronę: ${pageName}?`)) {
+                const regulationWarning = form.dataset.isRegulation === '1'
+                    ? '\n\nTa strona jest aktywnym regulaminem. Usunięcie strony odwoła powiązany regulamin i wyśle informację e-mail do użytkowników, którzy go zaakceptowali.'
+                    : '';
+
+                if (!confirm(`Usunąć stronę: ${pageName}?${regulationWarning}`)) {
                     event.preventDefault();
                 }
             });

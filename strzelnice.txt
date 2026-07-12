@@ -50,3 +50,4 @@ commit: Refine invitation notifications and session expiry handling
 commit: Refine reservation flow and notification settings
 commit: Add shooting range zone landing page
 commit: Snapshot before regulations workflow
+commit: Add versioned regulations workflow

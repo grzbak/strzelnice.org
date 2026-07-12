@@ -11,7 +11,7 @@
         title="Zarządzaj plikami cookie"
         aria-label="Cookies"
     >
-        <i class="text-white bi bi-link-45deg display-4" aria-hidden="true"></i>
+        <i class="text-white bi bi-link-45deg display-6" aria-hidden="true"></i>
      </span>
 </div>
 

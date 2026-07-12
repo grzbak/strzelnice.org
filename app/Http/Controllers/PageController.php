@@ -2,10 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\RegulationRevokedMail;
+use App\Mail\RegulationUpdatedMail;
 use App\Models\Page;
+use App\Models\Regulation;
+use App\Models\RegulationVersion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -85,6 +90,8 @@ class PageController extends Controller
 
     public function edit(Page $page): View
     {
+        $page->load(['activeRegulations.currentVersion']);
+
         return view('superAdmin.pages.edit', compact('page'));
     }
 
@@ -110,9 +117,14 @@ class PageController extends Controller
 
         $page->save();
 
+        $versionedRegulations = $this->publishChangedRegulationVersions($page);
+        $message = $versionedRegulations > 0
+            ? 'Strona została zaktualizowana. Utworzono nową wersję regulaminu i użytkownicy muszą zaakceptować ją ponownie.'
+            : 'Strona została zaktualizowana.';
+
         return redirect()
             ->route('admin.pages.index')
-            ->with('success', 'Strona została zaktualizowana.');
+            ->with('success', $message);
     }
 
     public function toggleStatus(Page $page): RedirectResponse
@@ -129,6 +141,7 @@ class PageController extends Controller
 
     public function destroy(Page $page): RedirectResponse
     {
+        $this->revokeRegulationsForDeletedPage($page);
         $this->deletePublicFile($page->baner);
         $this->deletePublicFile($page->background);
         $page->delete();
@@ -195,6 +208,77 @@ class PageController extends Controller
 
         if (File::isFile($fullPath)) {
             File::delete($fullPath);
+        }
+    }
+
+    private function publishChangedRegulationVersions(Page $page): int
+    {
+        $page->load(['activeRegulations.currentVersion']);
+        $published = 0;
+
+        foreach ($page->activeRegulations as $regulation) {
+            $hash = RegulationVersion::contentHash($page->display_name, $page->content);
+
+            if ($regulation->currentVersion?->content_hash === $hash) {
+                continue;
+            }
+
+            $regulation->versions()->create([
+                'page_id' => $page->id,
+                'version_number' => ((int) $regulation->versions()->max('version_number')) + 1,
+                'display_name' => $page->display_name,
+                'content' => $page->content,
+                'content_hash' => $hash,
+                'published_at' => now(),
+                'created_by_user_id' => auth()->id(),
+            ]);
+
+            $this->notifyAcceptedUsersAboutUpdate($regulation);
+            $published++;
+        }
+
+        return $published;
+    }
+
+    private function revokeRegulationsForDeletedPage(Page $page): void
+    {
+        $page->load('activeRegulations');
+
+        foreach ($page->activeRegulations as $regulation) {
+            $regulation->update([
+                'status' => Regulation::STATUS_REVOKED,
+                'revoked_at' => now(),
+            ]);
+
+            $this->notifyAcceptedUsersAboutRevocation($regulation);
+        }
+    }
+
+    private function notifyAcceptedUsersAboutUpdate(Regulation $regulation): void
+    {
+        $users = $regulation->acceptances()
+            ->with('user')
+            ->get()
+            ->pluck('user')
+            ->filter()
+            ->unique('id');
+
+        foreach ($users as $user) {
+            Mail::to($user->email)->send(new RegulationUpdatedMail($regulation));
+        }
+    }
+
+    private function notifyAcceptedUsersAboutRevocation(Regulation $regulation): void
+    {
+        $users = $regulation->acceptances()
+            ->with('user')
+            ->get()
+            ->pluck('user')
+            ->filter()
+            ->unique('id');
+
+        foreach ($users as $user) {
+            Mail::to($user->email)->send(new RegulationRevokedMail($regulation));
         }
     }
 }

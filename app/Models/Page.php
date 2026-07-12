@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class Page extends Model
@@ -45,6 +46,16 @@ class Page extends Model
         return $this->background ? asset($this->background) : null;
     }
 
+    public function regulations(): HasMany
+    {
+        return $this->hasMany(Regulation::class);
+    }
+
+    public function activeRegulations(): HasMany
+    {
+        return $this->regulations()->where('status', Regulation::STATUS_ACTIVE);
+    }
+
     public static function generateUniqueNavigationName(string $displayName, ?int $ignoreId = null): string
     {
         $base = static::normalizeNavigationName($displayName);
@@ -57,7 +68,7 @@ class Page extends Model
         $counter = 2;
 
         while (static::navigationNameExists($navigationName, $ignoreId)) {
-            $navigationName = $base . '_' . $counter;
+            $navigationName = $base.'_'.$counter;
             $counter++;
         }
 

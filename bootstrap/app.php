@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function ($middleware) {
         $middleware->web(append: [
             \App\Http\Middleware\ClearReservationIntentOutsideAuthFlow::class,
+            \App\Http\Middleware\EnsureRequiredRegulationsAccepted::class,
         ]);
 
         $middleware->alias([

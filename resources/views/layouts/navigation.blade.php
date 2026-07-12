@@ -100,6 +100,7 @@
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.users') }}">Użytkownicy</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.packages.index') }}">Cenniki</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.pages.index') }}">Strony</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ route('admin.regulations.index') }}">Regulaminy</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.system-configurations.index') }}">Konfiguracja</a></li>
 
                     @elseif(auth()->user()->isAdmin())

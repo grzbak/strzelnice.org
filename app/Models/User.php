@@ -79,6 +79,26 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(Reservation::class, 'customer_user_id');
     }
 
+    public function regulationAcceptances()
+    {
+        return $this->hasMany(RegulationAcceptance::class);
+    }
+
+    public function requiredRegulations()
+    {
+        return Regulation::query()
+            ->with('currentVersion')
+            ->currentlyRequiredFor($this)
+            ->get()
+            ->filter(fn (Regulation $regulation): bool => $regulation->requiresAcceptanceFrom($this))
+            ->values();
+    }
+
+    public function hasRequiredRegulationsToAccept(): bool
+    {
+        return $this->requiredRegulations()->isNotEmpty();
+    }
+
     public function createdReservations()
     {
         return $this->hasMany(Reservation::class, 'created_by_user_id');

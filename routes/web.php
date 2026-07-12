@@ -7,6 +7,8 @@ use App\Http\Controllers\MessageController;
 // use App\Http\Controllers\ClientDashboardController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RegulationController;
+use App\Http\Controllers\RequiredRegulationController;
 use App\Http\Controllers\ReservationsController;
 use App\Http\Controllers\ShootingRangeGalleryController;
 use App\Http\Controllers\ShootingRangeInvitationController;
@@ -129,6 +131,12 @@ Route::middleware('auth')->group(function () {
 // DASHBOARD (auth + verified + approved)
 // -----------------------------------------------------------------------------
 Route::middleware(['auth', 'verified', 'approved'])->group(function () {
+    Route::get('/wymagane-regulaminy', [RequiredRegulationController::class, 'index'])
+        ->name('regulations.required');
+    Route::post('/wymagane-regulaminy', [RequiredRegulationController::class, 'accept'])
+        ->name('regulations.required.accept');
+    Route::get('/wymagane-regulaminy/{regulation}', [RequiredRegulationController::class, 'show'])
+        ->name('regulations.required.show');
 
     // PROFIL
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -207,6 +215,12 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
             ->name('admin.system-configurations.update');
         Route::patch('/konfiguracja-systemu/{systemConfiguration}/przywroc', [SystemConfigurationController::class, 'restore'])
             ->name('admin.system-configurations.restore');
+        Route::resource('/regulaminy', RegulationController::class)
+            ->except(['show', 'destroy'])
+            ->parameters(['regulaminy' => 'regulation'])
+            ->names('admin.regulations');
+        Route::patch('/regulaminy/{regulation}/odwolaj', [RegulationController::class, 'revoke'])
+            ->name('admin.regulations.revoke');
         Route::get('/strzelnice', [ShootingsController::class, 'listSuperAdmin'])->name('admin.shootings'); // dla niezalogowanych ->listAll
 
         Route::get('/strzelnice/dodaj', [ShootingsController::class, 'createSuperAdmin'])->name('admin.shootings.create');
