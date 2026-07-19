@@ -56,7 +56,7 @@ class ShootingRangeGalleryController extends Controller
                 'required',
                 'file',
                 'mimes:jpg,jpeg,png',
-                //'max:1024',
+                // 'max:1024',
             ],
         ]);
 
@@ -86,7 +86,7 @@ class ShootingRangeGalleryController extends Controller
                     ->first();
 
                 if (! $gallery) {
-                    $folderPath = 'gallery/' . $shootingRange->endpoint;
+                    $folderPath = 'gallery/'.$shootingRange->endpoint;
 
                     $gallery = ShootingRangeGalleryCategory::create([
                         'shooting_range_id' => $shootingRange->id,
@@ -102,7 +102,7 @@ class ShootingRangeGalleryController extends Controller
                 $usedBytes = (int) $gallery->photos()->sum('size_bytes');
 
                 if ($usedBytes + $incomingSize > $gallery->capacity_bytes) {
-                    //abort(422, 'Przekroczono pojemność galerii.');
+                    // abort(422, 'Przekroczono pojemność galerii.');
 
                     throw ValidationException::withMessages([
                         'photos' => 'Próbujesz przekroczyć dostępną powierzchnię galerii.',
@@ -117,18 +117,18 @@ class ShootingRangeGalleryController extends Controller
 
                 foreach ($validated['photos'] as $photo) {
                     $extension = strtolower($photo->getClientOriginalExtension());
-                    $storedName = Str::uuid() . '.' . $extension;
+                    $storedName = Str::uuid().'.'.$extension;
 
                     $photo->move($absoluteFolder, $storedName);
 
-                    $storedFiles[] = $absoluteFolder . DIRECTORY_SEPARATOR . $storedName;
+                    $storedFiles[] = $absoluteFolder.DIRECTORY_SEPARATOR.$storedName;
 
                     $gallery->photos()->create([
                         'stored_name' => $storedName,
                         'original_name' => $photo->getClientOriginalName(),
-                        'full_url' => asset($gallery->folder_path . '/' . $storedName),
+                        'full_url' => asset($gallery->folder_path.'/'.$storedName),
                         'size_bytes' => File::size(
-                            $absoluteFolder . DIRECTORY_SEPARATOR . $storedName
+                            $absoluteFolder.DIRECTORY_SEPARATOR.$storedName
                         ),
                         'format' => $extension,
                     ]);
@@ -175,7 +175,7 @@ class ShootingRangeGalleryController extends Controller
         }
 
         File::delete(public_path(
-            $gallery->folder_path . '/' . $photo->stored_name
+            $gallery->folder_path.'/'.$photo->stored_name
         ));
 
         $photo->delete();
@@ -200,7 +200,7 @@ class ShootingRangeGalleryController extends Controller
             'shooting_range_id' => $shootingRange->id,
         ], [
             'name' => $shootingRange->endpoint,
-            'folder_path' => 'gallery/' . $shootingRange->endpoint,
+            'folder_path' => 'gallery/'.$shootingRange->endpoint,
         ]);
 
         $newCapacity = $validated['capacity_mb'] * 1024 * 1024;

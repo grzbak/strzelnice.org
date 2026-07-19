@@ -2,10 +2,10 @@
 
 namespace App\View\Components;
 
+use App\Models\ShootingRange;
 use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\View\Component;
-use App\Models\ShootingRange;
 
 class ShootingLanes extends Component
 {

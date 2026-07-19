@@ -15,6 +15,12 @@ class User extends Authenticatable implements MustVerifyEmail
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
+    public const APPROVAL_APPROVED = 'approved';
+
+    public const APPROVAL_PENDING = 'pending';
+
+    public const APPROVAL_REJECTED = 'rejected';
+
     /**
      * The attributes that are mass assignable.
      *
@@ -28,6 +34,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'avatar',
         'role',
         'is_approved',
+        'approval_status',
+        'approval_reason',
+        'approved_at',
+        'approved_by_user_id',
     ];
 
     protected $appends = [
@@ -56,6 +66,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_approved' => 'boolean',
+            'approved_at' => 'datetime',
         ];
     }
 
@@ -82,6 +93,21 @@ class User extends Authenticatable implements MustVerifyEmail
     public function regulationAcceptances()
     {
         return $this->hasMany(RegulationAcceptance::class);
+    }
+
+    public function ipAddresses()
+    {
+        return $this->hasMany(UserIpAddress::class);
+    }
+
+    public function auditLogs()
+    {
+        return $this->hasMany(AuditLog::class);
+    }
+
+    public function securityEvents()
+    {
+        return $this->hasMany(UserSecurityEvent::class);
     }
 
     public function requiredRegulations()

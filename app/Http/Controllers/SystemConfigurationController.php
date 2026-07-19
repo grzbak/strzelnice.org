@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SystemConfiguration;
 use App\Rules\PolishBankAccountNumber;
+use App\Services\UserSecurityService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -58,7 +59,7 @@ class SystemConfigurationController extends Controller
 
         return redirect()
             ->route('admin.system-configurations.show', $newConfiguration)
-            ->with('success', 'Zapisano nową aktywną wersję konfiguracji.');
+            ->with('success', 'Zapisano nowÄ… aktywnÄ… wersjÄ™ konfiguracji.');
     }
 
     public function restore(
@@ -77,7 +78,7 @@ class SystemConfigurationController extends Controller
 
         return redirect()
             ->route('admin.system-configurations.show', $newConfiguration)
-            ->with('success', 'Przywrócono konfigurację jako nową aktywną wersję.');
+            ->with('success', 'PrzywrĂłcono konfiguracjÄ™ jako nowÄ… aktywnÄ… wersjÄ™.');
     }
 
     public function contact(): View
@@ -90,8 +91,10 @@ class SystemConfigurationController extends Controller
         return view('contact', compact('configuration'));
     }
 
-    public function sendContact(Request $request): RedirectResponse
-    {
+    public function sendContact(
+        Request $request,
+        UserSecurityService $security
+    ): RedirectResponse {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:150'],
             'email' => ['required', 'email', 'max:255'],
@@ -106,7 +109,7 @@ class SystemConfigurationController extends Controller
         if (! $this->recaptchaIsValid($request)) {
             return back()
                 ->withErrors([
-                    'g-recaptcha-response' => 'Weryfikacja reCAPTCHA nie powiodła się.',
+                    'g-recaptcha-response' => 'Weryfikacja reCAPTCHA nie powiodĹ‚a siÄ™.',
                 ])
                 ->withInput();
         }
@@ -119,7 +122,7 @@ class SystemConfigurationController extends Controller
         if (! $recipient) {
             return back()
                 ->withInput()
-                ->with('error', 'Adres odbiorcy formularza kontaktowego nie został skonfigurowany.');
+                ->with('error', 'Adres odbiorcy formularza kontaktowego nie zostaĹ‚ skonfigurowany.');
         }
 
         $body = implode(PHP_EOL, array_filter([
@@ -137,8 +140,12 @@ class SystemConfigurationController extends Controller
                 ->replyTo($validated['email'], $validated['name'])
                 ->subject('Formularz kontaktowy: '.$validated['subject']);
         });
+        $security->audit('contact_form.sent', $request->user(), $request, payload: [
+            'email' => $validated['email'],
+            'subject' => $validated['subject'],
+        ]);
 
-        return back()->with('success', 'Wiadomość została wysłana.');
+        return back()->with('success', 'WiadomoĹ›Ä‡ zostaĹ‚a wysĹ‚ana.');
     }
 
     private function validateConfiguration(Request $request): array
@@ -146,6 +153,18 @@ class SystemConfigurationController extends Controller
         $request->merge([
             'bank_account_number' => SystemConfiguration::normalizeBankAccountNumber(
                 $request->input('bank_account_number')
+            ),
+            'ip_retention_months' => $request->input(
+                'ip_retention_months',
+                SystemConfiguration::DEFAULT_IP_RETENTION_MONTHS
+            ),
+            'audit_retention_months' => $request->input(
+                'audit_retention_months',
+                SystemConfiguration::DEFAULT_AUDIT_RETENTION_MONTHS
+            ),
+            'security_events_retention_months' => $request->input(
+                'security_events_retention_months',
+                SystemConfiguration::DEFAULT_SECURITY_EVENTS_RETENTION_MONTHS
             ),
         ]);
 
@@ -179,9 +198,12 @@ class SystemConfigurationController extends Controller
                 'min:1',
                 'max:240',
             ],
+            'ip_retention_months' => ['required', 'integer', 'min:1', 'max:240'],
+            'audit_retention_months' => ['required', 'integer', 'min:1', 'max:240'],
+            'security_events_retention_months' => ['required', 'integer', 'min:1', 'max:240'],
         ], [
-            'reservation_operational_months.lte' => 'Okres przechowywania rezerwacji bieżących nie może być dłuższy niż łączny okres historii.',
-            'postal_code.regex' => 'Kod pocztowy musi mieć format 00-000.',
+            'reservation_operational_months.lte' => 'Okres przechowywania rezerwacji bieĹĽÄ…cych nie moĹĽe byÄ‡ dĹ‚uĹĽszy niĹĽ Ĺ‚Ä…czny okres historii.',
+            'postal_code.regex' => 'Kod pocztowy musi mieÄ‡ format 00-000.',
         ]);
     }
 

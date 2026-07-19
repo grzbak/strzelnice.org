@@ -231,18 +231,31 @@
                                 maxlength="255"
                             >
                             <div class="form-text account-search-help">
-                                Wpisz co najmniej 2 znaki, aby wyszukać konto.
+                                Dla użytkownika z kontem wpisz e-mail i kliknij „Szukaj”.
                             </div>
                         </div>
 
                         <div class="col-md-6">
                             <label for="staffCustomerEmail" class="form-label">E-mail</label>
-                            <input
-                                type="email"
-                                name="customer_email"
-                                id="staffCustomerEmail"
-                                class="form-control"
-                            >
+                            <div class="input-group">
+                                <input
+                                    type="email"
+                                    name="customer_email"
+                                    id="staffCustomerEmail"
+                                    class="form-control"
+                                >
+                                <button
+                                    type="button"
+                                    class="btn btn-outline-dark"
+                                    id="staffCustomerSearchButton"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-title="Wyszukaj użytkownika po e-mailu"
+                                >
+                                    <i class="bi bi-search"></i>
+                                    <span class="visually-hidden">Szukaj użytkownika po e-mailu</span>
+                                </button>
+                            </div>
+                            <div class="form-text d-none" id="staffCustomerSearchMessage"></div>
                         </div>
 
                         <div class="col-md-6">
@@ -254,10 +267,6 @@
                                 class="form-control"
                                 maxlength="50"
                             >
-                        </div>
-
-                        <div class="col-12 d-none" id="customerSuggestions">
-                            <div class="list-group"></div>
                         </div>
 
                         <div class="col-md-4">
@@ -451,6 +460,66 @@
                     <button type="submit" class="btn btn-success">Zapisz status</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div class="modal fade" id="customerMatchModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <span class="calendar-eyebrow">Weryfikacja klienta</span>
+                        <h2 class="modal-title fs-5">Znaleziono użytkownika w bazie</h2>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">
+                        Dla podanego adresu e-mail istnieje konto użytkownika. Możesz użyć danych z konta albo zapisać rezerwację z danymi wpisanymi w formularzu.
+                    </p>
+
+                    <div class="alert alert-warning d-none" id="customerMatchDifferenceAlert">
+                        Dane wpisane w formularzu różnią się od danych użytkownika w bazie. Potwierdź, których danych chcesz użyć do rezerwacji.
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="border rounded p-3 h-100">
+                                <h3 class="fs-6 mb-3">Dane z bazy</h3>
+                                <dl class="mb-0 small">
+                                    <dt>Imię i nazwisko</dt>
+                                    <dd id="customerMatchUserName" class="mb-2"></dd>
+                                    <dt>E-mail</dt>
+                                    <dd id="customerMatchUserEmail" class="mb-2"></dd>
+                                    <dt>Telefon</dt>
+                                    <dd id="customerMatchUserPhone" class="mb-0"></dd>
+                                </dl>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="border rounded p-3 h-100">
+                                <h3 class="fs-6 mb-3">Dane z formularza</h3>
+                                <dl class="mb-0 small">
+                                    <dt>Imię i nazwisko</dt>
+                                    <dd id="customerMatchFormName" class="mb-2"></dd>
+                                    <dt>E-mail</dt>
+                                    <dd id="customerMatchFormEmail" class="mb-2"></dd>
+                                    <dt>Telefon</dt>
+                                    <dd id="customerMatchFormPhone" class="mb-0"></dd>
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-dark" id="customerMatchKeepTypedButton">
+                        Zapisz z wpisanymi danymi
+                    </button>
+                    <button type="button" class="btn btn-danger" id="customerMatchUseAccountButton">
+                        Użyj danych użytkownika
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1225,10 +1294,41 @@
             const customerEmail = document.getElementById('staffCustomerEmail');
             const customerPhone = document.getElementById('staffCustomerPhone');
             const customerUserId = document.getElementById('staffCustomerUserId');
-            const customerSuggestions = document.getElementById('customerSuggestions');
+            const customerSearchButton = document.getElementById('staffCustomerSearchButton');
+            const customerSearchMessage = document.getElementById('staffCustomerSearchMessage');
+            const customerMatchModalElement = document.getElementById('customerMatchModal');
+            const customerMatchModal = new bootstrap.Modal(customerMatchModalElement);
+            const customerMatchDifferenceAlert = document.getElementById('customerMatchDifferenceAlert');
+            const customerMatchUseAccountButton = document.getElementById('customerMatchUseAccountButton');
+            const customerMatchKeepTypedButton = document.getElementById('customerMatchKeepTypedButton');
             const accountSearchHelp = document.querySelector('.account-search-help');
-            let customerSearchTimer = null;
             let fillingCustomer = false;
+            let pendingCustomerMatch = null;
+            let skipCustomerMatchCheck = false;
+
+            function setCustomerSearchMessage(message = '', type = 'muted') {
+                customerSearchMessage.textContent = message;
+                customerSearchMessage.classList.toggle('d-none', !message);
+                customerSearchMessage.classList.remove(
+                    'text-muted',
+                    'text-success',
+                    'text-danger',
+                    'text-warning'
+                );
+                customerSearchMessage.classList.add(`text-${type}`);
+            }
+
+            function normalizeText(value) {
+                return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+            }
+
+            function normalizePhone(value) {
+                return String(value ?? '').replace(/\D/g, '');
+            }
+
+            function setCustomerMatchText(id, value) {
+                document.getElementById(id).textContent = value || 'Brak danych';
+            }
 
             function selectCustomer(user) {
                 fillingCustomer = true;
@@ -1236,49 +1336,11 @@
                 customerName.value = user.name ?? '';
                 customerEmail.value = user.email ?? '';
                 customerPhone.value = user.telephone ?? '';
-                customerSuggestions.classList.add('d-none');
                 fillingCustomer = false;
+                setCustomerSearchMessage('Użytkownik został znaleziony i przypisany do rezerwacji.', 'success');
             }
 
-            function renderCustomerSuggestions(users, searchedValue) {
-                const list = customerSuggestions.querySelector('.list-group');
-                list.innerHTML = '';
-
-                if (!users.length) {
-                    customerSuggestions.classList.add('d-none');
-                    return;
-                }
-
-                const normalized = searchedValue.trim().toLowerCase();
-                const exact = users.find(user => {
-                    return [user.name, user.email, user.telephone]
-                        .filter(Boolean)
-                        .some(value => String(value).toLowerCase() === normalized);
-                });
-
-                if (exact || users.length === 1) {
-                    selectCustomer(exact ?? users[0]);
-                    return;
-                }
-
-                users.forEach(user => {
-                    const button = document.createElement('button');
-                    button.type = 'button';
-                    button.className = 'list-group-item list-group-item-action';
-                    button.innerHTML = `
-                        <strong>${escapeHtml(user.name)}</strong>
-                        <span class="d-block small text-muted">
-                            ${escapeHtml(user.email)}
-                            ${user.telephone ? ` · ${escapeHtml(user.telephone)}` : ''}
-                        </span>
-                    `;
-                    button.addEventListener('click', () => selectCustomer(user));
-                    list.appendChild(button);
-                });
-                customerSuggestions.classList.remove('d-none');
-            }
-
-            async function searchCustomer(value) {
+            async function fetchCustomerByEmail(value) {
                 const url = new URL(
                     adminCalendar.customerSearchUrl,
                     window.location.origin
@@ -1296,12 +1358,50 @@
                 });
 
                 if (!response.ok) {
-                    customerSuggestions.classList.add('d-none');
-                    return;
+                    throw new Error('customer-search-failed');
                 }
 
                 const result = await response.json();
-                renderCustomerSuggestions(result.users ?? [], value);
+                return (result.users ?? [])[0] ?? null;
+            }
+
+            async function searchCustomerByEmail() {
+                if (customerType.value !== 'account') {
+                    return;
+                }
+
+                const value = customerEmail.value.trim();
+                customerUserId.value = '';
+
+                if (!value) {
+                    setCustomerSearchMessage('Wpisz e-mail użytkownika z kontem.', 'warning');
+                    customerEmail.focus();
+                    return;
+                }
+
+                if (!customerEmail.checkValidity()) {
+                    customerEmail.reportValidity();
+                    setCustomerSearchMessage('Wpisz poprawny adres e-mail.', 'warning');
+                    return;
+                }
+
+                customerSearchButton.disabled = true;
+                setCustomerSearchMessage('Szukam użytkownika...', 'muted');
+
+                try {
+                    const user = await fetchCustomerByEmail(value);
+
+                    if (!user) {
+                        setCustomerSearchMessage('Nie znaleziono aktywnego konta z podanym adresem e-mail.', 'warning');
+                        return;
+                    }
+
+                    selectCustomer(user);
+                } catch (error) {
+                    setCustomerSearchMessage('Nie udało się połączyć z wyszukiwarką użytkowników.', 'danger');
+                } finally {
+                    customerSearchButton.disabled = false;
+                }
             }
 
             function handleCustomerInput(event) {
@@ -1310,23 +1410,13 @@
                 }
 
                 customerUserId.value = '';
-                customerSuggestions.classList.add('d-none');
-                clearTimeout(customerSearchTimer);
-                const value = event.target.value.trim();
-
-                if (value.length < 2) {
-                    return;
-                }
-
-                customerSearchTimer = setTimeout(
-                    () => searchCustomer(value),
-                    300
-                );
+                setCustomerSearchMessage('', 'muted');
             }
 
             function updateCustomerFields(clearValues = true) {
                 const isGuest = customerType.value === 'guest';
                 customerName.required = isGuest;
+                customerSearchButton.classList.toggle('d-none', isGuest);
 
                 if (clearValues) {
                     customerUserId.value = '';
@@ -1335,13 +1425,12 @@
                     customerPhone.value = '';
                 }
 
-                customerSuggestions.classList.add('d-none');
+                setCustomerSearchMessage('', 'muted');
                 accountSearchHelp.classList.toggle('d-none', isGuest);
             }
 
-            [customerName, customerEmail, customerPhone].forEach(input => {
-                input.addEventListener('input', handleCustomerInput);
-            });
+            customerEmail.addEventListener('input', handleCustomerInput);
+            customerSearchButton.addEventListener('click', searchCustomerByEmail);
             customerType.addEventListener('change', () => updateCustomerFields());
             updateCustomerFields();
 
@@ -1364,6 +1453,135 @@
             let staffReservations = [];
             let staffAvailabilityLoading = false;
             let staffAvailabilityError = null;
+
+            function customerFieldsDiffer(user) {
+                const nameDiffers = normalizeText(customerName.value)
+                    && normalizeText(customerName.value) !== normalizeText(user.name);
+                const phoneDiffers = normalizePhone(customerPhone.value)
+                    && normalizePhone(customerPhone.value) !== normalizePhone(user.telephone);
+
+                return nameDiffers || phoneDiffers;
+            }
+
+            function shouldConfirmCustomerMatch(user) {
+                if (!user) {
+                    return false;
+                }
+
+                if (customerType.value === 'guest') {
+                    return true;
+                }
+
+                if (String(customerUserId.value) !== String(user.id)) {
+                    return true;
+                }
+
+                return customerFieldsDiffer(user);
+            }
+
+            function showCustomerMatchModal(user) {
+                pendingCustomerMatch = user;
+                const differs = customerFieldsDiffer(user);
+
+                setCustomerMatchText('customerMatchUserName', user.name);
+                setCustomerMatchText('customerMatchUserEmail', user.email);
+                setCustomerMatchText('customerMatchUserPhone', user.telephone);
+                setCustomerMatchText('customerMatchFormName', customerName.value);
+                setCustomerMatchText('customerMatchFormEmail', customerEmail.value);
+                setCustomerMatchText('customerMatchFormPhone', customerPhone.value);
+                customerMatchDifferenceAlert.classList.toggle('d-none', !differs);
+                customerMatchModal.show();
+            }
+
+            async function handleStaffReservationSubmit(event) {
+                if (skipCustomerMatchCheck) {
+                    skipCustomerMatchCheck = false;
+                    return;
+                }
+
+                const email = customerEmail.value.trim();
+                const isAccountCustomer = customerType.value === 'account';
+
+                if (isAccountCustomer && !email) {
+                    event.preventDefault();
+                    setCustomerSearchMessage('Dla użytkownika z kontem wpisz e-mail i wyszukaj konto przed zapisem.', 'warning');
+                    customerEmail.focus();
+                    return;
+                }
+
+                if (isAccountCustomer && !customerEmail.checkValidity()) {
+                    event.preventDefault();
+                    customerEmail.reportValidity();
+                    setCustomerSearchMessage('Wpisz poprawny adres e-mail użytkownika z kontem.', 'warning');
+                    return;
+                }
+
+                if (!email) {
+                    return;
+                }
+
+                event.preventDefault();
+                staffSubmit.disabled = true;
+                setCustomerSearchMessage('Sprawdzam adres e-mail w bazie użytkowników...', 'muted');
+
+                try {
+                    const user = await fetchCustomerByEmail(email);
+
+                    if (isAccountCustomer && !user) {
+                        setCustomerSearchMessage('Nie znaleziono aktywnego konta z podanym adresem e-mail. Sprawdź adres albo wybierz gościa bez konta.', 'warning');
+                        customerEmail.focus();
+                        return;
+                    }
+
+                    if (isAccountCustomer && !customerUserId.value && user) {
+                        showCustomerMatchModal(user);
+                        return;
+                    }
+
+                    if (shouldConfirmCustomerMatch(user)) {
+                        showCustomerMatchModal(user);
+                        return;
+                    }
+
+                    skipCustomerMatchCheck = true;
+                    staffForm.requestSubmit();
+                } catch (error) {
+                    setCustomerSearchMessage('Nie udało się sprawdzić adresu e-mail w bazie użytkowników.', 'danger');
+                } finally {
+                    staffSubmit.disabled = false;
+                }
+            }
+
+            function submitStaffFormWithoutCustomerAccount() {
+                customerMatchModal.hide();
+                pendingCustomerMatch = null;
+                customerUserId.value = '';
+
+                if (customerType.value === 'account') {
+                    customerType.value = 'guest';
+                    updateCustomerFields(false);
+                }
+
+                skipCustomerMatchCheck = true;
+                staffForm.requestSubmit();
+            }
+
+            function submitStaffFormWithCustomerAccount() {
+                if (!pendingCustomerMatch) {
+                    return;
+                }
+
+                customerMatchModal.hide();
+                customerType.value = 'account';
+                selectCustomer(pendingCustomerMatch);
+                pendingCustomerMatch = null;
+                skipCustomerMatchCheck = true;
+                staffForm.requestSubmit();
+            }
+
+            staffForm.addEventListener('submit', handleStaffReservationSubmit);
+            customerMatchKeepTypedButton.addEventListener('click', submitStaffFormWithoutCustomerAccount);
+            customerMatchUseAccountButton.addEventListener('click', submitStaffFormWithCustomerAccount);
 
             function addTimeOption(select, minutes) {
                 const option = document.createElement('option');

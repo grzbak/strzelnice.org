@@ -47,6 +47,7 @@ class EnsureRequiredRegulationsAccepted
             || $routeName === 'regulations.required.show'
             || $routeName === 'profile.edit'
             || $routeName === 'rezerwacje.mine'
+            || $routeName === 'account.pending-approval'
             || $routeName === 'logout'
         )) {
             return true;
@@ -60,6 +61,7 @@ class EnsureRequiredRegulationsAccepted
             'verification.notice',
             'verification.send',
             'verification.verify',
+            'account.pending-approval',
         ], true);
     }
 }

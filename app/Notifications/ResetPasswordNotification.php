@@ -17,7 +17,7 @@ class ResetPasswordNotification extends ResetPassword
 
         $logoPath = public_path('img/strzelnice_brand.png');
         $expiresInMinutes = (int) config(
-            'auth.passwords.' . config('auth.defaults.passwords') . '.expire',
+            'auth.passwords.'.config('auth.defaults.passwords').'.expire',
             60
         );
 

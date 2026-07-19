@@ -9,14 +9,16 @@ use Illuminate\View\Component;
 class DeleteConfirmModal extends Component
 {
     public string $title;
+
     public string $body;
+
     /**
      * Create a new component instance.
      */
     public function __construct(string $title, string $body)
     {
-       $this->title = $title;
-       $this->body=$body;
+        $this->title = $title;
+        $this->body = $body;
     }
 
     /**

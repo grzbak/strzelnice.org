@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -1442,13 +1443,23 @@ if (ShootingRangeInterval::hasOverlap(
                 $range->lanes()->create($lane);
             }
             // tworzymy użytkownika admina
-            $admin = User::create([
+            $adminDataForCreate = [
                 'name' => $adminData['name'],
                 'email' => $adminData['email'],
                 'telephone' => $adminData['telephone'],
                 'password' => bcrypt($adminData['password']),
                 'role' => 'admin',
-            ]);
+                'is_approved' => true,
+            ];
+
+            if (Schema::hasColumn('users', 'approval_status')) {
+                $adminDataForCreate += [
+                    'approval_status' => User::APPROVAL_APPROVED,
+                    'approved_at' => now(),
+                ];
+            }
+
+            $admin = User::create($adminDataForCreate);
 
             // przypisanie strzelnicy do admina (jeśli jest relacja wiele-do-wielu)
             $admin->shootingRanges()->syncWithoutDetaching([

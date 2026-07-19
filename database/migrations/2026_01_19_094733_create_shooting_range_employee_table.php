@@ -17,7 +17,7 @@ return new class extends Migration
                 ->constrained('users');
             $table->foreignId('shooting_ranges_id')
                 ->constrained('shooting_ranges');
-            $table->enum('role', ['admin','pracownik'])->default('pracownik');
+            $table->enum('role', ['admin', 'pracownik'])->default('pracownik');
             $table->boolean('is_approved')->default(true);
             $table->timestamps();
         });

@@ -14,8 +14,8 @@ return new class extends Migration
         Schema::create('lanes', function (Blueprint $table) {
             $table->id();
             $table->foreignId('shooting_range_id')
-                  ->constrained('shooting_ranges')
-                  ->cascadeOnDelete();
+                ->constrained('shooting_ranges')
+                ->cascadeOnDelete();
             $table->string('name');
             $table->unsignedSmallInteger('length'); // metry
             $table->unsignedSmallInteger('numberOfPositions');

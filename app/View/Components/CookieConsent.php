@@ -6,7 +6,7 @@ use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\View\Component;
 
-class shooting-range-form extends Component
+class CookieConsent extends Component
 {
     /**
      * Create a new component instance.
@@ -21,6 +21,6 @@ class shooting-range-form extends Component
      */
     public function render(): View|Closure|string
     {
-        return view('components.shooting-range-form');
+        return view('components.cookie-consent');
     }
 }

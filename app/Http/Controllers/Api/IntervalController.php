@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\ShootingRangeInterval;
+use Illuminate\Http\Request;
 
 class IntervalController extends Controller
 {
@@ -27,7 +27,7 @@ class IntervalController extends Controller
             $request->shooting_range_id
         )) {
             return response()->json([
-                'error' => 'Zakres dat nachodzi na istniejący'
+                'error' => 'Zakres dat nachodzi na istniejący',
             ], 422);
         }
 

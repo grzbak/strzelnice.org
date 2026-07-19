@@ -9,7 +9,7 @@ class UserBan extends Model
     protected $fillable = [
         'user_id',
         'active',
-        'reason'
+        'reason',
     ];
 
     protected $casts = [

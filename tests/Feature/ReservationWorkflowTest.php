@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\ShootingsController;
+use App\Mail\ReservationTodayReminderMail;
 use App\Models\Reservation;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -185,6 +187,7 @@ class ReservationWorkflowTest extends TestCase
             $table->timestamp('finalized_at')->nullable();
             $table->string('cancellation_reason')->nullable();
             $table->text('notes')->nullable();
+            $table->timestamp('today_reminder_sent_at')->nullable();
             $table->timestamps();
         });
 
@@ -1272,10 +1275,11 @@ class ReservationWorkflowTest extends TestCase
             ->assertSessionHas('pending_invitation_email', 'nowy@example.test');
     }
 
-    public function test_staff_customer_search_finds_user_by_phone(): void
+    public function test_staff_customer_search_finds_user_by_email(): void
     {
         [$admin, $rangeId] = $this->createBookableRange('admin', true);
         $customer = User::factory()->create([
+            'email' => 'klient.rezerwacji@example.test',
             'telephone' => '501 502 503',
             'role' => 'klient',
             'is_approved' => true,
@@ -1284,7 +1288,7 @@ class ReservationWorkflowTest extends TestCase
         $this->actingAs($admin)
             ->getJson(route('admin.reservations.customers.search', [
                 'shooting_range_id' => $rangeId,
-                'q' => '501 502',
+                'q' => 'KLIENT.REZERWACJI@example.test',
             ]))
             ->assertOk()
             ->assertJsonPath('users.0.id', $customer->id)
@@ -1758,6 +1762,107 @@ class ReservationWorkflowTest extends TestCase
         ]);
     }
 
+    public function test_command_sends_today_reservation_reminders_once(): void
+    {
+        Mail::fake();
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $customer = User::factory()->create([
+            'email' => 'przypomnienie@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        $tooLateCustomer = User::factory()->create([
+            'email' => 'za-pozno@example.test',
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+
+        $reservationId = $this->insertReservation(
+            $customer,
+            $rangeId,
+            $laneId,
+            '15:00',
+            '15:30',
+            1,
+            Reservation::STATUS_APPROVED,
+            false,
+            today(),
+            today()->setTime(13, 30)->subDay()
+        );
+        $this->insertReservation(
+            $tooLateCustomer,
+            $rangeId,
+            $laneId,
+            '16:00',
+            '16:30',
+            1,
+            Reservation::STATUS_APPROVED,
+            false,
+            today(),
+            today()->setTime(17, 0)->subDay()
+        );
+        $this->insertReservation(
+            $customer,
+            $rangeId,
+            $laneId,
+            '10:00',
+            '10:30',
+            1,
+            Reservation::STATUS_APPROVED,
+            false,
+            today()->addDay(),
+            today()->subDays(2)
+        );
+        $this->insertReservation(
+            $customer,
+            $rangeId,
+            $laneId,
+            '11:00',
+            '11:30',
+            1,
+            Reservation::STATUS_CANCELLED,
+            false,
+            today(),
+            today()->subDays(2)
+        );
+        $this->insertReservation(
+            $customer,
+            $rangeId,
+            $laneId,
+            '12:00',
+            '12:30',
+            1,
+            Reservation::STATUS_APPROVED,
+            false,
+            today(),
+            today()->subDays(2),
+            now()
+        );
+
+        $this->artisan('reservations:send-today-reminders')
+            ->expectsOutput('Reservation reminders sent: 1')
+            ->assertSuccessful();
+
+        Mail::assertSent(
+            ReservationTodayReminderMail::class,
+            fn (ReservationTodayReminderMail $mail): bool => $mail->hasTo($customer->email)
+                && $mail->reservation->id === $reservationId
+        );
+        Mail::assertNotSent(
+            ReservationTodayReminderMail::class,
+            fn (ReservationTodayReminderMail $mail): bool => $mail->hasTo($tooLateCustomer->email)
+        );
+        $this->assertNotNull(
+            DB::table('reservations')
+                ->where('id', $reservationId)
+                ->value('today_reminder_sent_at')
+        );
+
+        $this->artisan('reservations:send-today-reminders')
+            ->expectsOutput('Reservation reminders sent: 0')
+            ->assertSuccessful();
+    }
+
     public function test_staff_archive_only_contains_assigned_shooting_ranges(): void
     {
         [$admin, $ownRangeId] = $this->createBookableRange('admin', true);
@@ -2148,9 +2253,12 @@ class ReservationWorkflowTest extends TestCase
         int $positions,
         string $status,
         bool $dynamic = false,
-        ?Carbon $date = null
+        ?Carbon $date = null,
+        ?Carbon $createdAt = null,
+        ?Carbon $todayReminderSentAt = null
     ): int {
         $date ??= today();
+        $createdAt ??= now();
 
         return DB::table('reservations')->insertGetId([
             'user_id' => $customer->id,
@@ -2168,8 +2276,9 @@ class ReservationWorkflowTest extends TestCase
             'positions_count' => $positions,
             'is_dynamic_shooting' => $dynamic,
             'status' => $status,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'today_reminder_sent_at' => $todayReminderSentAt,
+            'created_at' => $createdAt,
+            'updated_at' => $createdAt,
         ]);
     }
 

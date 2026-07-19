@@ -30,7 +30,7 @@ return new class extends Migration
             $table->string('instagram')->nullable();
             $table->string('telephone1');
             $table->string('telephone2')->nullable();
-            $table->enum('type', ['otwarta','zamknieta'])->default('otwarta');
+            $table->enum('type', ['otwarta', 'zamknieta'])->default('otwarta');
             $table->string('description')->nullable();
             $table->timestamps();
         });

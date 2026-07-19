@@ -42,6 +42,23 @@
                 'number',
             ],
         ],
+        'Bezpieczeństwo i audyt' => [
+            [
+                'ip_retention_months',
+                'Okres przechowywania adresów IP (miesiące)',
+                'number',
+            ],
+            [
+                'audit_retention_months',
+                'Okres przechowywania audytu działań (miesiące)',
+                'number',
+            ],
+            [
+                'security_events_retention_months',
+                'Okres przechowywania zdarzeń bezpieczeństwa (miesiące)',
+                'number',
+            ],
+        ],
     ];
 @endphp
 
@@ -80,6 +97,11 @@
                         max="240"
                         required
                     @endif
+                    @if (in_array($name, ['ip_retention_months', 'audit_retention_months', 'security_events_retention_months'], true))
+                        min="1"
+                        max="240"
+                        required
+                    @endif
                 >
                 @if ($name === 'bank_account_number')
                     <div class="form-text">
@@ -99,6 +121,21 @@
                 @if ($name === 'reservation_history_months')
                     <div class="form-text">
                         Po tym czasie, liczonym od końca rezerwacji, dane zostaną trwale usunięte.
+                    </div>
+                @endif
+                @if ($name === 'ip_retention_months')
+                    <div class="form-text">
+                        Po tym czasie nieużywane adresy IP użytkowników zostaną usunięte.
+                    </div>
+                @endif
+                @if ($name === 'audit_retention_months')
+                    <div class="form-text">
+                        Po tym czasie zwykłe wpisy audytu zostaną usunięte.
+                    </div>
+                @endif
+                @if ($name === 'security_events_retention_months')
+                    <div class="form-text">
+                        Dotyczy zamkniętych i wygasłych zdarzeń bezpieczeństwa. Aktywne bany pozostają w systemie.
                     </div>
                 @endif
                 <x-input-error :messages="$errors->get($name)" class="mt-1" />

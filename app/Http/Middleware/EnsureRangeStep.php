@@ -11,11 +11,12 @@ class EnsureRangeStep
     {
         $form = session('shooting_range_form');
 
-        if (!$form || ($form['step'] ?? 1) < $requiredStep) {
+        if (! $form || ($form['step'] ?? 1) < $requiredStep) {
             return redirect()
-                ->route('range.step'.($requiredStep-1))
+                ->route('range.step'.($requiredStep - 1))
                 ->with('error', 'Najpierw uzupełnij poprzedni krok formularza.');
         }
+
         return $next($request);
     }
 }

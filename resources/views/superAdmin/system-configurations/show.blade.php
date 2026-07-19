@@ -23,6 +23,9 @@
             'Domyślny termin rezerwacji' => $systemConfiguration->default_max_advance_booking_days . ' dni',
             'Rezerwacje w tabeli bieżącej' => $systemConfiguration->reservation_operational_months . ' mies.',
             'Łączny okres historii rezerwacji' => $systemConfiguration->reservation_history_months . ' mies.',
+            'Retencja adresów IP' => $systemConfiguration->ip_retention_months . ' mies.',
+            'Retencja audytu działań' => $systemConfiguration->audit_retention_months . ' mies.',
+            'Retencja zdarzeń bezpieczeństwa' => $systemConfiguration->security_events_retention_months . ' mies.',
         ];
     @endphp
 

@@ -27,7 +27,7 @@ return new class extends Migration
             $table->timestamps();
 
             // zabezpieczenie: jeden wpis na dzień
-            //$table->unique(['shooting_range_id', 'day_of_week']);
+            // $table->unique(['shooting_range_id', 'day_of_week']);
         });
     }
 

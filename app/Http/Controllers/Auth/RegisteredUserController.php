@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\UserSecurityService;
 use App\Support\PendingInvitationSession;
 use App\Support\ReservationIntentSession;
 use Illuminate\Auth\Events\Registered;
@@ -12,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rules;
 use Illuminate\View\View;
 
@@ -36,7 +38,7 @@ class RegisteredUserController extends Controller
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, UserSecurityService $security): RedirectResponse
     {
         // dd($request);
         $request->validate([
@@ -66,19 +68,52 @@ class RegisteredUserController extends Controller
                 ->withInput();
         }
 
-        $user = User::create([
+        $requiresManualApproval = $security->requiresManualApproval($request);
+
+        $userData = [
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'telephone' => $request->telephone,
             'role' => $request->input('role', 'klient'),
-            'is_approved' => $request->input('is_approved', true),
-        ]);
+            'is_approved' => ! $requiresManualApproval && $request->boolean('is_approved', true),
+        ];
 
-        event(new Registered($user));
+        if (Schema::hasColumn('users', 'approval_status')) {
+            $userData += [
+                'approval_status' => $requiresManualApproval
+                ? User::APPROVAL_PENDING
+                : User::APPROVAL_APPROVED,
+                'approval_reason' => $requiresManualApproval
+                ? 'Rejestracja wymaga dodatkowej weryfikacji, ponieważ adres IP występuje w historii zdarzeń bezpieczeństwa.'
+                : null,
+                'approved_at' => $requiresManualApproval ? null : now(),
+            ];
+        }
+
+        $user = User::create($userData);
+
+        $security->recordIpAddress($user, $request, 'register');
+        $security->audit('user.registered', $user, $request, $user);
+
+        if ($requiresManualApproval) {
+            $security->markSuspiciousRegistration(
+                $user,
+                $request,
+                'Rejestracja z adresu IP powiązanego z aktywnym banem.'
+            );
+        }
+
+        if ($user->is_approved) {
+            event(new Registered($user));
+        }
 
         Auth::login($user);
         PendingInvitationSession::syncForUser($request, $user);
+
+        if (! $user->is_approved) {
+            return redirect()->route('account.pending-approval');
+        }
 
         if (ReservationIntentSession::redirectUrl($request) && ! $user->hasVerifiedEmail()) {
             return redirect()->route('verification.notice');

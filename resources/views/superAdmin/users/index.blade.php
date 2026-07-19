@@ -1,191 +1,325 @@
 <x-app-layout>
+    @php
+        $columns = [
+            ['key' => 'name', 'label' => 'Uzytkownik', 'sortable' => true, 'class' => 'admin-user-name-column'],
+            ['key' => 'email', 'label' => 'Email', 'sortable' => true],
+            ['key' => 'role', 'label' => 'Rola', 'sortable' => true],
+            ['key' => 'approval_status', 'label' => 'Status', 'sortable' => true],
+            ['key' => 'security', 'label' => 'Bezpieczenstwo'],
+            ['key' => 'created_at', 'label' => 'Dodano', 'sortable' => true],
+            ['key' => 'actions', 'label' => 'Akcje', 'class' => 'admin-user-actions-column'],
+        ];
+
+        $statusConfig = function ($user) {
+            if ($user->approval_status === \App\Models\User::APPROVAL_APPROVED && $user->is_approved) {
+                return ['class' => 'bg-success', 'label' => 'Aktywne', 'icon' => 'bi-check-circle-fill'];
+            }
+
+            if ($user->approval_status === \App\Models\User::APPROVAL_REJECTED) {
+                return ['class' => 'bg-danger', 'label' => 'Zablokowane', 'icon' => 'bi-lock-fill'];
+            }
+
+            return ['class' => 'bg-warning text-dark', 'label' => 'Oczekuje', 'icon' => 'bi-hourglass-split'];
+        };
+    @endphp
 
     <div class="page-bg-2"></div>
-    @if (session('error'))
-        <script>
-            console.error(@json(session('error')));
-        </script>
-    @endif
 
-    @include('components.breadcrumb')
+    <div class="container py-4">
+        <header class="p-4 text-white rounded bg-secondary">
+            <div class="gap-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+                <div>
+                    <div class="gap-2 mb-2 d-flex align-items-center">
+                        <i class="bi bi-people-fill fs-4"></i>
+                        <span class="opacity-75 text-uppercase small">
+                            Panel superadmina
+                        </span>
+                    </div>
 
-
-    <div class="container py-2">
-
-        <!-- FILTRY -->
-        <div class="mb-3 row">
-            <div class="col-md-4">
-                <input type="text" id="search" class="form-control" placeholder="Szukaj...">
+                    <h1 class="mb-0 h3">
+                        Uzytkownicy
+                    </h1>
+                </div>
             </div>
+        </header>
 
-            <div class="col-md-3">
-                <select id="sort" class="form-select">
-                    <option value="">Sortuj</option>
-                    <option value="name">Imię i nazwisko</option>
-                    <option value="email">Email</option>
-                </select>
-            </div>
-
-            <div class="col-md-3">
-                <select id="perPage" class="form-select">
-                    <option value="10">10 na stronę</option>
-                    <option value="50">50 na stronę</option>
-                    <option value="100">100 na stronę</option>
-                </select>
-            </div>
+        <div class="mt-3">
+            <x-session-alerts />
         </div>
 
+        @if ($errors->any())
+            <div class="alert alert-danger">
+                Popraw bledy w formularzu i sprobuj ponownie.
+            </div>
+        @endif
 
-        <table class="table bg-white shadow-sm table-hover">
-            <thead class="table-light">
+        <x-data-table
+            id="superadmin-users-table"
+            :action="route('admin.users')"
+            :columns="$columns"
+            :paginator="$users"
+            :search="$search"
+            search-label="Wyszukaj uzytkownika"
+            search-placeholder="Imie, nazwisko lub email"
+            :sort="$sort"
+            :direction="$direction"
+            :per-page="$perPage"
+            :per-page-options="[10, 20, 50]"
+        >
+            @forelse ($users as $user)
+                @php
+                    $status = $statusConfig($user);
+                    $isCurrentUser = auth()->id() === $user->id;
+                @endphp
+
                 <tr>
-                    <th>Użytkownik</th>
-                    <th>Email</th>
-                    <th>Status</th>
-                    <th>Akcje</th>
-                </tr>
-            </thead>
-            <tbody id="userTable"></tbody>
-        </table>
-
-        <nav>
-            <ul class="pagination" id="pagination"></ul>
-        </nav>
-    </div>
-
-    <script>
-        const users = @json($users);
-
-        let currentPage = 1;
-
-        // 🔹 RENDER
-        function render() {
-            let filtered = [...users];
-
-            const search = document.getElementById('search').value.toLowerCase();
-            const sort = document.getElementById('sort').value;
-            const perPage = parseInt(document.getElementById('perPage').value);
-
-            // 🔍 SEARCH
-            if (search) {
-                filtered = filtered.filter(u =>
-                    u.name.toLowerCase().includes(search) ||
-                    u.email.toLowerCase().includes(search)
-                );
-            }
-
-            // 🔃 SORT
-            if (sort === 'name') {
-                filtered.sort((a, b) => a.name.localeCompare(b.name));
-            }
-            if (sort === 'email') {
-                filtered.sort((a, b) => a.email.localeCompare(b.email));
-            }
-
-            // 📄 PAGINATION
-            const start = (currentPage - 1) * perPage;
-            const paginated = filtered.slice(start, start + perPage);
-
-            const table = document.getElementById('userTable');
-            table.innerHTML = '';
-            //console.log(paginated);
-            paginated.forEach(u => {
-                if (!u.avatar) u.avatar = 'img/noUser.jpg';
-                table.innerHTML += `
-                <tr class="align-middle">
-                    <td>
-                        <div class="d-flex align-items-center">
-                            <img src="${u.avatar}" class="user-avatar me-3">
-                            <div><strong>${u.name}</strong></div>
+                    <td data-label="Uzytkownik">
+                        <div class="gap-2 d-flex align-items-center">
+                            <span class="admin-user-avatar">
+                                <i class="bi bi-person-fill" aria-hidden="true"></i>
+                            </span>
+                            <div class="min-w-0">
+                                <strong class="d-block admin-user-name">{{ $user->name }}</strong>
+                                <small class="text-muted">ID: {{ $user->id }}</small>
+                            </div>
                         </div>
                     </td>
-                    <td>${u.email}</td>
-                    <td>
-                        ${u.is_approved
-                            ? '<i class="bi bi-check-circle status-icon status-active" title="Konto zatwierdzone" data-bs-toggle="tooltip"></i>'
-                            : '<i class="bi bi-x-circle status-icon status-blocked" title="Oczekuje na zatwierdzenie" data-bs-toggle="tooltip"></i>'
-                        }
 
-                        ${u.is_banned
-                            ? '<i class="bi bi-person-x status-icon status-blocked" title="Użytkownik zablokowany" data-bs-toggle="tooltip"></i>'
-                            : ''
-                        }
-
-                        ${u.is_online
-                            ? '<i class="bi bi-circle-fill status-icon status-online" title="Online" data-bs-toggle="tooltip"></i>'
-                            : ''
-                        }
+                    <td data-label="Email">
+                        <span class="admin-user-email">{{ $user->email }}</span>
                     </td>
-                    <td>
-                        <i class="bi bi-lock action-icon text-warning" onclick="blockUser(${u.id})"></i>
-                        <i class="bi bi-arrow-clockwise action-icon text-info" onclick="resetPassword(${u.id})"></i>
-                        <i class="bi bi-pencil action-icon text-primary" onclick="editUser(${u.id})"></i>
-                        <i class="bi bi-trash action-icon text-danger" onclick="deleteUser(${u.id})"></i>
-                        <i class="bi bi-slash-circle action-icon text-dark" onclick="banUser(${u.id})"></i>
-                    </td>
-                </tr>`;
-            });
 
-            renderPagination(filtered.length, perPage);
+                    <td data-label="Rola">
+                        <span class="badge bg-dark">{{ $user->role }}</span>
+                    </td>
+
+                    <td data-label="Status">
+                        <span class="gap-1 badge {{ $status['class'] }} d-inline-flex align-items-center">
+                            <i class="bi {{ $status['icon'] }}" aria-hidden="true"></i>
+                            {{ $status['label'] }}
+                        </span>
+
+                        @if (! $user->hasVerifiedEmail())
+                            <span
+                                class="mt-1 badge bg-secondary d-inline-flex"
+                                data-bs-toggle="tooltip"
+                                data-bs-title="Adres e-mail nie zostal jeszcze zweryfikowany"
+                            >
+                                email niezweryfikowany
+                            </span>
+                        @endif
+                    </td>
+
+                    <td data-label="Bezpieczenstwo">
+                        <div class="gap-2 d-flex flex-wrap align-items-center">
+                            <span
+                                class="badge bg-light text-dark border"
+                                data-bs-toggle="tooltip"
+                                data-bs-title="Zapisane adresy IP uzytkownika"
+                            >
+                                <i class="bi bi-hdd-network me-1" aria-hidden="true"></i>
+                                IP: {{ $user->ip_addresses_count }}
+                            </span>
+
+                            <span
+                                class="badge bg-light text-dark border"
+                                data-bs-toggle="tooltip"
+                                data-bs-title="Zdarzenia bezpieczenstwa"
+                            >
+                                <i class="bi bi-shield-exclamation me-1" aria-hidden="true"></i>
+                                {{ $user->security_events_count }}
+                            </span>
+
+                            @if ($user->has_active_ip_ban)
+                                <span
+                                    class="badge bg-danger"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-title="Uzytkownik ma aktywne zdarzenie blokady IP"
+                                >
+                                    aktywny ban IP
+                                </span>
+                            @endif
+                        </div>
+                    </td>
+
+                    <td data-label="Dodano">
+                        {{ optional($user->created_at)->format('Y-m-d H:i') }}
+                    </td>
+
+                    <td data-label="Akcje">
+                        <div class="admin-user-actions">
+                            <form
+                                method="POST"
+                                action="{{ route('admin.users.password-reset', $user) }}"
+                                class="m-0"
+                                onsubmit="return confirm('Czy na pewno wyslac link resetowania hasla do uzytkownika {{ addslashes($user->email) }}?')"
+                            >
+                                @csrf
+                                <button
+                                    type="submit"
+                                    class="btn btn-sm btn-outline-primary data-table-icon-button"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-title="Wyslij link resetowania hasla"
+                                    aria-label="Wyslij link resetowania hasla"
+                                >
+                                    <i class="bi bi-key-fill" aria-hidden="true"></i>
+                                </button>
+                            </form>
+
+                            <form
+                                method="POST"
+                                action="{{ route('admin.users.activate', $user) }}"
+                                class="m-0"
+                                onsubmit="return confirm('Czy na pewno aktywowac konto uzytkownika {{ addslashes($user->email) }}?')"
+                            >
+                                @csrf
+                                @method('PATCH')
+                                <button
+                                    type="submit"
+                                    class="btn btn-sm btn-outline-success data-table-icon-button"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-title="Aktywuj konto"
+                                    aria-label="Aktywuj konto"
+                                >
+                                    <i class="bi bi-person-check-fill" aria-hidden="true"></i>
+                                </button>
+                            </form>
+
+                            <form
+                                method="POST"
+                                action="{{ route('admin.users.block', $user) }}"
+                                class="m-0 admin-user-block-form"
+                                data-email="{{ $user->email }}"
+                            >
+                                @csrf
+                                @method('PATCH')
+                                <input type="hidden" name="reason" value="">
+                                <button
+                                    type="submit"
+                                    class="btn btn-sm btn-outline-warning data-table-icon-button"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-title="Zablokuj konto"
+                                    aria-label="Zablokuj konto"
+                                    @disabled($isCurrentUser)
+                                >
+                                    <i class="bi bi-lock-fill" aria-hidden="true"></i>
+                                </button>
+                            </form>
+
+                            <a
+                                href="{{ route('admin.users.security', $user) }}"
+                                class="btn btn-sm btn-outline-dark data-table-icon-button"
+                                data-bs-toggle="tooltip"
+                                data-bs-title="Adresy IP i zdarzenia"
+                                aria-label="Adresy IP i zdarzenia"
+                            >
+                                <i class="bi bi-shield-lock-fill" aria-hidden="true"></i>
+                            </a>
+
+                            <form
+                                method="POST"
+                                action="{{ route('admin.users.destroy', $user) }}"
+                                class="m-0"
+                                onsubmit="return confirm('Czy na pewno usunac uzytkownika {{ addslashes($user->email) }}? Tej operacji nie da sie latwo cofnac.')"
+                            >
+                                @csrf
+                                @method('DELETE')
+                                <button
+                                    type="submit"
+                                    class="btn btn-sm btn-outline-danger data-table-icon-button"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-title="Usun konto"
+                                    aria-label="Usun konto"
+                                    @disabled($isCurrentUser)
+                                >
+                                    <i class="bi bi-trash3-fill" aria-hidden="true"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="{{ count($columns) }}" class="py-4 text-center text-muted">
+                        Brak uzytkownikow do wyswietlenia.
+                    </td>
+                </tr>
+            @endforelse
+        </x-data-table>
+    </div>
+
+    <style>
+        .admin-user-name-column {
+            width: 18%;
         }
 
-        // 🔹 PAGINACJA
-        function renderPagination(total, perPage) {
-            const pages = Math.ceil(total / perPage);
-            const pag = document.getElementById('pagination');
-            pag.innerHTML = '';
+        .admin-user-actions-column {
+            width: 190px;
+        }
 
-            for (let i = 1; i <= pages; i++) {
-                pag.innerHTML += `
-                <li class="page-item ${i===currentPage?'active':''}">
-                    <a class="page-link" href="#" onclick="goPage(${i})">${i}</a>
-                </li>`;
+        .admin-user-avatar {
+            display: inline-grid;
+            width: 36px;
+            height: 36px;
+            flex: 0 0 36px;
+            place-items: center;
+            border-radius: 50%;
+            background: #212529;
+            color: #fff;
+        }
+
+        .admin-user-name,
+        .admin-user-email {
+            overflow-wrap: anywhere;
+        }
+
+        .admin-user-actions {
+            display: grid;
+            grid-template-columns: repeat(5, 32px);
+            gap: .35rem;
+            align-items: center;
+        }
+
+        .admin-user-actions form {
+            margin: 0;
+        }
+
+        @media (max-width: 767.98px) {
+            .admin-user-actions {
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+                align-items: stretch;
+            }
+
+            .admin-user-actions .data-table-icon-button {
+                width: 100%;
             }
         }
+    </style>
 
-        function goPage(p) {
-            currentPage = p;
-            render();
-        }
+    <script>
+        document.addEventListener('submit', (event) => {
+            const form = event.target;
 
-        // 🔹 AKCJE
-        function blockUser(id) {
-            alert("Blokuj " + id);
-        }
+            if (!form.matches('.admin-user-block-form')) {
+                return;
+            }
 
-        function resetPassword(id) {
-            alert("Reset " + id);
-        }
+            const email = form.dataset.email || 'uzytkownika';
+            const reason = window.prompt(
+                `Podaj powod blokady konta ${email}. Pozostaw puste, aby uzyc komunikatu domyslnego.`
+            );
 
-        function editUser(id) {
-            alert("Edytuj " + id);
-        }
+            if (reason === null) {
+                event.preventDefault();
+                return;
+            }
 
-        function deleteUser(id) {
-            alert("Usuń " + id);
-        }
+            if (!window.confirm(`Czy na pewno zablokowac konto ${email}? Uzytkownik otrzyma wiadomosc e-mail.`)) {
+                event.preventDefault();
+                return;
+            }
 
-        function banUser(id) {
-            alert("Ban " + id);
-        }
-
-        // 🔹 EVENTY
-        document.getElementById('search').addEventListener('input', () => {
-            currentPage = 1;
-            render();
+            form.elements.namedItem('reason').value = reason;
         });
-        document.getElementById('sort').addEventListener('change', render);
-        document.getElementById('perPage').addEventListener('change', () => {
-            currentPage = 1;
-            render();
-        });
-
-        // INIT
-        render();
-
-        // Wywołaj to po wstawieniu danych do tabeli
-        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-        const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
     </script>
-
 </x-app-layout>

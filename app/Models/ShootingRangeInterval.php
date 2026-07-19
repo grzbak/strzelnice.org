@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Model;
 
 class ShootingRangeInterval extends Model
 {
@@ -85,14 +85,14 @@ class ShootingRangeInterval extends Model
     public static function hasOverlap($start, $end, $shootingRangeId, $ignoreId = null): bool
     {
         return self::where('shooting_range_id', $shootingRangeId)
-            ->when($ignoreId, fn($q) => $q->where('id', '!=', $ignoreId))
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
             ->where(function ($q) use ($start, $end) {
                 $q->whereBetween('start_date', [$start, $end])
-                ->orWhereBetween('end_date', [$start, $end])
-                ->orWhere(function ($q2) use ($start, $end) {
-                    $q2->where('start_date', '<=', $start)
-                        ->where('end_date', '>=', $end);
-                });
+                    ->orWhereBetween('end_date', [$start, $end])
+                    ->orWhere(function ($q2) use ($start, $end) {
+                        $q2->where('start_date', '<=', $start)
+                            ->where('end_date', '>=', $end);
+                    });
             })
             ->exists();
     }
@@ -106,8 +106,8 @@ class ShootingRangeInterval extends Model
             ->groupBy('shooting_range_id')
             ->map(function ($items) {
                 return [
-                    'days' => $items->sum(fn($i) => $i->getDaysCount()),
-                    'value' => $items->sum('value')
+                    'days' => $items->sum(fn ($i) => $i->getDaysCount()),
+                    'value' => $items->sum('value'),
                 ];
             });
     }
@@ -120,8 +120,8 @@ class ShootingRangeInterval extends Model
             ->groupBy('shooting_range_id')
             ->map(function ($items) {
                 return [
-                    'days' => $items->sum(fn($i) => $i->getDaysCount()),
-                    'value' => $items->sum('value')
+                    'days' => $items->sum(fn ($i) => $i->getDaysCount()),
+                    'value' => $items->sum('value'),
                 ];
             });
     }
@@ -140,7 +140,7 @@ class ShootingRangeInterval extends Model
                 $model->operator_update_id = auth()->id();
             }
 
-            //$model->value = $model->calculateValue();
+            // $model->value = $model->calculateValue();
         });
 
         static::updating(function ($model) {
@@ -148,11 +148,11 @@ class ShootingRangeInterval extends Model
                 $model->operator_update_id = auth()->id();
             }
 
-            //$model->value = $model->calculateValue();
+            // $model->value = $model->calculateValue();
         });
     }
 
-    //--------
+    // --------
     public function isExpired(): bool
     {
         return Carbon::parse($this->end_date)->lt(Carbon::today());

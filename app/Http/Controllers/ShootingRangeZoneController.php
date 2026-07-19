@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mail\ShootingRangeZoneAdminMail;
 use App\Mail\ShootingRangeZoneConfirmationMail;
 use App\Models\SystemConfiguration;
+use App\Services\UserSecurityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -19,8 +20,10 @@ class ShootingRangeZoneController extends Controller
         return view('shooting-range-zone', compact('configuration'));
     }
 
-    public function send(Request $request): RedirectResponse
-    {
+    public function send(
+        Request $request,
+        UserSecurityService $security
+    ): RedirectResponse {
         $validated = $request->validate([
             'source' => ['required', 'string', 'in:hero,offer,cta'],
             'name' => ['required', 'string', 'max:150'],
@@ -52,6 +55,12 @@ class ShootingRangeZoneController extends Controller
         Mail::to($validated['email'])->send(
             new ShootingRangeZoneConfirmationMail($validated)
         );
+
+        $security->audit('shooting_range_zone_form.sent', $request->user(), $request, payload: [
+            'email' => $validated['email'],
+            'source' => $validated['source'],
+            'shooting_range_name' => $validated['shooting_range_name'],
+        ]);
 
         return back()
             ->with('success', 'Zgłoszenie zostało wysłane. Kopia wiadomości trafiła na podany adres e-mail.')

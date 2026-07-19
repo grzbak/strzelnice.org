@@ -32,4 +32,3 @@ class Message extends Model
         return $query->whereNull('read_at');
     }
 }
-

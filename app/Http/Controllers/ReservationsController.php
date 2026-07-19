@@ -9,6 +9,7 @@ use App\Models\ReservationArchive;
 use App\Models\ShootingRange;
 use App\Models\User;
 use App\Services\ShootingRangeAvailabilityService;
+use App\Services\UserSecurityService;
 use App\Support\ReservationIntentSession;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -25,7 +26,8 @@ use Illuminate\View\View;
 class ReservationsController extends Controller
 {
     public function __construct(
-        private readonly ShootingRangeAvailabilityService $availability
+        private readonly ShootingRangeAvailabilityService $availability,
+        private readonly UserSecurityService $security
     ) {}
 
     public function callendar(int $id): View|RedirectResponse
@@ -222,7 +224,7 @@ class ReservationsController extends Controller
                 'integer',
                 'exists:shooting_ranges,id',
             ],
-            'q' => ['required', 'string', 'min:2', 'max:255'],
+            'q' => ['required', 'email', 'max:255'],
         ]);
         $shootingRange = ShootingRange::findOrFail(
             $validated['shooting_range_id']
@@ -233,19 +235,13 @@ class ReservationsController extends Controller
             403
         );
 
-        $term = mb_strtolower(trim($validated['q']));
+        $email = mb_strtolower(trim($validated['q']));
         $users = User::query()
             ->where('is_approved', true)
             ->whereNotNull('email_verified_at')
-            ->where(function ($query) use ($term) {
-                $like = '%'.$term.'%';
-                $query
-                    ->whereRaw('LOWER(name) LIKE ?', [$like])
-                    ->orWhereRaw('LOWER(email) LIKE ?', [$like])
-                    ->orWhereRaw('LOWER(COALESCE(telephone, \'\')) LIKE ?', [$like]);
-            })
+            ->whereRaw('LOWER(email) = ?', [$email])
             ->orderBy('name')
-            ->limit(8)
+            ->limit(1)
             ->get(['id', 'name', 'email', 'telephone']);
 
         return response()->json([
@@ -482,6 +478,10 @@ class ReservationsController extends Controller
             $reservation->fresh(),
             ReservationNotificationMail::EVENT_UPDATED
         );
+        $this->security->recordIpAddress($actor, $request, 'reservation.updated_by_customer');
+        $this->security->audit('reservation.updated_by_customer', $actor, $request, $reservation->fresh(), [
+            'shooting_range_id' => $reservation->shooting_range_id,
+        ]);
 
         return redirect()
             ->route('rezerwacje.mine')
@@ -863,6 +863,12 @@ class ReservationsController extends Controller
             $reservation,
             ReservationNotificationMail::EVENT_CREATED
         );
+        $this->security->recordIpAddress($actor, $request, 'reservation.created');
+        $this->security->audit('reservation.created', $actor, $request, $reservation, [
+            'source' => $reservation->source,
+            'status' => $reservation->status,
+            'shooting_range_id' => $reservation->shooting_range_id,
+        ]);
 
         $message = $reservation->isApproved()
             ? 'Dziękujemy za złożenie rezerwacji. Termin został automatycznie zatwierdzony.'
@@ -955,6 +961,12 @@ class ReservationsController extends Controller
             $reservation,
             ReservationNotificationMail::EVENT_CREATED
         );
+        $this->security->recordIpAddress($actor, $request, 'reservation.created_by_staff');
+        $this->security->audit('reservation.created_by_staff', $actor, $request, $reservation, [
+            'source' => $reservation->source,
+            'status' => $reservation->status,
+            'shooting_range_id' => $reservation->shooting_range_id,
+        ]);
 
         return back()->with('success', 'Rezerwacja została zapisana i zatwierdzona.');
     }
@@ -1064,6 +1076,10 @@ class ReservationsController extends Controller
             $reservation->fresh(),
             ReservationNotificationMail::EVENT_UPDATED
         );
+        $this->security->recordIpAddress($actor, $request, 'reservation.updated_by_staff');
+        $this->security->audit('reservation.updated_by_staff', $actor, $request, $reservation->fresh(), [
+            'shooting_range_id' => $reservation->shooting_range_id,
+        ]);
 
         return back()->with('success', 'Rezerwacja została zaktualizowana.');
     }
@@ -1234,6 +1250,11 @@ class ReservationsController extends Controller
                 ReservationNotificationMail::EVENT_STATUS_CHANGED,
                 notifyStaff: false
             );
+            $this->security->recordIpAddress($request->user(), $request, 'reservation.status_changed');
+            $this->security->audit('reservation.status_changed', $request->user(), $request, $reservation->fresh(), [
+                'status' => $validated['status'],
+                'shooting_range_id' => $reservation->shooting_range_id,
+            ]);
         }
 
         return back()->with(

@@ -17,7 +17,7 @@ class ShootingRangeOpeningHour extends Model
     ];
 
     protected $casts = [
-        'opens_at'  => 'datetime:H:i',
+        'opens_at' => 'datetime:H:i',
         'closes_at' => 'datetime:H:i',
     ];
 

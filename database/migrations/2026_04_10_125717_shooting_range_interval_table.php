@@ -36,7 +36,7 @@ return new class extends Migration
                 ->cascadeOnDelete();
 
             // wartość
-            $table->decimal('value',10,2)->default(0);
+            $table->decimal('value', 10, 2)->default(0);
 
             // data zapłaty
             $table->dateTime('datePaid')->nullable();

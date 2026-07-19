@@ -16,3 +16,9 @@ Schedule::command('shooting-range:cleanup-expired')
 Schedule::command('reservations:archive-and-purge')
     ->dailyAt('00:15')
     ->withoutOverlapping();
+Schedule::command('reservations:send-today-reminders')
+    ->dailyAt('06:00')
+    ->withoutOverlapping();
+Schedule::command('security:prune-audit-history')
+    ->dailyAt('03:15')
+    ->withoutOverlapping();

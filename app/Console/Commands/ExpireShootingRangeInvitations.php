@@ -14,9 +14,9 @@ class ExpireShootingRangeInvitations extends Command
     public function handle(): int
     {
         $count = ShootingRangeInvitation::whereIn('status', [
-                ShootingRangeInvitation::STATUS_NONE,
-                ShootingRangeInvitation::STATUS_PENDING,
-            ])
+            ShootingRangeInvitation::STATUS_NONE,
+            ShootingRangeInvitation::STATUS_PENDING,
+        ])
             ->whereNotNull('expires_at')
             ->where('expires_at', '<', now())
             ->update([

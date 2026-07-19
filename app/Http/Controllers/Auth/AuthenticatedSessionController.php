@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Services\UserSecurityService;
 use App\Support\PendingInvitationSession;
 use App\Support\ReservationIntentSession;
 use Illuminate\Http\RedirectResponse;
@@ -24,14 +25,22 @@ class AuthenticatedSessionController extends Controller
     /**
      * Handle an incoming authentication request.
      */
-    public function store(LoginRequest $request): RedirectResponse
-    {
+    public function store(
+        LoginRequest $request,
+        UserSecurityService $security
+    ): RedirectResponse {
         $request->authenticate();
 
         $request->session()->regenerate();
 
         $user = $request->user();
+        $security->recordIpAddress($user, $request, 'login');
+        $security->audit('user.login', $user, $request, $user);
         PendingInvitationSession::syncForUser($request, $user);
+
+        if (! $user->is_approved) {
+            return redirect()->route('account.pending-approval');
+        }
 
         $reservationIntentUrl = ReservationIntentSession::redirectUrl($request);
 

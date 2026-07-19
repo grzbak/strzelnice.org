@@ -42,6 +42,7 @@
                     class="dropdown-item user-notification-item"
                     data-bs-toggle="modal"
                     data-bs-target="#{{ $modalId }}"
+                    data-user-notification-modal-trigger
                 >
                     <span class="user-notification-icon">
                         <i class="bi bi-envelope-check" aria-hidden="true"></i>
@@ -131,4 +132,33 @@
             });
         </script>
     @endif
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.__userNotificationsMenuInitialized || ! window.bootstrap) {
+                return;
+            }
+
+            window.__userNotificationsMenuInitialized = true;
+
+            document.querySelectorAll('[data-user-notification-modal-trigger]').forEach(trigger => {
+                trigger.addEventListener('click', () => {
+                    const dropdown = trigger.closest('.dropdown');
+                    const toggle = dropdown?.querySelector('[data-bs-toggle="dropdown"]');
+
+                    if (toggle) {
+                        window.bootstrap.Dropdown.getOrCreateInstance(toggle).hide();
+                    }
+                });
+            });
+
+            document.querySelectorAll('.invitation-notification-modal').forEach(content => {
+                const modal = content.closest('.modal');
+
+                if (modal && modal.parentElement !== document.body) {
+                    document.body.appendChild(modal);
+                }
+            });
+        });
+    </script>
 @endif

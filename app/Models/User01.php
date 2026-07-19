@@ -3,11 +3,10 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
-use App\Models\UserBan;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -26,12 +25,12 @@ class User extends Authenticatable implements MustVerifyEmail
         'telephone',
         'avatar',
         'role',
-        'is_approved'
+        'is_approved',
     ];
 
     protected $appends = [
-        'avatar_url' //,
-        //'is_blocked' // opcjonalnie: status bana
+        'avatar_url', // ,
+        // 'is_blocked' // opcjonalnie: status bana
     ];
 
     /**
@@ -75,10 +74,10 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getAvatarUrlAttribute(): string
     {
         if ($this->avatar) {
-            return asset('storage/avatars/' . $this->avatar);
+            return asset('storage/avatars/'.$this->avatar);
         }
 
-        return 'https://i.pravatar.cc/150?u=' . $this->email;
+        return 'https://i.pravatar.cc/150?u='.$this->email;
     }
 
     /* =====================================================
@@ -88,14 +87,17 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->role === 'superadmin';
     }
+
     public function isAdmin()
     {
         return $this->role === 'admin';
     }
+
     public function isEmployee()
     {
         return $this->role === 'pracownik';
     }
+
     public function isClient()
     {
         return $this->role === 'klient';

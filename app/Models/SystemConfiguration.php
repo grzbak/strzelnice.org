@@ -14,6 +14,12 @@ class SystemConfiguration extends Model
 
     public const DEFAULT_RESERVATION_HISTORY_MONTHS = 60;
 
+    public const DEFAULT_IP_RETENTION_MONTHS = 24;
+
+    public const DEFAULT_AUDIT_RETENTION_MONTHS = 24;
+
+    public const DEFAULT_SECURITY_EVENTS_RETENTION_MONTHS = 60;
+
     public const DATA_FIELDS = [
         'company_name_1',
         'company_name_2',
@@ -33,6 +39,9 @@ class SystemConfiguration extends Model
         'default_max_advance_booking_days',
         'reservation_operational_months',
         'reservation_history_months',
+        'ip_retention_months',
+        'audit_retention_months',
+        'security_events_retention_months',
     ];
 
     protected $fillable = [
@@ -45,6 +54,9 @@ class SystemConfiguration extends Model
         'default_max_advance_booking_days' => 'integer',
         'reservation_operational_months' => 'integer',
         'reservation_history_months' => 'integer',
+        'ip_retention_months' => 'integer',
+        'audit_retention_months' => 'integer',
+        'security_events_retention_months' => 'integer',
     ];
 
     public function scopeActive(Builder $query): Builder

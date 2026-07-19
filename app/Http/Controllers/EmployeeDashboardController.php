@@ -11,21 +11,21 @@ class EmployeeDashboardController extends Controller
      */
     public function index()
     {
-        //return view('dashboard');
+        // return view('dashboard');
         $tours = [
-        [
-            'image' => 'https://source.unsplash.com/400x300/?maldives',
-            'title' => 'Rajskie Malediwy',
-            'description' => '7 dni wypoczynku na tropikalnej wyspie',
-            'price' => 4999,
-        ],
-        [
-            'image' => 'https://source.unsplash.com/400x300/?paris',
-            'title' => 'Weekend w Paryżu',
-            'description' => 'Zabytki, kuchnia i romantyczne spacery',
-            'price' => 2199,
-        ],
-        // … więcej ofert
+            [
+                'image' => 'https://source.unsplash.com/400x300/?maldives',
+                'title' => 'Rajskie Malediwy',
+                'description' => '7 dni wypoczynku na tropikalnej wyspie',
+                'price' => 4999,
+            ],
+            [
+                'image' => 'https://source.unsplash.com/400x300/?paris',
+                'title' => 'Weekend w Paryżu',
+                'description' => 'Zabytki, kuchnia i romantyczne spacery',
+                'price' => 2199,
+            ],
+            // … więcej ofert
         ];
 
         return view('home', compact('tours'), [

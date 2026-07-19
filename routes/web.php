@@ -101,6 +101,10 @@ Route::get('/{endpoint}/galeria', [
 ])->name('shooting.gallery.public');
 
 Route::middleware('auth')->group(function () {
+    Route::get('/konto/oczekuje-na-zatwierdzenie', function () {
+        return view('auth.pending-approval');
+    })->name('account.pending-approval');
+
     Route::get('/strzelnice/{shootingRange}/galeria', [
         ShootingRangeGalleryController::class,
         'index',
@@ -199,6 +203,20 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
             return redirect()->route('index');
         })->name('admin.dashboard');
         Route::get('/uzytkownicy', [AdminDashboardController::class, 'userList'])->name('admin.users');
+        Route::post('/uzytkownicy/{user}/reset-hasla', [AdminDashboardController::class, 'resetUserPassword'])
+            ->name('admin.users.password-reset');
+        Route::patch('/uzytkownicy/{user}/aktywuj', [AdminDashboardController::class, 'activateUser'])
+            ->name('admin.users.activate');
+        Route::patch('/uzytkownicy/{user}/zablokuj', [AdminDashboardController::class, 'blockUser'])
+            ->name('admin.users.block');
+        Route::delete('/uzytkownicy/{user}', [AdminDashboardController::class, 'deleteUser'])
+            ->name('admin.users.destroy');
+        Route::get('/uzytkownicy/{user}/bezpieczenstwo', [AdminDashboardController::class, 'userSecurity'])
+            ->name('admin.users.security');
+        Route::post('/uzytkownicy/{user}/bezpieczenstwo/zdarzenia', [AdminDashboardController::class, 'storeUserSecurityEvent'])
+            ->name('admin.users.security-events.store');
+        Route::patch('/uzytkownicy/{user}/bezpieczenstwo/zdarzenia/{event}/zamknij', [AdminDashboardController::class, 'resolveUserSecurityEvent'])
+            ->name('admin.users.security-events.resolve');
         Route::patch('/strony/{page}/status', [PageController::class, 'toggleStatus'])
             ->name('admin.pages.toggle-status');
         Route::resource('/strony', PageController::class)

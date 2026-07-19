@@ -48,6 +48,7 @@ class Reservation extends Model
         'finalized_at',
         'cancellation_reason',
         'notes',
+        'today_reminder_sent_at',
     ];
 
     protected $casts = [
@@ -58,6 +59,7 @@ class Reservation extends Model
         'approved_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'finalized_at' => 'datetime',
+        'today_reminder_sent_at' => 'datetime',
     ];
 
     public function user()

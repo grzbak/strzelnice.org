@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignId('line_id');
             $table->dateTime('start');
             $table->dateTime('end');
-            $table->enum('status',['pending','approved','cancelled']);
+            $table->enum('status', ['pending', 'approved', 'cancelled']);
             $table->timestamps();
         });
     }

@@ -1,4 +1,4 @@
-<x-app-layout>ermin
+<x-app-layout>
     <main class="ssz-main">
         <section class="ssz-hero">
             <div class="ssz-hero-grid"></div>
