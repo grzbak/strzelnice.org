@@ -209,8 +209,8 @@
 
                 @guest
                     <li class="nav-item"><a class="nav-link" href="{{ route('maps') }}">Mapa</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ route('shooting-range-zone') }}">Strefa strzelnic</a></li>
                 @endguest
+                <li class="nav-item"><a class="nav-link" href="{{ route('shooting-range-zone') }}">Strefa strzelnic</a></li>
                 <li class="nav-item"><a class="nav-link" href="{{ route('contact') }}">Kontakt</a></li>
             </ul>
 

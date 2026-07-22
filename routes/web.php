@@ -14,6 +14,7 @@ use App\Http\Controllers\ShootingRangeGalleryController;
 use App\Http\Controllers\ShootingRangeInvitationController;
 use App\Http\Controllers\ShootingRangePackageController;
 use App\Http\Controllers\ShootingRangeStaffController;
+use App\Http\Controllers\OffersController;
 use App\Http\Controllers\ShootingRangeZoneController;
 use App\Http\Controllers\ShootingsController;
 use App\Http\Controllers\SystemConfigurationController;
@@ -25,11 +26,13 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [ShootingsController::class, 'index'])->name('index');
 Route::get('/lista-strzelnic', [ShootingsController::class, 'listAll'])->name('shootings.list');
 Route::get('/mapa-strzelnic', [ShootingsController::class, 'maps'])->name('maps'); // strzelnice na mapie
+Route::get('/oferta', [OffersController::class, 'show'])
+    ->name('offers');
+Route::post('/oferta', [OffersController::class, 'send'])
+    ->middleware('throttle:5,1')
+    ->name('offers.send');
 Route::get('/strefa-strzelnic', [ShootingRangeZoneController::class, 'show'])
     ->name('shooting-range-zone');
-Route::post('/strefa-strzelnic', [ShootingRangeZoneController::class, 'send'])
-    ->middleware('throttle:5,1')
-    ->name('shooting-range-zone.send');
 Route::get('/kontakt', [SystemConfigurationController::class, 'contact'])
     ->name('contact');
 Route::post('/kontakt', [SystemConfigurationController::class, 'sendContact'])

@@ -94,7 +94,7 @@
         <a href="/kontakt">Kontakt</a>
       </nav>
 
-      <a href="/strefa-strzelnic" class="stz-footer-cta">
+      <a href="/oferta" class="stz-footer-cta">
         <div class="stz-footer-cta-eyebrow">Zarządzasz strzelnicą?</div>
         <h2 class="stz-footer-cta-title">Sprawdź naszą ofertę! →</h2>
       </a>

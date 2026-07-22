@@ -1,5 +1,5 @@
 <footer class="pb-3 mt-auto bg-black text-light">
-    @include('components.shooting-range-zone-footer')
+    @include('components.offers-footer')
     <div class="container">
         <div class="row align-items-center">
 

@@ -67,7 +67,7 @@
 
 
 <section class="htd-cta-section"
-        onclick="window.location='{{ url('/strefa-strzelnic') }}'"
+        onclick="window.location='{{ url('/oferta') }}'"
          style="cursor:pointer;">
   <div class="container">
     <div class="mx-auto htd-cta-inner col-lg-4 col-12">
@@ -75,7 +75,7 @@
         <div class="htd-cta-eyebrow">Zarządzasz strzelnicą?</div>
         <h2 class="htd-cta-title">Sprawdź naszą ofertę!</h2>
       </div>
-      <a href="/strefa-strzelnic" class="htd-cta-arrow">→</a>
+      <a href="/oferta" class="htd-cta-arrow">→</a>
     </div>
   </div>
   <span class="htd-cta-line"></span>

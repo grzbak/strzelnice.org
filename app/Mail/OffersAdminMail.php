@@ -5,7 +5,7 @@ namespace App\Mail;
 use Illuminate\Mail\Mailable;
 use Symfony\Component\Mime\Email;
 
-class ShootingRangeZoneConfirmationMail extends Mailable
+class OffersAdminMail extends Mailable
 {
     public function __construct(public array $formData) {}
 
@@ -13,8 +13,9 @@ class ShootingRangeZoneConfirmationMail extends Mailable
     {
         $logoPath = public_path('img/strzelnice_brand.png');
 
-        return $this->subject('Potwierdzenie zgłoszenia | strzelnice.org')
-            ->view('emails.shooting-range-zone-confirmation')
+        return $this->replyTo($this->formData['email'], $this->formData['name'])
+            ->subject('Strefa strzelnic: nowe zgłoszenie')
+            ->view('emails.offers-admin')
             ->withSymfonyMessage(function (Email $message) use ($logoPath) {
                 if (is_file($logoPath)) {
                     $message->embedFromPath(
