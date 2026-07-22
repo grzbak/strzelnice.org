@@ -61,24 +61,12 @@
     </div>
 </div>
 
-{{-- GOOGLE CONSENT MODE V2 --}}
 <script>
 window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
+window.gtag = window.gtag || function () {
+    dataLayer.push(arguments);
+};
 
-/**
- * DEFAULT (brak zgody)
- */
-gtag('consent', 'default', {
-    ad_storage: 'denied',
-    analytics_storage: 'denied',
-    ad_user_data: 'denied',
-    ad_personalization: 'denied',
-    wait_for_update: 500
-});
-</script>
-
-<script>
 function setCookie(name, value, days = 365) {
     const maxAge = days * 24 * 60 * 60;
     document.cookie = name + "=" + encodeURIComponent(value) + "; path=/; max-age=" + maxAge;

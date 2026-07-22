@@ -106,7 +106,6 @@
                                         method="POST"
                                         action="{{ route('admin.users.security-events.store', $user) }}"
                                         class="m-0"
-                                        onsubmit="return confirm('Czy oznaczyc IP {{ $ipAddress->ip_address }} jako zbanowane dla tego uzytkownika?')"
                                     >
                                         @csrf
                                         <input type="hidden" name="ip_address" value="{{ $ipAddress->ip_address }}">
@@ -114,10 +113,14 @@
                                         <input type="hidden" name="severity" value="{{ \App\Models\UserSecurityEvent::SEVERITY_CRITICAL }}">
                                         <input type="hidden" name="reason" value="IP oznaczone jako zbanowane przez superadmina.">
                                         <button
-                                            type="submit"
+                                            type="button"
                                             class="btn btn-sm btn-outline-danger data-table-icon-button"
                                             data-bs-toggle="tooltip"
                                             data-bs-title="Oznacz IP jako zbanowane"
+                                            data-security-confirm
+                                            data-security-confirm-class="btn-danger"
+                                            data-security-confirm-label="Oznacz"
+                                            data-security-confirm-message="Czy oznaczyć IP {{ $ipAddress->ip_address }} jako zbanowane dla tego użytkownika?"
                                             aria-label="Oznacz IP jako zbanowane"
                                         >
                                             <i class="bi bi-ban" aria-hidden="true"></i>
@@ -237,15 +240,18 @@
                                             method="POST"
                                             action="{{ route('admin.users.security-events.resolve', [$user, $event]) }}"
                                             class="m-0"
-                                            onsubmit="return confirm('Czy oznaczyc zdarzenie jako zamkniete?')"
                                         >
                                             @csrf
                                             @method('PATCH')
                                             <button
-                                                type="submit"
+                                                type="button"
                                                 class="btn btn-sm btn-outline-success data-table-icon-button"
                                                 data-bs-toggle="tooltip"
                                                 data-bs-title="Zamknij zdarzenie"
+                                                data-security-confirm
+                                                data-security-confirm-class="btn-success"
+                                                data-security-confirm-label="Zamknij"
+                                                data-security-confirm-message="Czy oznaczyć zdarzenie jako zamknięte?"
                                                 aria-label="Zamknij zdarzenie"
                                             >
                                                 <i class="bi bi-check2-circle" aria-hidden="true"></i>
@@ -319,6 +325,26 @@
         </section>
     </div>
 
+    <div class="modal fade" id="securityConfirmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5">Potwierdź akcję</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0" data-security-confirm-message></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">Anuluj</button>
+                    <button type="button" class="btn btn-danger" data-security-confirm-submit>
+                        Potwierdź
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <style>
         .security-summary-card,
         .security-panel {
@@ -340,4 +366,30 @@
             overflow-wrap: anywhere;
         }
     </style>
+
+    <script>
+        document.addEventListener('click', event => {
+            const button = event.target.closest('[data-security-confirm]');
+
+            if (!button) {
+                return;
+            }
+
+            const form = button.closest('form');
+            const modalElement = document.getElementById('securityConfirmModal');
+            const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+            const message = modalElement.querySelector('[data-security-confirm-message]');
+            const submitButton = modalElement.querySelector('[data-security-confirm-submit]');
+
+            message.textContent = button.dataset.securityConfirmMessage || 'Czy na pewno wykonać tę akcję?';
+            submitButton.className = `btn ${button.dataset.securityConfirmClass || 'btn-danger'}`;
+            submitButton.textContent = button.dataset.securityConfirmLabel || 'Potwierdź';
+            submitButton.onclick = () => {
+                modal.hide();
+                form.submit();
+            };
+
+            modal.show();
+        });
+    </script>
 </x-app-layout>

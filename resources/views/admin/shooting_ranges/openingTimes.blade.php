@@ -24,13 +24,28 @@
     @include('components.visiting-card')
 
     <div class="container py-4">
+        <header class="p-4 mb-3 text-white rounded bg-secondary">
+            <div class="gap-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+                <div>
+                    <div class="gap-2 mb-2 d-flex align-items-center">
+                        <i class="bi bi-calendar-week fs-4"></i>
+                        <span class="opacity-75 text-uppercase small">Panel strzelnicy</span>
+                    </div>
+                    <h1 class="mb-1 h3">Godziny pracy</h1>
+                    <p class="mb-0 opacity-75">{{ $shootingRange->name }}</p>
+                </div>
+            </div>
+        </header>
+
+        <x-session-alerts />
 
         <h4 class="mb-3">Godziny pracy strzelnicy</h4>
 
-        <div class="p-3 mb-4 card">
+        <div class="p-3 mb-4 bg-white rounded opening-panel">
             <form method="POST" action="{{ route('shooting.time.update', ['shootingRange' => $shootingRange]) }}">
                 @csrf
-                <table class="table align-middle">
+                <div class="table-responsive">
+                <table class="table align-middle table-hover opening-table">
                     <thead>
                         <tr>
                             <th></th>
@@ -85,6 +100,7 @@
                         @endforeach
                     </tbody>
                 </table>
+                </div>
 
                 <div class="mt-4 text-end">
                     <button type="submit" class="px-4 btn btn-success">
@@ -97,7 +113,7 @@
 
         <h4 class="mb-3">Dni wolne (wyjątki)</h4>
 
-        <div class="p-3 card">
+        <div class="p-3 bg-white rounded opening-panel">
             <form method="POST" action="{{ route('shooting-ranges.holidays.store', $shootingRange) }}">
                 @csrf
                 <div class="mb-3 row g-2">
@@ -150,7 +166,8 @@
                 </div>
             </form>
 
-            <table class="table">
+            <div class="table-responsive">
+            <table class="table table-hover align-middle opening-table">
                 <thead>
                     <tr>
                         <th>Data</th>
@@ -168,11 +185,18 @@
                                 {{ $holiday->name }}
                             </td>
                             <td>
-                                <form method="POST" action="{{ route('shooting-ranges.holidays.destroy', [$shootingRange, $holiday]) }}" onsubmit="return confirm('Czy na pewno chcesz usunąć ten dzień wolny?')">
+                                <form method="POST" action="{{ route('shooting-ranges.holidays.destroy', [$shootingRange, $holiday]) }}">
                                     @csrf
                                     @method('DELETE')
-                                    <button type="submit" class="btn btn-sm btn-danger">
-                                        Usuń
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-danger data-table-icon-button holiday-delete-button"
+                                        data-bs-toggle="tooltip"
+                                        data-bs-title="Usuń dzień wolny"
+                                        aria-label="Usuń dzień wolny"
+                                        data-message="Czy na pewno chcesz usunąć dzień wolny {{ $holiday->date->format('Y-m-d') }}?"
+                                    >
+                                        <i class="bi bi-trash3" aria-hidden="true"></i>
                                     </button>
                                 </form>
                             </td>
@@ -180,8 +204,44 @@
                     @endforeach
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
+
+    <div class="modal fade" id="holidayDeleteModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5">Usuń dzień wolny</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0" data-holiday-delete-message></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">Anuluj</button>
+                    <button type="button" class="btn btn-danger" data-holiday-delete-confirm>
+                        <i class="bi bi-trash3 me-1" aria-hidden="true"></i>
+                        Usuń
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .opening-panel {
+            border: 1px solid rgba(52, 58, 64, .12);
+            box-shadow: 0 .75rem 1.5rem rgba(15, 23, 42, .08);
+        }
+
+        .opening-table thead th {
+            background: #212529;
+            color: #fff;
+            font-size: .78rem;
+            text-transform: uppercase;
+        }
+    </style>
 
 
     <script>
@@ -217,7 +277,7 @@
 
 
             // 📅 Dni wolne
-            document.getElementById('addHoliday22').addEventListener('click', () => {
+            document.getElementById('addHoliday22')?.addEventListener('click', () => {
                 const date = document.getElementById('holidayDate').value;
                 const name = document.getElementById('holidayName').value;
 
@@ -254,6 +314,28 @@
                 if (e.target.classList.contains('remove')) {
                     e.target.closest('tr').remove();
                 }
+            });
+
+            document.addEventListener('click', event => {
+                const button = event.target.closest('.holiday-delete-button');
+
+                if (!button) {
+                    return;
+                }
+
+                const modalElement = document.getElementById('holidayDeleteModal');
+                const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+                const message = modalElement.querySelector('[data-holiday-delete-message]');
+                const confirmButton = modalElement.querySelector('[data-holiday-delete-confirm]');
+                const form = button.closest('form');
+
+                message.textContent = button.dataset.message || 'Czy na pewno chcesz usunąć ten dzień wolny?';
+                confirmButton.onclick = () => {
+                    modal.hide();
+                    form.submit();
+                };
+
+                modal.show();
             });
 
         });

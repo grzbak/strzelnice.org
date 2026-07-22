@@ -42,6 +42,26 @@ class AuthenticationTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_blocked_users_can_not_authenticate(): void
+    {
+        $user = User::factory()->create([
+            'is_approved' => false,
+            'approval_status' => User::APPROVAL_REJECTED,
+        ]);
+
+        $response = $this->from('/login')->post('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $this->assertGuest();
+        $response
+            ->assertRedirect('/login')
+            ->assertSessionHasErrors([
+                'email' => 'To konto zostało zablokowane. Skontaktuj się z administratorem.',
+            ]);
+    }
+
     public function test_users_can_logout(): void
     {
         $user = User::factory()->create();

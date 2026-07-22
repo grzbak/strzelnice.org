@@ -497,6 +497,27 @@
         </div>
     </div>
 
+    <div class="modal fade" id="invitationConfirmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5">Potwierdź operację</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0" data-invitation-confirm-message></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">Anuluj</button>
+                    <button type="button" class="btn btn-danger" data-invitation-confirm-submit>
+                        <i class="bi bi-trash3 me-1" aria-hidden="true"></i>
+                        Usuń
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <style>
         .invitation-list-panel {
             border: 1px solid rgba(52, 58, 64, .12);
@@ -958,15 +979,24 @@
 
             document.addEventListener('submit', event => {
                 const submittedForm = event.target;
+                const confirmModalElement = document.getElementById('invitationConfirmModal');
+                const confirmModal = bootstrap.Modal.getOrCreateInstance(confirmModalElement);
+                const confirmMessage = confirmModalElement.querySelector('[data-invitation-confirm-message]');
+                const confirmSubmit = confirmModalElement.querySelector('[data-invitation-confirm-submit]');
+                const openConfirmModal = (message) => {
+                    event.preventDefault();
+                    confirmMessage.textContent = message;
+                    confirmSubmit.onclick = () => {
+                        confirmModal.hide();
+                        submittedForm.submit();
+                    };
+                    confirmModal.show();
+                };
 
                 if (submittedForm.matches('.delete-invitation-form')) {
                     const email = submittedForm.dataset.email;
 
-                    if (!window.confirm(
-                        `Czy na pewno usunąć użytkownika ${email} z listy strzelnicy?`
-                    )) {
-                        event.preventDefault();
-                    }
+                    openConfirmModal(`Czy na pewno usunąć użytkownika ${email} z listy strzelnicy?`);
 
                     return;
                 }
@@ -981,11 +1011,7 @@
                         })
                         .length;
 
-                    if (!window.confirm(
-                        `Czy na pewno usunąć zaznaczonych użytkowników (${selectedCount}) z listy strzelnicy?`
-                    )) {
-                        event.preventDefault();
-                    }
+                    openConfirmModal(`Czy na pewno usunąć zaznaczonych użytkowników (${selectedCount}) z listy strzelnicy?`);
                 }
             });
 

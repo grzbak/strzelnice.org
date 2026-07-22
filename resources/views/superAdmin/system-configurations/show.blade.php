@@ -26,6 +26,7 @@
             'Retencja adresów IP' => $systemConfiguration->ip_retention_months . ' mies.',
             'Retencja audytu działań' => $systemConfiguration->audit_retention_months . ' mies.',
             'Retencja zdarzeń bezpieczeństwa' => $systemConfiguration->security_events_retention_months . ' mies.',
+            'Google Analytics ID' => $systemConfiguration->google_analytics_id,
         ];
     @endphp
 

@@ -35,7 +35,12 @@
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:600px; background-color:#1b1e21; border:1px solid #353b40; border-radius:8px;">
                     <tr>
                         <td align="center" style="padding:30px 28px 18px;">
-                            <img src="cid:strzelnice-logo" width="250" alt="strzelnice.org" style="display:block; width:250px; max-width:100%; height:auto; border:0;">
+                            <img
+                                src="cid:strzelnice-logo"
+                                width="250"
+                                alt="strzelnice.org"
+                                style="display:block; width:250px; max-width:100%; height:auto; border:0;"
+                            >
                         </td>
                     </tr>
 
@@ -50,7 +55,8 @@
                             </h1>
 
                             <p style="max-width:470px; margin:0 auto 24px; color:#d5dadd; font-size:15px; line-height:1.65;">
-                                Dzień dobry, przypominamy o rezerwacji strzelnicy zaplanowanej na dzisiaj.
+                                Dzień dobry{{ $customerName && $customerName !== 'Kliencie' ? ', '.$customerName : '' }}!
+                                Przypominamy o rezerwacji strzelnicy zaplanowanej na dzisiaj.
                             </p>
 
                             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background-color:#25292d; border:1px solid #3b4146; border-radius:6px;">

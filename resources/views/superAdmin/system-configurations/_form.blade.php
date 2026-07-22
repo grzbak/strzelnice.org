@@ -59,6 +59,12 @@
                 'number',
             ],
         ],
+        'Analityka' => [
+            [
+                'google_analytics_id',
+                'Google Analytics ID',
+            ],
+        ],
     ];
 @endphp
 
@@ -106,6 +112,11 @@
                 @if ($name === 'bank_account_number')
                     <div class="form-text">
                         Wpisz 26 cyfr. Możesz również wkleić numer ze spacjami lub prefiksem PL.
+                    </div>
+                @endif
+                @if ($name === 'google_analytics_id')
+                    <div class="form-text">
+                        Wpisz identyfikator pomiaru GA4, np. G-XXXXXXXXXX. Pozostaw puste, aby wyłączyć Google Analytics.
                     </div>
                 @endif
                 @if ($name === 'default_max_advance_booking_days')

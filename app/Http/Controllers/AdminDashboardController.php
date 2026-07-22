@@ -72,7 +72,10 @@ class AdminDashboardController extends Controller
             ->when($search !== '', function ($query) use ($search): void {
                 $query->where(function ($query) use ($search): void {
                     $query->where('name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%");
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhereHas('ipAddresses', function ($query) use ($search): void {
+                            $query->where('ip_address', 'like', "%{$search}%");
+                        });
                 });
             })
             ->orderBy($sort, $direction)

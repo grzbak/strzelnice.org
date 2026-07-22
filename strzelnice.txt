@@ -54,3 +54,4 @@ commit: Add versioned regulations workflow
 commit: Snapshot before IP audit and registration approval workflow
 commit: Add IP audit and registration approval workflow
 commit: Add superadmin user management and IP security panel
+commit: Polish admin views, analytics and user security

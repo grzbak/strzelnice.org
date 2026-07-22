@@ -166,6 +166,9 @@ class SystemConfigurationController extends Controller
                 'security_events_retention_months',
                 SystemConfiguration::DEFAULT_SECURITY_EVENTS_RETENTION_MONTHS
             ),
+            'google_analytics_id' => filled($request->input('google_analytics_id'))
+                ? mb_strtoupper(trim((string) $request->input('google_analytics_id')))
+                : null,
         ]);
 
         return $request->validate([
@@ -201,9 +204,11 @@ class SystemConfigurationController extends Controller
             'ip_retention_months' => ['required', 'integer', 'min:1', 'max:240'],
             'audit_retention_months' => ['required', 'integer', 'min:1', 'max:240'],
             'security_events_retention_months' => ['required', 'integer', 'min:1', 'max:240'],
+            'google_analytics_id' => ['nullable', 'string', 'max:32', 'regex:/^G-[A-Z0-9]+$/'],
         ], [
             'reservation_operational_months.lte' => 'Okres przechowywania rezerwacji bieĹĽÄ…cych nie moĹĽe byÄ‡ dĹ‚uĹĽszy niĹĽ Ĺ‚Ä…czny okres historii.',
             'postal_code.regex' => 'Kod pocztowy musi mieÄ‡ format 00-000.',
+            'google_analytics_id.regex' => 'Identyfikator Google Analytics musi mieÄ‡ format G-XXXXXXXXXX.',
         ]);
     }
 

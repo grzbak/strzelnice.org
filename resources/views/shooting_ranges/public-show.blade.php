@@ -9,13 +9,6 @@
     <div class="page-bg-2"></div>
 
     <div class="container py-4">
-        {{-- Nagłówek --}}
-        @php
-            $brandUrl = $shootingRange->brand_url;
-            $reservationUrl = url('/rezerwacje/' . $shootingRange->id)
-                . '?date=' . now()->format('Y-m-d');
-        @endphp
-
         <header class="mb-4 overflow-hidden bg-white border rounded shadow-sm">
             <div class="gap-4 p-4 d-flex flex-column flex-md-row align-items-center">
                 {{-- Logo --}}
@@ -165,26 +158,26 @@
                     <div class="col-lg-6">
                         <h2 class="mb-3 h4">Dane strzelnicy</h2>
 
-                        <table class="table align-middle table-striped">
+                        <table class="table align-middle public-info-table">
                             <tbody>
                                 <tr>
-                                    <th>Typ</th>
-                                    <td>{{ ucfirst($shootingRange->type) }}</td>
+                                    <th data-label="Pole">Typ</th>
+                                    <td data-label="Wartość">{{ ucfirst($shootingRange->type) }}</td>
                                 </tr>
 
                                 <tr>
-                                    <th>Województwo</th>
-                                    <td>{{ ucfirst($shootingRange->voivodeship) }}</td>
+                                    <th data-label="Pole">Województwo</th>
+                                    <td data-label="Wartość">{{ ucfirst($shootingRange->voivodeship) }}</td>
                                 </tr>
 
                                 <tr>
-                                    <th>Adres</th>
-                                    <td>{{ $shootingRange->full_address }}</td>
+                                    <th data-label="Pole">Adres</th>
+                                    <td data-label="Wartość">{{ $shootingRange->full_address }}</td>
                                 </tr>
 
                                 <tr>
-                                    <th>E-mail</th>
-                                    <td>
+                                    <th data-label="Pole">E-mail</th>
+                                    <td data-label="Wartość">
                                         <a href="mailto:{{ $shootingRange->email }}">
                                             {{ $shootingRange->email }}
                                         </a>
@@ -192,8 +185,8 @@
                                 </tr>
 
                                 <tr>
-                                    <th>Telefon</th>
-                                    <td>
+                                    <th data-label="Pole">Telefon</th>
+                                    <td data-label="Wartość">
                                         <a href="tel:{{ $shootingRange->telephone1 }}">
                                             {{ $shootingRange->telephone1 }}
                                         </a>
@@ -202,8 +195,8 @@
 
                                 @if ($shootingRange->url)
                                     <tr>
-                                        <th>Strona WWW</th>
-                                        <td>
+                                        <th data-label="Pole">Strona WWW</th>
+                                        <td data-label="Wartość">
                                             <a
                                                 href="{{ $shootingRange->url }}"
                                                 target="_blank"
@@ -219,7 +212,7 @@
 
                         <h2 class="mt-5 mb-3 h4">Osie strzeleckie</h2>
 
-                        <table class="table align-middle table-hover">
+                        <table class="table align-middle table-hover public-lanes-table">
                             <thead>
                                 <tr>
                                     <th>Nazwa</th>
@@ -232,10 +225,10 @@
                             <tbody>
                                 @forelse ($shootingRange->lanes as $lane)
                                     <tr>
-                                        <td>{{ $lane->name }}</td>
-                                        <td>{{ $lane->length }} m</td>
-                                        <td>{{ $lane->numberOfPositions }}</td>
-                                        <td>
+                                        <td data-label="Nazwa">{{ $lane->name }}</td>
+                                        <td data-label="Długość">{{ $lane->length }} m</td>
+                                        <td data-label="Stanowiska">{{ $lane->numberOfPositions }}</td>
+                                        <td data-label="Strzelanie dynamiczne">
                                             @if ($lane->allows_dynamic_shooting)
                                                 <span class="badge bg-success">
                                                     <i class="bi bi-check-lg me-1"></i>
@@ -335,6 +328,46 @@
             height: 100%;
             display: block;
             object-fit: cover;
+        }
+
+        .public-info-table,
+        .public-lanes-table {
+            border: 1px solid rgba(52, 58, 64, .18);
+            border-collapse: separate;
+            border-radius: .75rem;
+            border-spacing: 0;
+            overflow: hidden;
+        }
+
+        .public-info-table th {
+            width: 38%;
+            background: #f1f5f9;
+            color: #343a40;
+            font-size: .82rem;
+            text-transform: uppercase;
+        }
+
+        .public-info-table td,
+        .public-info-table th,
+        .public-lanes-table td,
+        .public-lanes-table th {
+            border-bottom-color: rgba(52, 58, 64, .1);
+        }
+
+        .public-lanes-table thead th {
+            background: #212529;
+            color: #fff;
+            font-size: .78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .public-lanes-table tbody tr:nth-child(even) td {
+            background: #f8fafc;
+        }
+
+        .public-lanes-table tbody tr:hover td {
+            background: #eef5ff;
         }
 
         @media (min-width: 768px) {
@@ -459,6 +492,58 @@
             .gallery-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 8px;
+            }
+
+            .public-lanes-table {
+                border: 0;
+                border-collapse: separate;
+                border-spacing: 0 .75rem;
+                overflow: visible;
+            }
+
+            .public-lanes-table thead {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                margin: -1px;
+                padding: 0;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            .public-lanes-table,
+            .public-lanes-table tbody,
+            .public-lanes-table tr,
+            .public-lanes-table td {
+                display: block;
+                width: 100%;
+            }
+
+            .public-lanes-table tr {
+                border: 1px solid rgba(0, 0, 0, .08);
+                border-radius: .75rem;
+                background: #fff;
+                box-shadow: 0 .35rem 1rem rgba(15, 23, 42, .08);
+                overflow: hidden;
+            }
+
+            .public-lanes-table td {
+                display: grid;
+                grid-template-columns: minmax(6.5rem, 38%) minmax(0, 1fr);
+                gap: .75rem;
+                align-items: start;
+                padding: .65rem .85rem;
+                border-bottom: 1px solid rgba(0, 0, 0, .06);
+            }
+
+            .public-lanes-table td::before {
+                content: attr(data-label);
+                color: #6c757d;
+                font-size: .78rem;
+                font-weight: 700;
+                text-transform: uppercase;
             }
         }
     </style>

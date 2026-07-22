@@ -42,6 +42,7 @@ class SystemConfiguration extends Model
         'ip_retention_months',
         'audit_retention_months',
         'security_events_retention_months',
+        'google_analytics_id',
     ];
 
     protected $fillable = [

@@ -30,6 +30,28 @@ class PasswordResetTest extends TestCase
         Notification::assertSentTo($user, ResetPasswordNotification::class);
     }
 
+    public function test_blocked_user_can_not_request_password_reset_link(): void
+    {
+        Notification::fake();
+
+        $user = User::factory()->create([
+            'is_approved' => false,
+            'approval_status' => User::APPROVAL_REJECTED,
+        ]);
+
+        $response = $this->from('/forgot-password')->post('/forgot-password', [
+            'email' => $user->email,
+        ]);
+
+        $response
+            ->assertRedirect('/forgot-password')
+            ->assertSessionHasErrors([
+                'email' => 'To konto zostało zablokowane. Odzyskiwanie hasła jest niedostępne. Skontaktuj się z administratorem.',
+            ]);
+
+        Notification::assertNothingSent();
+    }
+
     public function test_reset_password_screen_can_be_rendered(): void
     {
         Notification::fake();

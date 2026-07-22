@@ -1,9 +1,30 @@
 <x-app-layout>
-    <div class="container py-4">
-        <h1>Przedziały aktywności: {{ $shootingRange->name }}</h1>
-        <x-session-alerts />
+    <div class="page-bg-2"></div>
 
-        <form method="POST" action="{{ route('admin.shootings.intervals.store', $shootingRange) }}" class="mb-4">
+    <div class="container py-4">
+        <header class="p-4 text-white rounded bg-secondary">
+            <div class="gap-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+                <div>
+                    <div class="gap-2 mb-2 d-flex align-items-center">
+                        <i class="bi bi-clock-history fs-4"></i>
+                        <span class="opacity-75 text-uppercase small">Panel superadmina</span>
+                    </div>
+                    <h1 class="mb-1 h3">Przedziały aktywności</h1>
+                    <p class="mb-0 opacity-75">{{ $shootingRange->name }}</p>
+                </div>
+
+                <a href="{{ route('admin.shootings') }}" class="btn btn-light">
+                    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                    Wróć do strzelnic
+                </a>
+            </div>
+        </header>
+
+        <div class="mt-3">
+            <x-session-alerts />
+        </div>
+
+        <form method="POST" action="{{ route('admin.shootings.intervals.store', $shootingRange) }}" class="p-3 mt-3 bg-white rounded intervals-panel">
             @csrf
 
             <div class="row g-2">
@@ -85,15 +106,18 @@
 
                 <div class="col-12">
                     <button class="btn btn-success" @disabled($rangePackages->isEmpty())>
+                        <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>
                         Dodaj przedział
                     </button>
                 </div>
             </div>
         </form>
 
-        <h2>Aktywne przedziały</h2>
+        <section class="p-3 mt-3 bg-white rounded intervals-panel">
+            <h2 class="mb-3 h5">Aktywne przedziały</h2>
 
-        <table class="table">
+            <div class="table-responsive">
+        <table class="table table-hover align-middle intervals-table">
             <thead>
                 <tr>
                     <th>Od</th>
@@ -113,11 +137,15 @@
                         <td>{{ $interval->value }} zł</td>
                         <td>{{ $interval->is_active ? 'Aktywny' : 'Nieaktywny' }}</td>
                         <td>
+                            <div class="interval-actions">
                             <a
                                 href="{{ route('admin.shootings.intervals.edit', [$shootingRange, $interval]) }}"
-                                class="btn btn-sm btn-primary"
+                                class="btn btn-sm btn-outline-primary data-table-icon-button"
+                                data-bs-toggle="tooltip"
+                                data-bs-title="Edytuj przedział"
+                                aria-label="Edytuj przedział"
                             >
-                                Edytuj
+                                <i class="bi bi-pencil" aria-hidden="true"></i>
                             </a>
 
                             <form
@@ -128,10 +156,18 @@
                                 @csrf
                                 @method('DELETE')
 
-                                <button class="btn btn-sm btn-danger" onclick="return confirm('Usunąć przedział?')">
-                                    Usuń
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-danger data-table-icon-button interval-delete-button"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-title="Usuń przedział"
+                                    aria-label="Usuń przedział"
+                                    data-message="Czy na pewno usunąć przedział od {{ $interval->start_date->format('Y-m-d') }} do {{ $interval->end_date->format('Y-m-d') }}?"
+                                >
+                                    <i class="bi bi-trash3" aria-hidden="true"></i>
                                 </button>
                             </form>
+                            </div>
                         </td>
                     </tr>
                 @empty
@@ -141,10 +177,14 @@
                 @endforelse
             </tbody>
         </table>
+            </div>
+        </section>
 
-        <h2>Archiwum</h2>
+        <section class="p-3 mt-3 bg-white rounded intervals-panel">
+            <h2 class="mb-3 h5">Archiwum</h2>
 
-        <table class="table">
+            <div class="table-responsive">
+        <table class="table table-hover align-middle intervals-table">
             <thead>
                 <tr>
                     <th>Od</th>
@@ -170,7 +210,50 @@
                 @endforelse
             </tbody>
         </table>
+            </div>
+        </section>
     </div>
+
+    <div class="modal fade" id="intervalDeleteModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5">Usuń przedział</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0" data-interval-delete-message></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">Anuluj</button>
+                    <button type="button" class="btn btn-danger" data-interval-delete-confirm>
+                        <i class="bi bi-trash3 me-1" aria-hidden="true"></i>
+                        Usuń
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .intervals-panel {
+            border: 1px solid rgba(52, 58, 64, .12);
+            box-shadow: 0 .75rem 1.5rem rgba(15, 23, 42, .08);
+        }
+
+        .intervals-table thead th {
+            background: #212529;
+            color: #fff;
+            font-size: .78rem;
+            text-transform: uppercase;
+        }
+
+        .interval-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .35rem;
+        }
+    </style>
 
     <script>
         function addMonthsNoOverflow(date, months) {
@@ -238,5 +321,27 @@
         document.getElementById('package_id').addEventListener('change', updateIntervalPreview);
 
         updateIntervalPreview();
+
+        document.addEventListener('click', event => {
+            const button = event.target.closest('.interval-delete-button');
+
+            if (!button) {
+                return;
+            }
+
+            const modalElement = document.getElementById('intervalDeleteModal');
+            const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+            const message = modalElement.querySelector('[data-interval-delete-message]');
+            const confirmButton = modalElement.querySelector('[data-interval-delete-confirm]');
+            const form = button.closest('form');
+
+            message.textContent = button.dataset.message || 'Czy na pewno usunąć przedział?';
+            confirmButton.onclick = () => {
+                modal.hide();
+                form.submit();
+            };
+
+            modal.show();
+        });
     </script>
 </x-app-layout>

@@ -125,27 +125,7 @@
             </div>
         </section>
 
-        @if (session('success'))
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                {{ session('success') }}
-
-                <button type="button"
-                    class="btn-close"
-                    data-bs-dismiss="alert"
-                    aria-label="Close"></button>
-            </div>
-        @endif
-
-        @if (session('error'))
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                {{ session('error') }}
-
-                <button type="button"
-                    class="btn-close"
-                    data-bs-dismiss="alert"
-                    aria-label="Close"></button>
-            </div>
-        @endif
+        <x-session-alerts />
 
         <div class="p-3 mb-4 bg-white rounded border-bottom">
             <h2 class="mb-1 h4">
@@ -175,7 +155,7 @@
             <div class="pb-2 bg-white rounded row g-3">
                 @forelse ($gallery->photos as $photo)
                     <div class="col-md-3">
-                        <div class="card h-100">
+                        <div class="card h-100 gallery-photo-card">
                             <img
                                 src="{{ $photo->full_url }}"
                                 class="card-img-top"
@@ -210,11 +190,13 @@
 
                                         @if ($gallery->allow_delete || auth()->user()->role === 'superadmin')
                                             <button
-                                                type="submit"
+                                                type="button"
                                                 form="delete-photo-{{ $photo->id }}"
-                                                class="btn btn-danger btn-sm"
-                                                title="Usuń zdjęcie"
-                                                onclick="return confirm('Usunąć zdjęcie?')"
+                                                class="btn btn-outline-danger btn-sm gallery-delete-photo-button"
+                                                data-bs-toggle="tooltip"
+                                                data-bs-title="Usuń zdjęcie"
+                                                data-message="Czy na pewno usunąć zdjęcie: {{ $photo->original_name }}?"
+                                                aria-label="Usuń zdjęcie"
                                             >
                                                 <i class="bi bi-trash-fill"></i>
                                             </button>
@@ -448,15 +430,28 @@
         </div>
     @endif
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            setTimeout(() => {
-                document.querySelectorAll('.alert').forEach(alert => {
-                    bootstrap.Alert.getOrCreateInstance(alert).close();
-                });
-            }, 5000);
-        });
+    <div class="modal fade" id="deletePhotoModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5">Usuń zdjęcie</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0" data-delete-photo-message></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">Anuluj</button>
+                    <button type="button" class="btn btn-danger" data-delete-photo-confirm>
+                        <i class="bi bi-trash3 me-1" aria-hidden="true"></i>
+                        Usuń
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
+    <script>
         document.addEventListener('DOMContentLoaded', function () {
             @if ($errors->has('photos') || $errors->has('photos.*'))
                 bootstrap.Modal
@@ -471,6 +466,43 @@
                         .show();
                 }
             @endif
+
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(element => {
+                bootstrap.Tooltip.getOrCreateInstance(element);
+            });
+
+            document.addEventListener('click', event => {
+                const button = event.target.closest('.gallery-delete-photo-button');
+
+                if (!button) {
+                    return;
+                }
+
+                const modalElement = document.getElementById('deletePhotoModal');
+                const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+                const message = modalElement.querySelector('[data-delete-photo-message]');
+                const confirmButton = modalElement.querySelector('[data-delete-photo-confirm]');
+                const form = document.getElementById(button.getAttribute('form'));
+
+                message.textContent = button.dataset.message || 'Czy na pewno usunąć zdjęcie?';
+                confirmButton.onclick = () => {
+                    modal.hide();
+                    form.submit();
+                };
+
+                modal.show();
+            });
         });
     </script>
+
+    <style>
+        .gallery-photo-card {
+            border: 1px solid rgba(52, 58, 64, .12);
+            box-shadow: 0 .75rem 1.5rem rgba(15, 23, 42, .08);
+        }
+
+        .gallery-photo-card .card-body {
+            background: #fff;
+        }
+    </style>
 </x-app-layout>

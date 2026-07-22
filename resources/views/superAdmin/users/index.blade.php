@@ -60,7 +60,7 @@
             :paginator="$users"
             :search="$search"
             search-label="Wyszukaj uzytkownika"
-            search-placeholder="Imie, nazwisko lub email"
+            search-placeholder="Imie, nazwisko, email lub adres IP"
             :sort="$sort"
             :direction="$direction"
             :per-page="$perPage"
@@ -70,6 +70,17 @@
                 @php
                     $status = $statusConfig($user);
                     $isCurrentUser = auth()->id() === $user->id;
+                    $isActiveUser = $user->approval_status === \App\Models\User::APPROVAL_APPROVED && $user->is_approved;
+                    $isBlockedUser = $user->approval_status === \App\Models\User::APPROVAL_REJECTED;
+                    $activationActionLabel = $isBlockedUser ? 'Odblokuj konto' : 'Aktywuj konto';
+                    $activationModalTitle = $isBlockedUser ? 'Odblokowanie konta' : 'Aktywacja konta';
+                    $activationModalMessage = $isBlockedUser
+                        ? "Czy na pewno odblokowac konto uzytkownika {$user->email}? Uzytkownik otrzyma maila informacyjnego."
+                        : "Czy na pewno aktywowac konto uzytkownika {$user->email}? Uzytkownik otrzyma maila informacyjnego.";
+                    $activationModalButton = $isBlockedUser ? 'Odblokuj' : 'Aktywuj';
+                    $activationIcon = $isBlockedUser ? 'bi-unlock-fill' : 'bi-person-check-fill';
+                    $activationButtonClass = $isBlockedUser ? 'btn-outline-primary' : 'btn-outline-success';
+                    $activationModalButtonClass = $isBlockedUser ? 'btn-primary' : 'btn-success';
                 @endphp
 
                 <tr>
@@ -151,8 +162,12 @@
                             <form
                                 method="POST"
                                 action="{{ route('admin.users.password-reset', $user) }}"
-                                class="m-0"
-                                onsubmit="return confirm('Czy na pewno wyslac link resetowania hasla do uzytkownika {{ addslashes($user->email) }}?')"
+                                class="m-0 admin-user-confirm-form"
+                                data-modal-title="Reset hasla"
+                                data-modal-message="Czy na pewno wyslac link resetowania hasla do uzytkownika {{ $user->email }}?"
+                                data-modal-icon="bi-key-fill"
+                                data-modal-button="Wyslij link"
+                                data-modal-button-class="btn-primary"
                             >
                                 @csrf
                                 <button
@@ -166,24 +181,41 @@
                                 </button>
                             </form>
 
-                            <form
-                                method="POST"
-                                action="{{ route('admin.users.activate', $user) }}"
-                                class="m-0"
-                                onsubmit="return confirm('Czy na pewno aktywowac konto uzytkownika {{ addslashes($user->email) }}?')"
-                            >
-                                @csrf
-                                @method('PATCH')
+                            @if ($isActiveUser)
                                 <button
-                                    type="submit"
-                                    class="btn btn-sm btn-outline-success data-table-icon-button"
+                                    type="button"
+                                    class="btn btn-sm btn-outline-secondary data-table-icon-button"
                                     data-bs-toggle="tooltip"
-                                    data-bs-title="Aktywuj konto"
-                                    aria-label="Aktywuj konto"
+                                    data-bs-title="Konto jest aktywne"
+                                    aria-label="Konto jest aktywne"
+                                    disabled
                                 >
-                                    <i class="bi bi-person-check-fill" aria-hidden="true"></i>
+                                    <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
                                 </button>
-                            </form>
+                            @else
+                                <form
+                                    method="POST"
+                                    action="{{ route('admin.users.activate', $user) }}"
+                                    class="m-0 admin-user-confirm-form"
+                                    data-modal-title="{{ $activationModalTitle }}"
+                                    data-modal-message="{{ $activationModalMessage }}"
+                                    data-modal-icon="{{ $activationIcon }}"
+                                    data-modal-button="{{ $activationModalButton }}"
+                                    data-modal-button-class="{{ $activationModalButtonClass }}"
+                                >
+                                    @csrf
+                                    @method('PATCH')
+                                    <button
+                                        type="submit"
+                                        class="btn btn-sm {{ $activationButtonClass }} data-table-icon-button"
+                                        data-bs-toggle="tooltip"
+                                        data-bs-title="{{ $activationActionLabel }}"
+                                        aria-label="{{ $activationActionLabel }}"
+                                    >
+                                        <i class="bi {{ $activationIcon }}" aria-hidden="true"></i>
+                                    </button>
+                                </form>
+                            @endif
 
                             <form
                                 method="POST"
@@ -219,8 +251,12 @@
                             <form
                                 method="POST"
                                 action="{{ route('admin.users.destroy', $user) }}"
-                                class="m-0"
-                                onsubmit="return confirm('Czy na pewno usunac uzytkownika {{ addslashes($user->email) }}? Tej operacji nie da sie latwo cofnac.')"
+                                class="m-0 admin-user-confirm-form"
+                                data-modal-title="Usuniecie konta"
+                                data-modal-message="Czy na pewno usunac uzytkownika {{ $user->email }}? Tej operacji nie da sie latwo cofnac. Jesli uzytkownik ma powiazane dane, system wyswietli blad i konto trzeba bedzie zablokowac zamiast usuwac."
+                                data-modal-icon="bi-trash3-fill"
+                                data-modal-button="Usun konto"
+                                data-modal-button-class="btn-danger"
                             >
                                 @csrf
                                 @method('DELETE')
@@ -248,13 +284,98 @@
         </x-data-table>
     </div>
 
+    <div
+        class="modal fade"
+        id="admin-user-action-modal"
+        tabindex="-1"
+        aria-labelledby="admin-user-action-modal-title"
+        aria-hidden="true"
+    >
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="admin-user-action-modal-title">
+                        Potwierdz akcje
+                    </h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="gap-3 d-flex align-items-start">
+                        <span class="admin-user-modal-icon">
+                            <i class="bi bi-question-circle-fill" aria-hidden="true"></i>
+                        </span>
+                        <p class="mb-0" data-admin-user-action-message></p>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">
+                        Anuluj
+                    </button>
+                    <button type="button" class="btn btn-primary" data-admin-user-action-submit>
+                        Potwierdz
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div
+        class="modal fade"
+        id="admin-user-block-modal"
+        tabindex="-1"
+        aria-labelledby="admin-user-block-modal-title"
+        aria-hidden="true"
+    >
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="admin-user-block-modal-title">
+                        Zablokuj konto
+                    </h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="gap-3 mb-3 d-flex align-items-start">
+                        <span class="admin-user-modal-icon admin-user-modal-icon-warning">
+                            <i class="bi bi-lock-fill" aria-hidden="true"></i>
+                        </span>
+                        <p class="mb-0" data-admin-user-block-message></p>
+                    </div>
+
+                    <label class="form-label" for="admin-user-block-reason">
+                        Powod blokady
+                    </label>
+                    <textarea
+                        id="admin-user-block-reason"
+                        class="form-control"
+                        rows="4"
+                        placeholder="Opcjonalnie wpisz powod widoczny w historii i mailu"
+                    ></textarea>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">
+                        Anuluj
+                    </button>
+                    <button type="button" class="btn btn-warning" data-admin-user-block-submit>
+                        <i class="bi bi-lock-fill me-1" aria-hidden="true"></i>
+                        Zablokuj
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <style>
         .admin-user-name-column {
             width: 18%;
         }
 
         .admin-user-actions-column {
-            width: 190px;
+            width: 180px;
         }
 
         .admin-user-avatar {
@@ -274,20 +395,49 @@
         }
 
         .admin-user-actions {
-            display: grid;
-            grid-template-columns: repeat(5, 32px);
+            display: flex;
+            max-width: 100%;
+            flex-wrap: wrap;
             gap: .35rem;
             align-items: center;
+            justify-content: flex-start;
         }
 
         .admin-user-actions form {
             margin: 0;
         }
 
+        .admin-user-actions form,
+        .admin-user-actions > a,
+        .admin-user-actions > button {
+            flex: 0 0 32px;
+        }
+
+        .admin-user-modal-icon {
+            display: inline-grid;
+            width: 42px;
+            height: 42px;
+            flex: 0 0 42px;
+            place-items: center;
+            border-radius: 50%;
+            background: #212529;
+            color: #fff;
+        }
+
+        .admin-user-modal-icon-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+
         @media (max-width: 767.98px) {
             .admin-user-actions {
-                grid-template-columns: repeat(5, minmax(0, 1fr));
                 align-items: stretch;
+            }
+
+            .admin-user-actions form,
+            .admin-user-actions > a,
+            .admin-user-actions > button {
+                flex: 1 1 32px;
             }
 
             .admin-user-actions .data-table-icon-button {
@@ -300,26 +450,72 @@
         document.addEventListener('submit', (event) => {
             const form = event.target;
 
-            if (!form.matches('.admin-user-block-form')) {
-                return;
-            }
+            if (form.matches('.admin-user-confirm-form')) {
+                const modalElement = document.getElementById('admin-user-action-modal');
+                const modal = modalElement && window.bootstrap?.Modal
+                    ? bootstrap.Modal.getOrCreateInstance(modalElement)
+                    : null;
+                const submitButton = modalElement?.querySelector('[data-admin-user-action-submit]');
+                const message = modalElement?.querySelector('[data-admin-user-action-message]');
+                const title = modalElement?.querySelector('#admin-user-action-modal-title');
+                const icon = modalElement?.querySelector('.admin-user-modal-icon i');
 
-            const email = form.dataset.email || 'uzytkownika';
-            const reason = window.prompt(
-                `Podaj powod blokady konta ${email}. Pozostaw puste, aby uzyc komunikatu domyslnego.`
-            );
+                if (!modal || !submitButton || !message || !title || !icon) {
+                    return;
+                }
 
-            if (reason === null) {
                 event.preventDefault();
+                window.adminUserPendingForm = form;
+
+                title.textContent = form.dataset.modalTitle || 'Potwierdz akcje';
+                message.textContent = form.dataset.modalMessage || 'Czy na pewno wykonac te akcje?';
+                submitButton.textContent = form.dataset.modalButton || 'Potwierdz';
+                submitButton.className = `btn ${form.dataset.modalButtonClass || 'btn-primary'}`;
+                icon.className = `bi ${form.dataset.modalIcon || 'bi-question-circle-fill'}`;
+
+                submitButton.onclick = () => {
+                    const pendingForm = window.adminUserPendingForm;
+                    window.adminUserPendingForm = null;
+                    modal.hide();
+                    pendingForm?.submit();
+                };
+
+                modal.show();
+
                 return;
             }
 
-            if (!window.confirm(`Czy na pewno zablokowac konto ${email}? Uzytkownik otrzyma wiadomosc e-mail.`)) {
+            if (form.matches('.admin-user-block-form')) {
+                const modalElement = document.getElementById('admin-user-block-modal');
+                const modal = modalElement && window.bootstrap?.Modal
+                    ? bootstrap.Modal.getOrCreateInstance(modalElement)
+                    : null;
+                const submitButton = modalElement?.querySelector('[data-admin-user-block-submit]');
+                const message = modalElement?.querySelector('[data-admin-user-block-message]');
+                const reason = modalElement?.querySelector('#admin-user-block-reason');
+
+                if (!modal || !submitButton || !message || !reason) {
+                    return;
+                }
+
                 event.preventDefault();
-                return;
-            }
+                window.adminUserPendingBlockForm = form;
+                reason.value = '';
+                message.textContent = `Czy na pewno zablokowac konto ${form.dataset.email || 'uzytkownika'}? Uzytkownik otrzyma wiadomosc e-mail z informacja o blokadzie.`;
 
-            form.elements.namedItem('reason').value = reason;
+                submitButton.onclick = () => {
+                    const pendingForm = window.adminUserPendingBlockForm;
+                    window.adminUserPendingBlockForm = null;
+                    modal.hide();
+
+                    if (pendingForm) {
+                        pendingForm.elements.namedItem('reason').value = reason.value;
+                        pendingForm.submit();
+                    }
+                };
+
+                modal.show();
+            }
         });
     </script>
 </x-app-layout>

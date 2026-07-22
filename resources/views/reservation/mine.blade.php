@@ -43,9 +43,9 @@
                     Nie masz żadnych nadchodzących rezerwacji.
                 </div>
             @else
-                <div class="table-responsive bg-white border rounded">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light">
+                <div class="table-responsive bg-white rounded reservations-table-panel">
+                    <table class="table table-hover align-middle mb-0 reservations-table">
+                        <thead>
                             <tr>
                                 <th>Strzelnica</th>
                                 <th>Termin</th>
@@ -73,29 +73,29 @@
                                         && $reservation->canBeEdited();
                                 @endphp
                                 <tr>
-                                    <td>
+                                    <td data-label="Strzelnica">
                                         <strong>{{ $reservation->shootingRange?->name ?? 'Usunięta strzelnica' }}</strong>
                                         @if ($reservation->shootingRange?->town)
                                             <small class="d-block text-muted">{{ $reservation->shootingRange->town }}</small>
                                         @endif
                                     </td>
-                                    <td>
+                                    <td data-label="Termin">
                                         {{ $reservation->start->format('d.m.Y') }}
                                         <small class="d-block text-muted">
                                             {{ $reservation->start->format('H:i') }}–{{ $reservation->end->format('H:i') }}
                                         </small>
                                     </td>
-                                    <td>{{ $reservation->lane?->name ?? 'Usunięta oś' }}</td>
-                                    <td>
+                                    <td data-label="Oś">{{ $reservation->lane?->name ?? 'Usunięta oś' }}</td>
+                                    <td data-label="Stanowiska">
                                         {{ $reservation->positions_count }}
                                         @if ($reservation->is_dynamic_shooting)
                                             <small class="d-block text-muted">dynamiczne</small>
                                         @endif
                                     </td>
-                                    <td>
+                                    <td data-label="Status">
                                         <span class="badge text-bg-{{ $status[1] }}">{{ $status[0] }}</span>
                                     </td>
-                                    <td class="text-end">
+                                    <td class="text-end" data-label="Akcja">
                                         @if ($canEdit)
                                             <a
                                                 href="{{ route('rezerwacje.edit', $reservation) }}"
@@ -119,9 +119,9 @@
                 Historia rezerwacji jest pusta.
             </div>
         @else
-            <div class="table-responsive bg-white border rounded">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
+            <div class="table-responsive bg-white rounded reservations-table-panel">
+                <table class="table table-hover align-middle mb-0 reservations-table">
+                    <thead>
                         <tr>
                             <th>Strzelnica</th>
                             <th>Termin</th>
@@ -145,26 +145,26 @@
                                 };
                             @endphp
                             <tr>
-                                <td>
+                                <td data-label="Strzelnica">
                                     <strong>{{ $reservation->shooting_range_name ?? 'Usunięta strzelnica' }}</strong>
                                     @if ($reservation->shooting_range_town)
                                         <small class="d-block text-muted">{{ $reservation->shooting_range_town }}</small>
                                     @endif
                                 </td>
-                                <td>
+                                <td data-label="Termin">
                                     {{ $start->format('d.m.Y') }}
                                     <small class="d-block text-muted">
                                         {{ $start->format('H:i') }}–{{ $end->format('H:i') }}
                                     </small>
                                 </td>
-                                <td>{{ $reservation->lane_name ?? 'Usunięta oś' }}</td>
-                                <td>
+                                <td data-label="Oś">{{ $reservation->lane_name ?? 'Usunięta oś' }}</td>
+                                <td data-label="Stanowiska">
                                     {{ $reservation->positions_count }}
                                     @if ($reservation->is_dynamic_shooting)
                                         <small class="d-block text-muted">dynamiczne</small>
                                     @endif
                                 </td>
-                                <td>
+                                <td data-label="Status">
                                     <span class="badge text-bg-{{ $status[1] }}">{{ $status[0] }}</span>
                                 </td>
                             </tr>
@@ -252,6 +252,35 @@
             box-shadow: 0 2px 5px rgba(20, 35, 28, .12);
         }
 
+        .reservations-table-panel {
+            border: 1px solid rgba(52, 58, 64, .12);
+            box-shadow: 0 .75rem 1.5rem rgba(15, 23, 42, .08);
+        }
+
+        .reservations-table {
+            border-collapse: separate;
+            border-spacing: 0;
+            overflow: hidden;
+            border: 1px solid rgba(52, 58, 64, .18);
+            border-radius: .75rem;
+        }
+
+        .reservations-table thead th {
+            background: #212529;
+            color: #fff;
+            font-size: .78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .reservations-table tbody tr:nth-child(even) td {
+            background: #f8fafc;
+        }
+
+        .reservations-table tbody tr:hover td {
+            background: #eef5ff;
+        }
+
         @media (max-width: 767.98px) {
             .reservations-toolbar {
                 align-items: stretch;
@@ -265,6 +294,58 @@
 
             .reservations-tabs .nav-link {
                 min-width: 0;
+            }
+
+            .reservations-table {
+                border: 0;
+                border-collapse: separate;
+                border-spacing: 0 .75rem;
+                overflow: visible;
+            }
+
+            .reservations-table thead {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                margin: -1px;
+                padding: 0;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            .reservations-table,
+            .reservations-table tbody,
+            .reservations-table tr,
+            .reservations-table td {
+                display: block;
+                width: 100%;
+            }
+
+            .reservations-table tr {
+                border: 1px solid rgba(0, 0, 0, .08);
+                border-radius: .75rem;
+                background: #fff;
+                box-shadow: 0 .35rem 1rem rgba(15, 23, 42, .08);
+                overflow: hidden;
+            }
+
+            .reservations-table td {
+                display: grid;
+                grid-template-columns: minmax(6.5rem, 38%) minmax(0, 1fr);
+                gap: .75rem;
+                align-items: start;
+                padding: .65rem .85rem;
+                border-bottom: 1px solid rgba(0, 0, 0, .06);
+            }
+
+            .reservations-table td::before {
+                content: attr(data-label);
+                color: #6c757d;
+                font-size: .78rem;
+                font-weight: 700;
+                text-transform: uppercase;
             }
         }
     </style>

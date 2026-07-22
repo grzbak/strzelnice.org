@@ -2,9 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\SystemConfiguration;
 use Carbon\Carbon;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -30,6 +33,18 @@ class AppServiceProvider extends ServiceProvider
             if (! $headers->has('Content-Language')) {
                 $headers->addTextHeader('Content-Language', 'pl-PL');
             }
+        });
+
+        View::composer('*', function ($view): void {
+            $view->with(
+                'activeSystemConfiguration',
+                Schema::hasTable('system_configurations')
+                    ? SystemConfiguration::query()
+                        ->active()
+                        ->latest('id')
+                        ->first()
+                    : null
+            );
         });
     }
 }

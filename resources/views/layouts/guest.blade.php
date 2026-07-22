@@ -13,6 +13,7 @@
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
+        <x-google-analytics />
     </head>
     <body class="font-sans antialiased text-gray-100">
         <div class="flex flex-col items-center min-h-screen px-4 py-6 guest-page sm:justify-center">
