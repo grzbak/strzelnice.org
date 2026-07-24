@@ -132,6 +132,6 @@ class Reservation extends Model
 
     public function canBeEdited(): bool
     {
-        return $this->start->isFuture() && ! $this->isFinalized();
+        return $this->end->isFuture() && ! $this->isFinalized();
     }
 }

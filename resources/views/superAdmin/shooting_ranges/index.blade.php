@@ -106,7 +106,7 @@
                     </h1>
                 </div>
 
-                <div class="gap-2 d-flex flex-wrap justify-content-md-end">
+                <div class="flex-wrap gap-2 d-flex justify-content-md-end">
                     <button
                         type="button"
                         class="btn btn-light shooting-header-action"
@@ -209,7 +209,7 @@
                     </td>
 
                     <td data-label="Nazwa">
-                        <div class="d-flex flex-column gap-1">
+                        <div class="gap-1 d-flex flex-column">
                             <strong>{{ $shootingRange->name }}</strong>
 
                             @if ($reservationsCount > 0)
@@ -221,8 +221,7 @@
                     </td>
 
                     <td data-label="Adres">
-                        {{ $shootingRange->street }} {{ $shootingRange->houseNumber }},
-                        {{ $shootingRange->zipCode }} {{ $shootingRange->town }}
+                        {{ $shootingRange->full_address }}
                     </td>
 
                     <td data-label="Województwo">

@@ -59,3 +59,4 @@ commit: Add separate offers and shooting range guide pages
 commit: Fix offers page encoding and guide link
 commit: Restrict shooting range zone menu link to guests
 commit: Rebuild shooting range endpoints without separators
+commit: Add staff reservation deletion

@@ -14,6 +14,8 @@ class ReservationNotificationMail extends Mailable
 
     public const EVENT_STATUS_CHANGED = 'status_changed';
 
+    public const EVENT_DELETED = 'deleted';
+
     public function __construct(
         public Reservation $reservation,
         public string $eventType,
@@ -54,6 +56,7 @@ class ReservationNotificationMail extends Mailable
             self::EVENT_CREATED => 'Nowa rezerwacja',
             self::EVENT_UPDATED => 'Zmieniono rezerwację',
             self::EVENT_STATUS_CHANGED => 'Zmieniono status rezerwacji',
+            self::EVENT_DELETED => 'Usunięto rezerwację',
             default => 'Informacja o rezerwacji',
         };
 

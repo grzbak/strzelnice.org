@@ -450,16 +450,65 @@
                 <div class="modal-footer">
                     <button
                         type="button"
-                        class="btn btn-outline-primary me-auto d-none"
+                        class="btn btn-outline-primary me-auto"
                         id="editReservationButton"
+                        disabled
                     >
                         <i class="bi bi-pencil me-1"></i>
                         Edytuj rezerwację
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-outline-danger d-none"
+                        id="deleteReservationButton"
+                    >
+                        <i class="bi bi-trash3 me-1"></i>
+                        Usuń rezerwację
                     </button>
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Anuluj</button>
                     <button type="submit" class="btn btn-success">Zapisz status</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <form method="POST" action="" id="deleteReservationForm" class="d-none">
+        @csrf
+        @method('DELETE')
+    </form>
+
+    <div class="modal fade" id="deleteReservationConfirmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <span class="calendar-eyebrow">Usuwanie rezerwacji</span>
+                        <h2 class="modal-title fs-5">Potwierdź usunięcie</h2>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        Czy na pewno chcesz usunąć tę rezerwację? Tej operacji nie można cofnąć.
+                    </div>
+                    <dl class="reservation-delete-summary mt-3 mb-0 small">
+                        <dt>Klient</dt>
+                        <dd id="deleteReservationCustomer" class="mb-2"></dd>
+                        <dt>Termin</dt>
+                        <dd id="deleteReservationDate" class="mb-2"></dd>
+                        <dt>Oś i stanowiska</dt>
+                        <dd id="deleteReservationLane" class="mb-0"></dd>
+                    </dl>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Anuluj</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteReservationButton">
+                        <i class="bi bi-trash3 me-1"></i>
+                        Usuń rezerwację
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -575,6 +624,11 @@
             font-size: .7rem;
             font-weight: 700;
             text-transform: uppercase;
+        }
+
+        .modal-backdrop.reservation-delete-backdrop {
+            --bs-backdrop-opacity: .78;
+            background-color: #050505;
         }
 
         .calendar-navigation,
@@ -997,6 +1051,7 @@
             availabilityUrl: @json(route('rezerwacje.availability', $shootingRange->id)),
             statusRouteTemplate: @json(route('admin.reservations.status', ['reservation' => '__ID__'])),
             updateRouteTemplate: @json(route('admin.reservations.update', ['reservation' => '__ID__'])),
+            deleteRouteTemplate: @json(route('admin.reservations.destroy', ['reservation' => '__ID__'])),
             storeRoute: @json(route('admin.reservations.store'))
         };
 
@@ -1885,11 +1940,42 @@
             const editReservationButton = document.getElementById(
                 'editReservationButton'
             );
+            const deleteReservationButton = document.getElementById(
+                'deleteReservationButton'
+            );
+            const deleteReservationForm = document.getElementById(
+                'deleteReservationForm'
+            );
+            const deleteConfirmModalElement = document.getElementById(
+                'deleteReservationConfirmModal'
+            );
+            const deleteConfirmModal = new bootstrap.Modal(deleteConfirmModalElement);
+            const confirmDeleteReservationButton = document.getElementById(
+                'confirmDeleteReservationButton'
+            );
             let selectedReservation = null;
 
             function setDetailText(id, value) {
                 document.getElementById(id).textContent = value || 'Brak danych';
             }
+
+            deleteConfirmModalElement.addEventListener('shown.bs.modal', () => {
+                document
+                    .querySelectorAll('.modal-backdrop')
+                    .forEach(backdrop => backdrop.classList.remove('reservation-delete-backdrop'));
+
+                document
+                    .querySelector('.modal-backdrop:last-of-type')
+                    ?.classList.add('reservation-delete-backdrop');
+            });
+
+            deleteConfirmModalElement.addEventListener('hidden.bs.modal', () => {
+                document
+                    .querySelectorAll('.reservation-delete-backdrop')
+                    .forEach(backdrop => backdrop.classList.remove('reservation-delete-backdrop'));
+
+                confirmDeleteReservationButton.disabled = false;
+            });
 
             function setAvailableStatusOptions(reservation) {
                 const availableBeforeStart = {
@@ -1950,6 +2036,10 @@
                 selectedReservation = reservation;
 
                 statusForm.action = adminCalendar.statusRouteTemplate.replace(
+                    '__ID__',
+                    reservation.id
+                );
+                deleteReservationForm.action = adminCalendar.deleteRouteTemplate.replace(
                     '__ID__',
                     reservation.id
                 );
@@ -2029,9 +2119,13 @@
                 historySection.classList.toggle('d-none', history.length === 0);
                 setDetailText('reservationDetailHistory', history.join('\n'));
 
-                editReservationButton.classList.toggle(
+                editReservationButton.disabled = ! reservation.can_edit;
+                editReservationButton.title = reservation.can_edit
+                    ? ''
+                    : 'Edycja jest dostępna tylko do zakończenia rezerwacji i przed ustawieniem statusu końcowego.';
+                deleteReservationButton.classList.toggle(
                     'd-none',
-                    ! reservation.can_edit
+                    ! reservation.can_delete
                 );
                 setAvailableStatusOptions(reservation);
                 statusSelect.value = reservation.status;
@@ -2046,14 +2140,68 @@
 
                 await configureStaffEdit(selectedReservation);
                 const detailsModal = bootstrap.Modal.getInstance(statusModal);
-                const editModal = bootstrap.Modal.getOrCreateInstance(staffModal);
+                const editModal = bootstrap.Modal.getInstance(staffModal)
+                    || new bootstrap.Modal(staffModal);
 
                 statusModal.addEventListener(
                     'hidden.bs.modal',
                     () => editModal.show(editReservationButton),
                     { once: true }
                 );
-                detailsModal.hide();
+
+                if (detailsModal) {
+                    detailsModal.hide();
+                } else {
+                    editModal.show(editReservationButton);
+                }
+            });
+
+            deleteReservationButton.addEventListener('click', () => {
+                if (! selectedReservation?.can_delete) {
+                    return;
+                }
+
+                setDetailText(
+                    'deleteReservationCustomer',
+                    selectedReservation.customer_name || selectedReservation.user_name || 'Brak danych'
+                );
+                setDetailText(
+                    'deleteReservationDate',
+                    `${selectedReservation.date} · ${selectedReservation.start_time}–${selectedReservation.end_time}`
+                );
+                setDetailText(
+                    'deleteReservationLane',
+                    [
+                        selectedReservation.lane_name,
+                        `${selectedReservation.positions_count} stanowisk`,
+                        selectedReservation.is_dynamic_shooting
+                            ? 'strzelanie dynamiczne'
+                            : null
+                    ].filter(Boolean).join(' · ')
+                );
+
+                const detailsModal = bootstrap.Modal.getInstance(statusModal);
+
+                statusModal.addEventListener(
+                    'hidden.bs.modal',
+                    () => deleteConfirmModal.show(deleteReservationButton),
+                    { once: true }
+                );
+
+                if (detailsModal) {
+                    detailsModal.hide();
+                } else {
+                    deleteConfirmModal.show(deleteReservationButton);
+                }
+            });
+
+            confirmDeleteReservationButton.addEventListener('click', () => {
+                if (! selectedReservation?.can_delete) {
+                    return;
+                }
+
+                confirmDeleteReservationButton.disabled = true;
+                deleteReservationForm.submit();
             });
 
             statusSelect.addEventListener('change', updateCancellationField);

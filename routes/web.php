@@ -174,6 +174,8 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
             ->name('admin.reservations.update');
         Route::patch('/panel/rezerwacje/{reservation}/status', [ReservationsController::class, 'updateStatus'])
             ->name('admin.reservations.status');
+        Route::delete('/panel/rezerwacje/{reservation}', [ReservationsController::class, 'destroyByStaff'])
+            ->name('admin.reservations.destroy');
     });
 
     Route::middleware('role:superadmin,admin')->group(function () {

@@ -375,7 +375,7 @@ class ReservationsController extends Controller
         abort_unless(
             $reservation->canBeEdited(),
             403,
-            'Termin tej rezerwacji już się rozpoczął.'
+            'Termin tej rezerwacji już upłynął.'
         );
 
         $shootingRange = $reservation->shootingRange()
@@ -635,6 +635,7 @@ class ReservationsController extends Controller
                 'has_ended' => $reservation->end->lessThanOrEqualTo(now()),
                 'can_edit' => $shootingRange->is_visible
                     && $reservation->canBeEdited(),
+                'can_delete' => true,
             ])
             ->values();
 
@@ -995,7 +996,7 @@ class ReservationsController extends Controller
 
                 if (! $lockedReservation->canBeEdited()) {
                     $this->throwReservationError(
-                        'Po rozpoczęciu terminu nie można edytować parametrów rezerwacji.'
+                        'Po zakończeniu terminu nie można edytować parametrów rezerwacji.'
                     );
                 }
 
@@ -1263,6 +1264,69 @@ class ReservationsController extends Controller
                 ? 'Status rezerwacji został zmieniony.'
                 : 'Status rezerwacji nie wymagał zmiany.'
         );
+    }
+
+    public function destroyByStaff(
+        Request $request,
+        Reservation $reservation
+    ): RedirectResponse {
+        abort_unless(
+            $request->user()->managesShootingRange($reservation->shootingRange),
+            403
+        );
+
+        $actor = $request->user();
+        $deletedReservation = null;
+
+        DB::transaction(function () use (
+            &$deletedReservation,
+            $reservation
+        ): void {
+            $deletedReservation = Reservation::query()
+                ->whereKey($reservation->id)
+                ->with([
+                    'shootingRange',
+                    'lane',
+                    'customer',
+                    'user',
+                    'creator',
+                    'approver',
+                    'canceller',
+                    'finalizer',
+                ])
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $deletedReservation->delete();
+        });
+
+        if ($deletedReservation) {
+            $this->sendReservationNotifications(
+                $deletedReservation,
+                ReservationNotificationMail::EVENT_DELETED
+            );
+
+            $this->security->recordIpAddress(
+                $actor,
+                $request,
+                'reservation.deleted_by_staff'
+            );
+            $this->security->audit(
+                'reservation.deleted_by_staff',
+                $actor,
+                $request,
+                $deletedReservation,
+                [
+                    'shooting_range_id' => $deletedReservation->shooting_range_id,
+                    'line_id' => $deletedReservation->line_id,
+                    'start' => $deletedReservation->start?->toDateTimeString(),
+                    'end' => $deletedReservation->end?->toDateTimeString(),
+                    'status' => $deletedReservation->status,
+                ]
+            );
+        }
+
+        return back()->with('success', 'Rezerwacja została usunięta.');
     }
 
     public function updateReservationNotifications(
