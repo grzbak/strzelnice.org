@@ -374,5 +374,5 @@ Route::get('/rezerwacje/{id}', [ReservationsController::class, 'callendar'])
 require __DIR__.'/auth.php';
 
 Route::get('/{endpoint}', [PageController::class, 'showPublicOrShooting'])
-    ->where('endpoint', '[a-z0-9_]+')
+    ->where('endpoint', '[a-z0-9_-]+')
     ->name('shooting.public.show');

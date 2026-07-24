@@ -198,7 +198,7 @@ class ShootingRange extends Model
         }
 
         if ($town) {
-            $endpoint = $base.'_'.static::normalizeEndpoint($town);
+            $endpoint = $base.static::normalizeEndpoint($town);
 
             if (! static::endpointExists($endpoint, $ignoreId)) {
                 return $endpoint;
@@ -208,7 +208,7 @@ class ShootingRange extends Model
         $counter = 2;
 
         do {
-            $endpoint = $base.'_'.$counter;
+            $endpoint = $base.$counter;
             $counter++;
         } while (static::endpointExists($endpoint, $ignoreId));
 
@@ -220,9 +220,9 @@ class ShootingRange extends Model
         return Str::of($value)
             ->ascii()
             ->lower()
-            ->replaceMatches('/[^a-z0-9\s_]+/', '')
-            ->replaceMatches('/[\s_]+/', '_')
-            ->trim('_')
+            ->replaceMatches('/[^a-z0-9\s-]+/', '')
+            ->replaceMatches('/[\s-]+/', '')
+            ->trim()
             ->toString();
     }
 
@@ -244,7 +244,7 @@ class ShootingRange extends Model
 
     public function getPublicLinkAttribute(): string
     {
-        return url('/s/'.$this->endpoint);
+        return url('/'.$this->endpoint);
     }
 
     public function effectiveMaxAdvanceBookingDays(): int
