@@ -657,7 +657,7 @@
     <h2>Twoja strzelnica, widoczna dla całej Polski</h2>
     <p class="desc">Własna podstrona, kalendarz rezerwacji, pełna kontrola nad grafikiem i miejsce na mapie, które
       przyciąga wzrok — wszystko w jednym systemie zbudowanym z myślą o strzelnicach.</p>
-    <span class="cta">strzelnice.org →</span>
+
   </div>
 </section>
     </div>
