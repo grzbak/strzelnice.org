@@ -28,7 +28,7 @@
                         <button class="ssz-btn ssz-btn-primary" type="button" data-ssz-form-toggle="ssz-form-hero">
                             Zarejestruj strzelnicę
                         </button>
-                        <a class="ssz-btn ssz-btn-ghost" href="#jak-to-dziala">Zobacz, jak to działa</a>
+                        <a class="ssz-btn ssz-btn-ghost" href="/strefa-strzelnic">Zobacz, jak to działa</a>
                     </div>
 
                     <form
@@ -73,67 +73,9 @@
             </div>
         </section>
 
-        <section id="jak-to-dziala">
-            <div class="ssz-wrap">
-                <div class="ssz-section-head">
-                    <div class="ssz-eyebrow">Jak to działa</div>
-                    <h2>Trzy kroki dzielą Cię od pierwszej rezerwacji</h2>
-                    <p>
-                        Cały proces uruchomienia odbywa się zdalnie. Nie potrzebujesz własnej strony,
-                        programisty ani znajomości technicznej obsługi systemów rezerwacji.
-                    </p>
-                </div>
-
-                <div class="ssz-steps">
-                    <div class="ssz-step">
-                        <div class="ssz-step-index">01 / Zgłoszenie</div>
-                        <h3>Skontaktuj się z nami</h3>
-                        <p>Wysyłasz zgłoszenie, a my kontaktujemy się z Tobą w sprawie uruchomienia strzelnicy w serwisie.</p>
-                    </div>
-                    <div class="ssz-step">
-                        <div class="ssz-step-index">02 / Konfiguracja</div>
-                        <h3>Wypełniasz podstronę i kalendarz</h3>
-                        <p>Dodajesz opis, zdjęcia, osie i godziny dostępności stanowisk. Sam decydujesz, które terminy są dostępne online.</p>
-                    </div>
-                    <div class="ssz-step">
-                        <div class="ssz-step-index">03 / Start</div>
-                        <h3>Pojawiasz się w wyszukiwarce</h3>
-                        <p>Twoja strzelnica trafia do wyszukiwarki strzelnice.org, a Ty otrzymujesz materiały marketingowe z kodem QR.</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section id="funkcjonalnosci">
-            <div class="ssz-wrap">
-                <div class="ssz-section-head">
-                    <div class="ssz-eyebrow">Co zyskujesz</div>
-                    <h2>Wszystko, czego potrzebuje strzelnica do przyjmowania rezerwacji online</h2>
-                </div>
-
-                <div class="ssz-features">
-                    @foreach ([
-                        ['bi-calendar3', 'Kalendarz rezerwacji', 'Klienci widzą wolne terminy w czasie rzeczywistym i rezerwują stanowisko bez telefonów i wiadomości.'],
-                        ['bi-geo-alt', 'Obecność w wyszukiwarce', 'Twoja strzelnica jest widoczna dla osób szukających terminu w Twoim mieście i województwie.'],
-                        ['bi-file-earmark-text', 'Własna podstrona', 'Opis, zdjęcia, cennik stanowisk i regulamin w jednym miejscu, gotowe do udostępnienia klientom.'],
-                        ['bi-window-sidebar', 'Panel zarządzania', 'Otwierasz i zamykasz terminy, zmieniasz dostępność stanowisk samodzielnie, z dowolnego urządzenia.'],
-                        ['bi-graph-up-arrow', 'Brak progu wejścia', 'Zero instalacji i zero integracji technicznych po Twojej stronie. Wszystko działa w przeglądarce.'],
-                        ['bi-receipt', 'Przejrzyste rozliczenia', 'Jedna, stała faktura miesięczna na przelew. Bez prowizji od rezerwacji i ukrytych opłat.'],
-                    ] as [$icon, $title, $text])
-                        <div class="ssz-feature">
-                            <i class="bi {{ $icon }} ssz-feature-icon"></i>
-                            <h3>{{ $title }}</h3>
-                            <p>{{ $text }}</p>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-        </section>
-
         <section class="ssz-marketing" id="materialy">
             <div class="ssz-wrap">
                 <div class="ssz-section-head">
-                    <div class="ssz-eyebrow">W zestawie startowym</div>
                     <h2>Promujemy Cię nie tylko online</h2>
                     <p>
                         Każda zarejestrowana strzelnica otrzymuje fizyczne materiały,

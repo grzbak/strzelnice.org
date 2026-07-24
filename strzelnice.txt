@@ -56,3 +56,4 @@ commit: Add IP audit and registration approval workflow
 commit: Add superadmin user management and IP security panel
 commit: Polish admin views, analytics and user security
 commit: Add separate offers and shooting range guide pages
+commit: Fix offers page encoding and guide link
