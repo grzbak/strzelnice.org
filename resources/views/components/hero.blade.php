@@ -100,6 +100,7 @@
                     <table class="table mb-0 align-middle bg-white table-hover">
                         <thead class="table-light">
                             <tr>
+                                <th class="search-result-logo-column" aria-label="Logo"></th>
                                 <th>Nazwa</th>
                                 <th>Adres</th>
                                 <th>Województwo</th>
@@ -118,6 +119,19 @@
                                     tabindex="0"
                                     role="link"
                                 >
+                                    <td class="search-result-logo-cell">
+                                        <span class="search-result-logo">
+                                            @if ($shootingRange->brand_url)
+                                                <img
+                                                    src="{{ $shootingRange->brand_url }}"
+                                                    alt="Logo {{ $shootingRange->name }}"
+                                                    loading="lazy"
+                                                >
+                                            @else
+                                                <i class="bi bi-bullseye" aria-hidden="true"></i>
+                                            @endif
+                                        </span>
+                                    </td>
                                     <td>
                                         <strong>{{ $shootingRange->name }}</strong>
                                         @if (! $shootingRange->is_public_access)
@@ -171,6 +185,17 @@
                             role="link"
                         >
                             <div class="gap-3 d-flex align-items-start justify-content-between">
+                                <span class="flex-shrink-0 search-result-logo search-result-logo-mobile">
+                                    @if ($shootingRange->brand_url)
+                                        <img
+                                            src="{{ $shootingRange->brand_url }}"
+                                            alt="Logo {{ $shootingRange->name }}"
+                                            loading="lazy"
+                                        >
+                                    @else
+                                        <i class="bi bi-bullseye" aria-hidden="true"></i>
+                                    @endif
+                                </span>
                                 <div class="min-w-0">
                                     <div class="flex-wrap gap-2 mb-1 d-flex align-items-center">
                                         <h5 class="mb-0 search-result-mobile-title">{{ $shootingRange->name }}</h5>
@@ -258,6 +283,38 @@
         .search-result-link:focus-visible {
             outline: 3px solid rgba(13, 110, 253, 0.3);
             outline-offset: 2px;
+        }
+
+        .search-result-logo-column,
+        .search-result-logo-cell {
+            width: 74px;
+        }
+
+        .search-result-logo {
+            width: 48px;
+            height: 48px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            color: #8f9a9d;
+            background: #eef2f2;
+            border: 1px solid #dbe3e3;
+            border-radius: 6px;
+            font-size: 1.35rem;
+        }
+
+        .search-result-logo img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+            padding: 5px;
+        }
+
+        .search-result-logo-mobile {
+            width: 54px;
+            height: 54px;
         }
 
         .search-result-lane {
