@@ -2,18 +2,23 @@
     $shootingRangePublicUrl = $shootingRange->endpoint
         ? route('shooting.public.show', ['endpoint' => $shootingRange->endpoint])
         : null;
+    $calendarLanes = $shootingRange->lanes
+        ->map(fn ($lane) => [
+            'id' => $lane->id,
+            'name' => $lane->name,
+            'positions' => (int) $lane->numberOfPositions,
+        ])
+        ->values();
 @endphp
 
 <x-app-layout>
     <div class="page-bg-2"></div>
 
-    @include('components.breadcrumb')
-
-    <main class="container py-4 admin-reservations">
+    <main class="px-3 py-4 container-fluid px-xl-4 admin-reservations">
         <x-session-alerts />
 
         @if (! $shootingRange->is_visible)
-            <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+            <div class="gap-2 alert alert-warning d-flex align-items-start" role="alert">
                 <i class="bi bi-eye-slash-fill fs-5" aria-hidden="true"></i>
                 <div>
                     <strong>Strzelnica jest ukryta.</strong>
@@ -77,7 +82,7 @@
                         <input type="hidden" name="receives_reservation_notifications" value="0">
 
                         <label
-                            class="form-check form-switch mb-0"
+                            class="mb-0 form-check form-switch"
                             data-bs-toggle="tooltip"
                             data-bs-title="Powiadomienia e-mail o nowych rezerwacjach, zmianach statusu i anulowaniach"
                         >
@@ -488,11 +493,11 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="alert alert-warning mb-0">
+                    <div class="mb-0 alert alert-warning">
                         <i class="bi bi-exclamation-triangle-fill me-2"></i>
                         Czy na pewno chcesz usunąć tę rezerwację? Tej operacji nie można cofnąć.
                     </div>
-                    <dl class="reservation-delete-summary mt-3 mb-0 small">
+                    <dl class="mt-3 mb-0 reservation-delete-summary small">
                         <dt>Klient</dt>
                         <dd id="deleteReservationCustomer" class="mb-2"></dd>
                         <dt>Termin</dt>
@@ -533,8 +538,8 @@
 
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <h3 class="fs-6 mb-3">Dane z bazy</h3>
+                            <div class="p-3 border rounded h-100">
+                                <h3 class="mb-3 fs-6">Dane z bazy</h3>
                                 <dl class="mb-0 small">
                                     <dt>Imię i nazwisko</dt>
                                     <dd id="customerMatchUserName" class="mb-2"></dd>
@@ -546,8 +551,8 @@
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <h3 class="fs-6 mb-3">Dane z formularza</h3>
+                            <div class="p-3 border rounded h-100">
+                                <h3 class="mb-3 fs-6">Dane z formularza</h3>
                                 <dl class="mb-0 small">
                                     <dt>Imię i nazwisko</dt>
                                     <dd id="customerMatchFormName" class="mb-2"></dd>
@@ -723,13 +728,193 @@
             border-radius: 8px;
         }
 
-        .day-timeline {
-            display: grid;
-            gap: 0;
+        .day-board {
             overflow: hidden;
             background: #fff;
             border: 1px solid var(--border);
             border-radius: 8px;
+            box-shadow: 0 8px 24px rgb(21 31 27 / 8%);
+        }
+
+        .day-lane-filter {
+            display: flex;
+            align-items: stretch;
+            gap: .55rem;
+            padding: .85rem;
+            overflow-x: auto;
+            background: linear-gradient(90deg, #f8f9fa, #fff);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .day-lane-all {
+            display: inline-flex;
+            align-items: center;
+            gap: .45rem;
+            min-width: max-content;
+            padding: .56rem .7rem;
+            color: #26332d;
+            font-size: .76rem;
+            font-weight: 800;
+            background: #fff;
+            border: 1px solid #d7dfdb;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgb(21 31 27 / 8%);
+        }
+
+        .day-lane-all input {
+            width: 1rem;
+            height: 1rem;
+            accent-color: #26332d;
+        }
+
+        .day-lane-tile {
+            min-width: 145px;
+            padding: .55rem .7rem;
+            color: #fff;
+            text-align: left;
+            background: var(--lane-color);
+            border: 1px solid var(--lane-color);
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgb(21 31 27 / 13%);
+            transition: opacity .15s ease, transform .15s ease, box-shadow .15s ease;
+        }
+
+        .day-lane-tile:hover,
+        .day-lane-tile:focus-visible {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgb(21 31 27 / 18%);
+        }
+
+        .day-lane-tile.is-hidden {
+            color: #26332d;
+            background: color-mix(in srgb, var(--lane-color) 14%, white);
+            border-color: color-mix(in srgb, var(--lane-color) 32%, white);
+            box-shadow: none;
+        }
+
+        .day-lane-tile strong,
+        .day-lane-tile span {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .day-lane-tile span {
+            margin-top: .12rem;
+            font-size: .68rem;
+            font-weight: 700;
+            opacity: .82;
+        }
+
+        .day-status-legend {
+            display: flex;
+            align-items: center;
+            gap: .45rem;
+            flex-wrap: wrap;
+            padding: .55rem .85rem;
+            color: var(--muted);
+            font-size: .73rem;
+            font-weight: 700;
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .day-status-legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: .28rem;
+        }
+
+        .day-scroll-hint {
+            display: none;
+            padding: .45rem .85rem;
+            color: #5d4037;
+            font-size: .74rem;
+            font-weight: 700;
+            background: #fff8e1;
+            border-bottom: 1px solid #f2df9f;
+        }
+
+        .day-timeline {
+            display: grid;
+            grid-template-columns: 80px minmax(0, 1fr);
+            overflow-x: auto;
+            overflow-y: hidden;
+            background: #fff;
+        }
+
+        .day-time-labels {
+            position: sticky;
+            left: 0;
+            z-index: 4;
+            display: grid;
+            background: #f7f9f8;
+            border-right: 1px solid var(--border);
+        }
+
+        .day-reservation-area {
+            position: relative;
+            min-width: 720px;
+            background:
+                repeating-linear-gradient(
+                    to bottom,
+                    transparent 0,
+                    transparent calc(var(--hour-height) - 1px),
+                    #dfe5e5 calc(var(--hour-height) - 1px),
+                    #dfe5e5 var(--hour-height)
+                ),
+                repeating-linear-gradient(
+                    to right,
+                    transparent 0,
+                    transparent calc(var(--position-width) - 1px),
+                    rgb(38 51 45 / 8%) calc(var(--position-width) - 1px),
+                    rgb(38 51 45 / 8%) var(--position-width)
+                ),
+                #fff;
+        }
+
+        .day-lane-band {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            z-index: 1;
+            overflow: hidden;
+            background:
+                repeating-linear-gradient(
+                    to bottom,
+                    transparent 0,
+                    transparent calc(var(--hour-height) - 1px),
+                    color-mix(in srgb, var(--lane-color) 20%, white) calc(var(--hour-height) - 1px),
+                    color-mix(in srgb, var(--lane-color) 20%, white) var(--hour-height)
+                ),
+                color-mix(in srgb, var(--lane-color) 6%, white);
+            border-right: 1px solid color-mix(in srgb, var(--lane-color) 28%, white);
+        }
+
+        .day-position-line {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            z-index: 2;
+            width: 1px;
+            pointer-events: none;
+            background: color-mix(in srgb, var(--lane-color) 52%, #26332d);
+            opacity: .55;
+        }
+
+        .day-lane-band-label {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            display: inline-block;
+            margin: .35rem 0 0 .4rem;
+            padding: .18rem .38rem;
+            color: #fff;
+            font-size: .62rem;
+            font-weight: 800;
+            background: var(--lane-color);
+            border-radius: 4px;
         }
 
         .hour-row {
@@ -836,6 +1021,135 @@
             background: transparent;
             border: 1px solid currentColor;
             border-radius: 4px;
+        }
+
+        .reservation-card.day-reservation-card {
+            position: absolute;
+            z-index: 3;
+            min-width: 60px;
+            min-height: 48px;
+            grid-template-columns: minmax(0, 1fr);
+            align-content: start;
+            gap: .18rem;
+            padding: .48rem .52rem;
+            overflow: visible;
+            color: #26332d;
+            background: color-mix(in srgb, var(--lane-color) 17%, white);
+            border-color: color-mix(in srgb, var(--lane-color) 42%, white);
+            border-left-color: var(--lane-color);
+            border-width: 1px 1px 1px 5px;
+            border-style: solid;
+            box-shadow: 0 8px 18px rgb(22 32 27 / 18%);
+        }
+
+        .reservation-card.day-reservation-card:hover,
+        .reservation-card.day-reservation-card:focus-visible {
+            z-index: 8;
+        }
+
+        .reservation-card.day-reservation-card .reservation-lane,
+        .reservation-card.day-reservation-card .reservation-status {
+            display: none;
+        }
+
+        .reservation-card.day-reservation-card strong,
+        .reservation-card.day-reservation-card span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .day-reservation-time {
+            display: inline-flex;
+            align-items: center;
+            gap: .25rem;
+            font-size: .72rem;
+            font-weight: 800;
+        }
+
+        .day-reservation-status-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.1rem;
+            height: 1.1rem;
+            flex: 0 0 1.1rem;
+            color: #fff;
+            font-size: .68rem;
+            background: #26332d;
+            border-radius: 999px;
+        }
+
+        .day-reservation-status-icon.pending {
+            color: #26332d;
+            background: #ffc107;
+        }
+
+        .day-reservation-status-icon.approved {
+            background: var(--green);
+        }
+
+        .day-reservation-status-icon.cancelled {
+            background: #dc3545;
+        }
+
+        .day-reservation-status-icon.completed {
+            background: #0891b2;
+        }
+
+        .day-reservation-status-icon.no_show {
+            background: #71717a;
+        }
+
+        .day-reservation-meta {
+            color: currentColor;
+            opacity: .82;
+        }
+
+        .day-reservation-tooltip {
+            position: fixed;
+            z-index: 3000;
+            display: none;
+            width: min(360px, calc(100vw - 24px));
+            padding: .85rem .95rem;
+            color: #fff;
+            font-size: .82rem;
+            line-height: 1.45;
+            background: #1f2924;
+            border-radius: 6px;
+            box-shadow: 0 14px 34px rgb(0 0 0 / 34%);
+            pointer-events: none;
+        }
+
+        .day-reservation-tooltip.is-visible {
+            display: block;
+        }
+
+        .day-reservation-tooltip strong {
+            display: block;
+            margin-bottom: .45rem;
+            color: #fff;
+            font-size: .95rem;
+        }
+
+        .day-reservation-tooltip dl {
+            display: grid;
+            grid-template-columns: max-content minmax(0, 1fr);
+            gap: .25rem .65rem;
+            margin: 0;
+        }
+
+        .day-reservation-tooltip dt {
+            color: rgb(255 255 255 / 66%);
+            font-size: .68rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .day-reservation-tooltip dd {
+            min-width: 0;
+            margin: 0;
+            overflow-wrap: anywhere;
         }
 
         .detail-eyebrow,
@@ -1027,6 +1341,15 @@
                 grid-template-columns: 58px minmax(0, 1fr);
             }
 
+            .day-timeline {
+                grid-template-columns: 64px minmax(0, 1fr);
+            }
+
+            .hour-label {
+                padding: .65rem .35rem;
+                font-size: .68rem;
+            }
+
             .reservation-card {
                 grid-template-columns: 1fr;
             }
@@ -1045,6 +1368,7 @@
             periodStart: @json($periodStart),
             periodEnd: @json($periodEnd),
             reservations: @json($reservations),
+            lanes: @json($calendarLanes),
             openingHours: @json($openingHours),
             shootingRangeId: @json($shootingRange->id),
             customerSearchUrl: @json(route('admin.reservations.customers.search')),
@@ -1069,6 +1393,22 @@
         };
 
         const weekdayLabels = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Nd'];
+        const lanePalette = [
+            '#7a1f1f',
+            '#1f5d3b',
+            '#24537a',
+            '#7a4c1f',
+            '#5d377a',
+            '#1f737a',
+            '#7a1f4d',
+            '#4f5f24',
+            '#3c3f46',
+            '#8a3f12'
+        ];
+        const dayVisibleLaneIds = new Set(
+            (adminCalendar.lanes ?? []).map(lane => String(lane.id))
+        );
+        let dayLaneSelectionInitialized = dayVisibleLaneIds.size > 0;
 
         function parseDate(value) {
             const [year, month, day] = value.split('-').map(Number);
@@ -1081,6 +1421,26 @@
                 String(date.getMonth() + 1).padStart(2, '0'),
                 String(date.getDate()).padStart(2, '0')
             ].join('-');
+        }
+
+        function timeToMinutes(value) {
+            const [hours, minutes] = value.split(':').map(Number);
+
+            return (hours * 60) + minutes;
+        }
+
+        function laneColor(index) {
+            return lanePalette[index % lanePalette.length];
+        }
+
+        function statusIcon(status) {
+            return {
+                pending: 'bi-hourglass-split',
+                approved: 'bi-check-lg',
+                cancelled: 'bi-x-lg',
+                completed: 'bi-flag-fill',
+                no_show: 'bi-slash-circle'
+            }[status] ?? 'bi-info-lg';
         }
 
         function readableDate(date, options = {}) {
@@ -1099,6 +1459,77 @@
             const element = document.createElement('div');
             element.textContent = value ?? '';
             return element.innerHTML;
+        }
+
+        function calendarTooltip() {
+            let tooltip = document.getElementById('dayReservationTooltip');
+
+            if (! tooltip) {
+                tooltip = document.createElement('div');
+                tooltip.id = 'dayReservationTooltip';
+                tooltip.className = 'day-reservation-tooltip';
+                tooltip.setAttribute('role', 'tooltip');
+                document.body.appendChild(tooltip);
+            }
+
+            return tooltip;
+        }
+
+        function placeCalendarTooltip(card, tooltip) {
+            const gap = 12;
+            const viewportMargin = 12;
+            const cardRect = card.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+            const placements = [
+                {
+                    name: 'right',
+                    fits: window.innerWidth - cardRect.right >= tooltipRect.width + gap + viewportMargin,
+                    left: cardRect.right + gap,
+                    top: cardRect.top + (cardRect.height - tooltipRect.height) / 2
+                },
+                {
+                    name: 'left',
+                    fits: cardRect.left >= tooltipRect.width + gap + viewportMargin,
+                    left: cardRect.left - tooltipRect.width - gap,
+                    top: cardRect.top + (cardRect.height - tooltipRect.height) / 2
+                },
+                {
+                    name: 'bottom',
+                    fits: window.innerHeight - cardRect.bottom >= tooltipRect.height + gap + viewportMargin,
+                    left: cardRect.left,
+                    top: cardRect.bottom + gap
+                },
+                {
+                    name: 'top',
+                    fits: cardRect.top >= tooltipRect.height + gap + viewportMargin,
+                    left: cardRect.left,
+                    top: cardRect.top - tooltipRect.height - gap
+                }
+            ];
+            const placement = placements.find(item => item.fits) ?? placements[2];
+            const left = Math.min(
+                Math.max(viewportMargin, placement.left),
+                window.innerWidth - tooltipRect.width - viewportMargin
+            );
+            const top = Math.min(
+                Math.max(viewportMargin, placement.top),
+                window.innerHeight - tooltipRect.height - viewportMargin
+            );
+
+            tooltip.style.left = `${left}px`;
+            tooltip.style.top = `${top}px`;
+            tooltip.dataset.placement = placement.name;
+        }
+
+        function showCalendarTooltip(card) {
+            const tooltip = calendarTooltip();
+            tooltip.innerHTML = card.dataset.tooltipHtml ?? '';
+            tooltip.classList.add('is-visible');
+            placeCalendarTooltip(card, tooltip);
+        }
+
+        function hideCalendarTooltip() {
+            calendarTooltip().classList.remove('is-visible');
         }
 
         function filteredReservations() {
@@ -1163,6 +1594,12 @@
                     card.click();
                 }
             });
+            card.addEventListener('mouseenter', () => showCalendarTooltip(card));
+            card.addEventListener('mousemove', () => showCalendarTooltip(card));
+            card.addEventListener('focus', () => showCalendarTooltip(card));
+            card.addEventListener('mouseleave', hideCalendarTooltip);
+            card.addEventListener('blur', hideCalendarTooltip);
+            card.addEventListener('click', hideCalendarTooltip);
 
             return card;
         }
@@ -1173,8 +1610,50 @@
             const dayReservations = reservationsForDate(reservations, adminCalendar.selectedDate);
             const isoDay = selected.getDay() === 0 ? 7 : selected.getDay();
             const hours = adminCalendar.openingHours[isoDay] ?? { opens_at: '08:00', closes_at: '22:00' };
-            const startHour = Number(hours.opens_at.split(':')[0]);
-            const endHour = Number(hours.closes_at.split(':')[0]) + (hours.closes_at.split(':')[1] !== '00' ? 1 : 0);
+            const startMinutes = Math.floor(timeToMinutes(hours.opens_at) / 60) * 60;
+            const closesAtMinutes = timeToMinutes(hours.closes_at);
+            const endMinutes = Math.ceil(closesAtMinutes / 60) * 60;
+            const totalMinutes = Math.max(60, endMinutes - startMinutes);
+            const hourHeight = 82;
+            const lanes = (adminCalendar.lanes.length
+                ? adminCalendar.lanes
+                : [...new Map(dayReservations.map(reservation => [
+                    String(reservation.line_id),
+                    {
+                        id: String(reservation.line_id),
+                        name: reservation.lane_name || 'Oś',
+                        positions: Number(reservation.positions_count || 1)
+                    }
+                ])).values()]
+            ).map((lane, index) => ({
+                ...lane,
+                id: String(lane.id),
+                positions: Math.max(1, Number(lane.positions || 1)),
+                color: laneColor(index)
+            }));
+
+            if (! dayLaneSelectionInitialized) {
+                lanes.forEach(lane => dayVisibleLaneIds.add(String(lane.id)));
+                dayLaneSelectionInitialized = true;
+            }
+
+            const selectedLaneIds = new Set(
+                lanes
+                    .filter(lane => dayVisibleLaneIds.has(String(lane.id)))
+                    .map(lane => String(lane.id))
+            );
+            const visibleLanes = lanes.filter(lane => selectedLaneIds.has(String(lane.id)));
+            const activeDayReservations = dayReservations.filter(reservation => {
+                return selectedLaneIds.has(String(reservation.line_id));
+            });
+            const totalPositions = visibleLanes.reduce((sum, lane) => sum + lane.positions, 0);
+            const availableBoardWidth = Math.max(720, content.clientWidth - 80);
+            const positionWidth = totalPositions > 0
+                ? Math.max(72, availableBoardWidth / totalPositions)
+                : 72;
+            const boardWidth = Math.max(720, totalPositions * positionWidth);
+            const requiresHorizontalScroll = totalPositions > 0
+                && (totalPositions * 72) > availableBoardWidth;
 
             document.getElementById('calendarTitle').textContent = readableDate(selected, {
                 weekday: 'long',
@@ -1183,31 +1662,235 @@
                 year: 'numeric'
             });
 
-            const timeline = document.createElement('div');
-            timeline.className = 'day-timeline';
+            content.innerHTML = '';
 
-            for (let hour = startHour; hour < endHour; hour++) {
-                const row = document.createElement('div');
-                row.className = 'hour-row';
-                row.innerHTML = `<div class="hour-label">${String(hour).padStart(2, '0')}:00</div>`;
+            const board = document.createElement('div');
+            board.className = 'day-board';
 
-                const bookings = document.createElement('div');
-                bookings.className = 'hour-bookings';
-                const hourReservations = dayReservations.filter(reservation => Number(reservation.start_time.slice(0, 2)) === hour);
+            const laneFilter = document.createElement('div');
+            laneFilter.className = 'day-lane-filter';
 
-                if (!hourReservations.length) {
-                    bookings.innerHTML = '<span class="hour-empty">Brak rezerwacji rozpoczynających się o tej godzinie</span>';
+            const allToggle = document.createElement('label');
+            allToggle.className = 'day-lane-all';
+            allToggle.innerHTML = `
+                <input type="checkbox" ${visibleLanes.length === lanes.length ? 'checked' : ''}>
+                <span>Wszystkie osie</span>
+            `;
+            const allToggleInput = allToggle.querySelector('input');
+            allToggleInput.indeterminate = visibleLanes.length > 0 && visibleLanes.length < lanes.length;
+            allToggleInput.addEventListener('change', event => {
+                if (event.target.checked) {
+                    lanes.forEach(lane => dayVisibleLaneIds.add(String(lane.id)));
                 } else {
-                    hourReservations.forEach(reservation => bookings.appendChild(createReservationCard(reservation)));
+                    dayVisibleLaneIds.clear();
                 }
 
-                row.appendChild(bookings);
-                timeline.appendChild(row);
+                renderDay(reservations);
+            });
+            laneFilter.appendChild(allToggle);
+
+            lanes.forEach(lane => {
+                const tile = document.createElement('button');
+                tile.type = 'button';
+                tile.className = 'day-lane-tile';
+                tile.classList.toggle('is-hidden', ! selectedLaneIds.has(String(lane.id)));
+                tile.style.setProperty('--lane-color', lane.color);
+                tile.innerHTML = `
+                    <strong>${escapeHtml(lane.name)}</strong>
+                    <span>${escapeHtml(lane.positions)} stanowisk</span>
+                `;
+                tile.addEventListener('click', () => {
+                    if (dayVisibleLaneIds.has(String(lane.id))) {
+                        dayVisibleLaneIds.delete(String(lane.id));
+                    } else {
+                        dayVisibleLaneIds.add(String(lane.id));
+                    }
+
+                    renderDay(reservations);
+                });
+                laneFilter.appendChild(tile);
+            });
+
+            const statusLegend = document.createElement('div');
+            statusLegend.className = 'day-status-legend';
+            statusLegend.innerHTML = `
+                <span><i class="bi bi-check-lg day-reservation-status-icon approved"></i>Zatwierdzone</span>
+                <span><i class="bi bi-hourglass-split day-reservation-status-icon pending"></i>Oczekujące</span>
+                <span><i class="bi bi-x-lg day-reservation-status-icon cancelled"></i>Anulowane</span>
+                <span><i class="bi bi-flag-fill day-reservation-status-icon completed"></i>Zrealizowane</span>
+                <span><i class="bi bi-slash-circle day-reservation-status-icon no_show"></i>Niezrealizowane</span>
+            `;
+
+            const scrollHint = document.createElement('div');
+            scrollHint.className = 'day-scroll-hint';
+            scrollHint.textContent = 'Przewiń w prawo, aby zobaczyć kolejne osie i stanowiska.';
+            if (requiresHorizontalScroll) {
+                scrollHint.style.display = 'block';
             }
 
-            content.appendChild(timeline);
-        }
+            const timeline = document.createElement('div');
+            timeline.className = 'day-timeline';
+            timeline.style.setProperty('--hour-height', `${hourHeight}px`);
+            timeline.style.overflowX = requiresHorizontalScroll ? 'auto' : 'hidden';
 
+            const timeLabels = document.createElement('div');
+            timeLabels.className = 'day-time-labels';
+
+            const reservationArea = document.createElement('div');
+            reservationArea.className = 'day-reservation-area';
+            reservationArea.style.height = `${(totalMinutes / 60) * hourHeight}px`;
+            reservationArea.style.minWidth = `${boardWidth}px`;
+            reservationArea.style.setProperty('--position-width', `${positionWidth}px`);
+
+            for (let minutes = startMinutes; minutes < endMinutes; minutes += 60) {
+                const label = document.createElement('div');
+                label.className = 'hour-label';
+                label.style.height = `${hourHeight}px`;
+                label.textContent = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:00`;
+                timeLabels.appendChild(label);
+            }
+
+            if (! visibleLanes.length) {
+                const empty = document.createElement('div');
+                empty.className = 'hour-empty';
+                empty.style.padding = '1rem';
+                empty.textContent = 'Wybierz przynajmniej jedną oś, aby wyświetlić rezerwacje.';
+                reservationArea.appendChild(empty);
+            }
+
+            const laneOffsets = new Map();
+            let runningPositionOffset = 0;
+
+            visibleLanes.forEach(lane => {
+                laneOffsets.set(String(lane.id), runningPositionOffset);
+
+                const band = document.createElement('div');
+                band.className = 'day-lane-band';
+                band.style.setProperty('--lane-color', lane.color);
+                band.style.left = `${runningPositionOffset * positionWidth}px`;
+                band.style.width = `${lane.positions * positionWidth}px`;
+                band.innerHTML = `<span class="day-lane-band-label">${escapeHtml(lane.name)}</span>`;
+
+                for (let position = 1; position < lane.positions; position++) {
+                    const positionLine = document.createElement('span');
+                    positionLine.className = 'day-position-line';
+                    positionLine.style.left = `${position * positionWidth}px`;
+                    band.appendChild(positionLine);
+                }
+
+                reservationArea.appendChild(band);
+
+                runningPositionOffset += lane.positions;
+            });
+
+            const activeLaneSegments = new Map();
+            const sortedDayReservations = [...activeDayReservations].sort((first, second) => {
+                const firstStart = timeToMinutes(first.start_time);
+                const secondStart = timeToMinutes(second.start_time);
+
+                return firstStart - secondStart
+                    || timeToMinutes(first.end_time) - timeToMinutes(second.end_time);
+            });
+
+            sortedDayReservations.forEach(reservation => {
+                const lane = visibleLanes.find(
+                    item => String(item.id) === String(reservation.line_id)
+                );
+
+                if (! lane) {
+                    return;
+                }
+
+                const lanePositions = Math.max(1, Number(lane.positions || 1));
+                const reservationStart = Math.max(startMinutes, timeToMinutes(reservation.start_time));
+                const reservationEnd = Math.min(endMinutes, timeToMinutes(reservation.end_time));
+                const duration = Math.max(30, reservationEnd - reservationStart);
+                const reservedPositions = Math.min(
+                    lanePositions,
+                    Math.max(1, Number(reservation.positions_count || 1))
+                );
+                const laneSegments = (
+                    activeLaneSegments.get(String(lane.id)) ?? []
+                ).filter(segment => segment.end > reservationStart);
+                let offsetUnits = 0;
+
+                for (
+                    let candidate = 0;
+                    candidate <= lanePositions - reservedPositions;
+                    candidate++
+                ) {
+                    const collides = laneSegments.some(segment => {
+                        const overlapsInTime = segment.start < reservationEnd
+                            && segment.end > reservationStart;
+                        const overlapsInPositions = candidate < segment.offset + segment.width
+                            && candidate + reservedPositions > segment.offset;
+
+                        return overlapsInTime && overlapsInPositions;
+                    });
+
+                    if (! collides) {
+                        offsetUnits = candidate;
+                        break;
+                    }
+                }
+
+                laneSegments.push({
+                    start: reservationStart,
+                    end: reservationEnd,
+                    offset: offsetUnits,
+                    width: reservedPositions
+                });
+                activeLaneSegments.set(String(lane.id), laneSegments);
+
+                const laneOffset = laneOffsets.get(String(lane.id)) ?? 0;
+                const card = createReservationCard(reservation);
+                card.classList.add('day-reservation-card');
+                card.style.setProperty('--lane-color', lane.color);
+                card.removeAttribute('title');
+                card.dataset.tooltipHtml = `
+                    <strong>${escapeHtml(reservation.user_name)}</strong>
+                    <dl>
+                        <dt>Data</dt>
+                        <dd>${escapeHtml(reservation.date)}</dd>
+                        <dt>Godziny</dt>
+                        <dd>${escapeHtml(reservation.start_time)}-${escapeHtml(reservation.end_time)}</dd>
+                        <dt>Oś</dt>
+                        <dd>${escapeHtml(lane.name)}</dd>
+                        <dt>Stanowiska</dt>
+                        <dd>${escapeHtml(reservedPositions)} z ${escapeHtml(lanePositions)}</dd>
+                        <dt>Status</dt>
+                        <dd>${escapeHtml(statusLabels[reservation.status] ?? reservation.status)}</dd>
+                        <dt>Kontakt</dt>
+                        <dd>${escapeHtml(reservation.user_phone ?? reservation.user_email ?? 'Brak danych kontaktowych')}</dd>
+                        <dt>Typ</dt>
+                        <dd>${reservation.is_dynamic_shooting ? 'Strzelanie dynamiczne' : 'Strzelanie statyczne'}</dd>
+                    </dl>
+                `;
+                card.innerHTML = `
+                    <span class="day-reservation-time">
+                        <i class="bi ${statusIcon(reservation.status)} day-reservation-status-icon ${reservation.status}" aria-hidden="true"></i>
+                        ${escapeHtml(reservation.start_time)}-${escapeHtml(reservation.end_time)}
+                    </span>
+                    <strong>${escapeHtml(reservation.user_name)}</strong>
+                    <span class="day-reservation-meta">
+                        ${escapeHtml(lane.name)} · ${escapeHtml(reservedPositions)} stanowisk
+                    </span>
+                `;
+                card.style.top = `${((reservationStart - startMinutes) / totalMinutes) * 100}%`;
+                card.style.height = `calc(${(duration / totalMinutes) * 100}% - 6px)`;
+                card.style.left = `${((laneOffset + offsetUnits) * positionWidth) + 5}px`;
+                card.style.width = `${Math.max(60, (reservedPositions * positionWidth) - 10)}px`;
+                reservationArea.appendChild(card);
+            });
+
+            timeline.appendChild(timeLabels);
+            timeline.appendChild(reservationArea);
+            board.appendChild(laneFilter);
+            board.appendChild(statusLegend);
+            board.appendChild(scrollHint);
+            board.appendChild(timeline);
+            content.appendChild(board);
+        }
         function statusBar(reservations) {
             if (!reservations.length) {
                 return '<div class="status-bar"></div>';
@@ -1338,6 +2021,9 @@
             document.querySelectorAll('.view-button').forEach(button => {
                 button.addEventListener('click', () => openView(button.dataset.view, adminCalendar.selectedDate));
             });
+
+            window.addEventListener('scroll', hideCalendarTooltip, true);
+            window.addEventListener('resize', hideCalendarTooltip);
 
             ['laneFilter', 'statusFilter'].forEach(id => {
                 document.getElementById(id).addEventListener('change', renderCalendar);

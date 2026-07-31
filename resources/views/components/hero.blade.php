@@ -33,14 +33,34 @@
                     <label class="form-label fw-semibold">Lokalizacja</label>
 
                     <div class="input-group">
+                        <div class="hero-location-field flex-grow-1">
+                            <span class="hero-current-location-icon" aria-hidden="true">
+                                <i class="bi bi-crosshair"></i>
+                            </span>
                         <input
                             type="text"
                             name="location"
                             id="heroLocation"
-                            class="form-control"
+                            class="form-control hero-location-input"
                             placeholder="Województwo lub miasto..."
                             value="{{ request('location', 'Moja lokalizacja') }}"
+                            autocomplete="off"
                         >
+
+                            <button
+                                type="button"
+                                class="hero-current-location-suggestion"
+                                id="heroCurrentLocationSuggestion"
+                            >
+                                <span class="hero-current-location-suggestion-icon" aria-hidden="true">
+                                    <i class="bi bi-crosshair"></i>
+                                </span>
+                                <span>
+                                    <strong>Moja lokalizacja</strong>
+                                    <small>Użyj bieżącego położenia</small>
+                                </span>
+                            </button>
+                        </div>
 
                         <span class="input-group-text">+</span>
 
@@ -83,6 +103,105 @@
         </form>
     </div>
 </section>
+
+<style>
+    .hero-location-field {
+        position: relative;
+        min-width: 0;
+    }
+
+    .hero-location-input {
+        padding-left: 2.35rem;
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+    .hero-current-location-icon {
+        position: absolute;
+        top: 50%;
+        left: .75rem;
+        z-index: 5;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        width: 1.1rem;
+        height: 1.1rem;
+        color: #1a73e8;
+        font-size: .95rem;
+        pointer-events: none;
+        transform: translateY(-50%);
+    }
+
+    .hero-location-field.is-current-location .hero-current-location-icon {
+        display: inline-flex;
+    }
+
+    .hero-current-location-suggestion {
+        position: absolute;
+        top: calc(100% + .35rem);
+        right: 0;
+        left: 0;
+        z-index: 30;
+        display: none;
+        align-items: center;
+        gap: .65rem;
+        padding: .7rem .8rem;
+        color: #26332d;
+        text-align: left;
+        background: #fff;
+        border: 1px solid #dfe5e5;
+        border-radius: 6px;
+        box-shadow: 0 12px 28px rgb(25 35 31 / 18%);
+    }
+
+    .hero-current-location-suggestion.is-visible {
+        display: flex;
+    }
+
+    .hero-current-location-suggestion:hover,
+    .hero-current-location-suggestion:focus-visible {
+        background: #f7fbff;
+        border-color: #b8d5ff;
+        outline: 0;
+    }
+
+    .hero-current-location-suggestion-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2rem;
+        height: 2rem;
+        flex: 0 0 2rem;
+        color: #1a73e8;
+        background: #e8f0fe;
+        border-radius: 999px;
+    }
+
+    .hero-current-location-suggestion strong,
+    .hero-current-location-suggestion small {
+        display: block;
+    }
+
+    .hero-current-location-suggestion strong {
+        font-size: .9rem;
+    }
+
+    .hero-current-location-suggestion small {
+        color: #66736e;
+        font-size: .72rem;
+    }
+
+    @media (max-width: 575.98px) {
+        .hero-location-field {
+            flex-basis: 100%;
+        }
+
+        .hero-location-input {
+            border-top-right-radius: var(--bs-border-radius);
+            border-bottom-right-radius: var(--bs-border-radius);
+        }
+    }
+</style>
 
 @if ($searched)
     <section class="search-results-section">
@@ -380,6 +499,119 @@
     ];
 
     const currentLocationLabel = 'Moja lokalizacja';
+
+    function currentLocationSuggestion() {
+        return document.getElementById('heroCurrentLocationSuggestion');
+    }
+
+    function updateCurrentLocationInputState() {
+        const locationInput = document.getElementById('heroLocation');
+
+        if (!locationInput) {
+            return;
+        }
+
+        locationInput.dataset.currentLocation = isCurrentLocation(locationInput.value)
+            ? 'true'
+            : 'false';
+        locationInput
+            .closest('.hero-location-field')
+            ?.classList
+            .toggle('is-current-location', locationInput.dataset.currentLocation === 'true');
+    }
+
+    function showCurrentLocationSuggestion() {
+        const locationInput = document.getElementById('heroLocation');
+        const suggestion = currentLocationSuggestion();
+
+        if (!locationInput || !suggestion) {
+            return;
+        }
+
+        if (!locationInput.value.trim() || isCurrentLocation(locationInput.value)) {
+            suggestion.classList.add('is-visible');
+        }
+    }
+
+    function hideCurrentLocationSuggestion() {
+        currentLocationSuggestion()?.classList.remove('is-visible');
+    }
+
+    function resetLocationTypingState() {
+        document.getElementById('searchLat').value = '';
+        document.getElementById('searchLng').value = '';
+        document.getElementById('locationMode').value = '';
+        document.getElementById('viewportRadiusKm').value = '';
+    }
+
+    function selectCurrentLocationSuggestion() {
+        const locationInput = document.getElementById('heroLocation');
+
+        if (!locationInput) {
+            return;
+        }
+
+        locationInput.value = currentLocationLabel;
+        updateCurrentLocationInputState();
+        setCurrentLocationMode();
+        requestBrowserLocation();
+        hideCurrentLocationSuggestion();
+        locationInput.focus();
+    }
+
+    function setupCurrentLocationInput() {
+        const locationInput = document.getElementById('heroLocation');
+        const suggestion = currentLocationSuggestion();
+
+        if (!locationInput || !suggestion) {
+            return;
+        }
+
+        updateCurrentLocationInputState();
+
+        locationInput.addEventListener('focus', showCurrentLocationSuggestion);
+        locationInput.addEventListener('click', showCurrentLocationSuggestion);
+        locationInput.addEventListener('keydown', event => {
+            const isPrintableKey = event.key.length === 1
+                && !event.ctrlKey
+                && !event.metaKey
+                && !event.altKey;
+            const isClearKey = event.key === 'Backspace' || event.key === 'Delete';
+
+            if (!isCurrentLocation(locationInput.value) || (!isPrintableKey && !isClearKey)) {
+                return;
+            }
+
+            locationInput.value = '';
+            resetLocationTypingState();
+            updateCurrentLocationInputState();
+            hideCurrentLocationSuggestion();
+
+            if (isClearKey) {
+                event.preventDefault();
+            }
+        });
+        locationInput.addEventListener('input', () => {
+            updateCurrentLocationInputState();
+
+            if (locationInput.value.trim()) {
+                hideCurrentLocationSuggestion();
+            } else {
+                resetLocationTypingState();
+                showCurrentLocationSuggestion();
+            }
+        });
+        locationInput.addEventListener('blur', () => {
+            window.setTimeout(() => {
+                if (document.activeElement !== suggestion) {
+                    hideCurrentLocationSuggestion();
+                }
+            }, 120);
+        });
+
+        suggestion.addEventListener('mousedown', event => event.preventDefault());
+        suggestion.addEventListener('click', selectCurrentLocationSuggestion);
+    }
 
     function normalizeLocationText(value) {
         return String(value ?? '')
@@ -701,6 +933,7 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        setupCurrentLocationInput();
         setupHeroSearchSubmit();
 
         const locationInput = document.getElementById('heroLocation');
