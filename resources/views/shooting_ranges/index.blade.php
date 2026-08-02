@@ -62,7 +62,7 @@
                                         loading="lazy"
                                     >
                                 @else
-                                    <i class="bi bi-bullseye" aria-hidden="true"></i>
+                                    <i class="bi bi-crosshair2" aria-hidden="true"></i>
                                 @endif
                             </div>
 

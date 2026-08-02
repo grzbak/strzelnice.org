@@ -248,7 +248,45 @@ class ShootingsController extends Controller
             );
         }
 
-        return view('home', compact('messages', 'shootings', 'searched'));
+        $latestShootingRanges = $this->latestShootingRanges();
+
+        return view('home', compact(
+            'messages',
+            'shootings',
+            'searched',
+            'latestShootingRanges'
+        ));
+    }
+
+    private function latestShootingRanges()
+    {
+        $firstAdminAssignments = DB::table('shooting_range_employee')
+            ->select('shooting_ranges_id', DB::raw('MIN(created_at) as first_admin_added_at'))
+            ->where('role', 'admin')
+            ->where('is_approved', true)
+            ->groupBy('shooting_ranges_id');
+
+        return ShootingRange::query()
+            ->joinSub($firstAdminAssignments, 'first_admin_assignments', function ($join) {
+                $join->on('shooting_ranges.id', '=', 'first_admin_assignments.shooting_ranges_id');
+            })
+            ->where('shooting_ranges.is_visible', true)
+            ->where('shooting_ranges.is_archived', false)
+            ->orderByDesc('first_admin_assignments.first_admin_added_at')
+            ->limit(15)
+            ->get([
+                'shooting_ranges.id',
+                'shooting_ranges.name',
+                'shooting_ranges.town',
+                'shooting_ranges.street',
+                'shooting_ranges.houseNumber',
+                'shooting_ranges.apartamentNumber',
+                'shooting_ranges.zipCode',
+                'shooting_ranges.brand_file_name',
+                'shooting_ranges.endpoint',
+                'shooting_ranges.created_at',
+                'first_admin_assignments.first_admin_added_at',
+            ]);
     }
 
     // pomocnicza

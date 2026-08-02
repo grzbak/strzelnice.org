@@ -62,3 +62,4 @@ commit: Rebuild shooting range endpoints without separators
 commit: Add staff reservation deletion
 commit: Unify email dark theme and search result logos
 commit: Improve reservation calendar day view and hero location search
+2026-08-02 17:31:31 - Komponent ostatnio dodanych strzelnic i poprawki logo/wynikow wyszukiwania.

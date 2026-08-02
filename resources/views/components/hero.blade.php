@@ -264,8 +264,7 @@
                                         @endif
                                     </td>
                                     <td>
-                                        {{ $shootingRange->street }} {{ $shootingRange->houseNumber }},
-                                        {{ $shootingRange->zipCode }} {{ $shootingRange->town }}
+                                        {{ $shootingRange->fullAddress }}
                                     </td>
                                     <td>{{ $shootingRange->voivodeship }}</td>
                                     <td>
@@ -417,9 +416,8 @@
             justify-content: center;
             overflow: hidden;
             color: #8f9a9d;
-            background: #eef2f2;
-            border: 1px solid #dbe3e3;
-            border-radius: 6px;
+            background: transparent;
+            border: 0;
             font-size: 1.35rem;
         }
 
@@ -428,7 +426,7 @@
             height: 100%;
             display: block;
             object-fit: contain;
-            padding: 5px;
+            padding: 0;
         }
 
         .search-result-logo-mobile {
