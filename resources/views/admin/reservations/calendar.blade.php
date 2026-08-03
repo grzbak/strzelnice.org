@@ -729,7 +729,7 @@
         }
 
         .day-board {
-            overflow: hidden;
+            overflow: visible;
             background: #fff;
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -836,12 +836,50 @@
             border-bottom: 1px solid #f2df9f;
         }
 
+        .day-scroll-controls {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: .6rem;
+            padding: .5rem .85rem;
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .day-scroll-controls button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.35rem;
+            height: 2.35rem;
+            color: #26332d;
+            background: #f8f9fa;
+            border: 1px solid #d7dfdb;
+            border-radius: 6px;
+        }
+
+        .day-scroll-controls span {
+            color: var(--muted);
+            font-size: .72rem;
+            font-weight: 700;
+            text-align: center;
+        }
+
         .day-timeline {
-            display: grid;
-            grid-template-columns: 80px minmax(0, 1fr);
+            display: flex;
+            align-items: stretch;
+            max-width: 100%;
             overflow-x: auto;
             overflow-y: hidden;
             background: #fff;
+            cursor: grab;
+            touch-action: pan-y;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: contain;
+        }
+
+        .day-timeline.is-dragging {
+            cursor: grabbing;
         }
 
         .day-time-labels {
@@ -849,13 +887,14 @@
             left: 0;
             z-index: 4;
             display: grid;
+            flex: 0 0 80px;
             background: #f7f9f8;
             border-right: 1px solid var(--border);
         }
 
         .day-reservation-area {
             position: relative;
-            min-width: 720px;
+            min-width: 0;
             background:
                 repeating-linear-gradient(
                     to bottom,
@@ -1191,6 +1230,21 @@
             white-space: pre-line;
         }
 
+        #staffReservationModal,
+        #reservationStatusModal,
+        #deleteReservationConfirmModal,
+        #customerMatchModal {
+            z-index: 4100;
+        }
+
+        body.modal-open .day-reservation-tooltip {
+            display: none !important;
+        }
+
+        .modal-backdrop.show {
+            z-index: 4050;
+        }
+
         .week-grid,
         .month-grid {
             display: grid;
@@ -1293,6 +1347,16 @@
                 flex-direction: column;
             }
 
+            .day-lane-filter {
+                flex-wrap: wrap;
+                overflow-x: visible;
+            }
+
+            .day-lane-all,
+            .day-lane-tile {
+                min-width: 0;
+            }
+
             .summary-filters {
                 margin-left: 0;
             }
@@ -1316,6 +1380,76 @@
         }
 
         @media (max-width: 575.98px) {
+            .admin-reservations {
+                padding-right: .75rem !important;
+                padding-left: .75rem !important;
+            }
+
+            #staffReservationModal {
+                padding: 0 !important;
+            }
+
+            #staffReservationModal .modal-dialog {
+                display: flex;
+                align-items: stretch;
+                width: calc(100vw - 1rem);
+                max-width: calc(100vw - 1rem);
+                height: calc(100dvh - 1rem);
+                min-height: 0;
+                margin: .5rem auto;
+            }
+
+            #staffReservationModal .modal-content {
+                display: flex;
+                flex-direction: column;
+                width: 100%;
+                max-height: 100%;
+                overflow: hidden;
+                border-radius: 8px;
+            }
+
+            #staffReservationModal .modal-header,
+            #staffReservationModal .modal-footer {
+                flex: 0 0 auto;
+            }
+
+            #staffReservationModal .modal-body {
+                flex: 1 1 auto;
+                min-height: 0;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            #staffReservationModal .modal-footer {
+                align-items: stretch;
+                flex-direction: column-reverse;
+                gap: .5rem;
+            }
+
+            #staffReservationModal .modal-footer .btn {
+                width: 100%;
+                margin: 0;
+            }
+
+            .day-lane-filter {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: .5rem;
+                padding: .65rem;
+            }
+
+            .day-lane-all {
+                justify-content: center;
+                grid-column: 1 / -1;
+                width: 100%;
+            }
+
+            .day-lane-tile {
+                width: 100%;
+                padding: .58rem .5rem;
+                text-align: center;
+            }
+
             .calendar-navigation,
             .summary-filters {
                 align-items: stretch;
@@ -1342,7 +1476,15 @@
             }
 
             .day-timeline {
-                grid-template-columns: 64px minmax(0, 1fr);
+                max-width: calc(100vw - 1.5rem);
+            }
+
+            .day-scroll-controls.is-visible {
+                display: flex;
+            }
+
+            .day-time-labels {
+                flex-basis: 64px;
             }
 
             .hour-label {
@@ -1355,6 +1497,12 @@
             }
 
             .reservation-detail-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 379.98px) {
+            .day-lane-filter {
                 grid-template-columns: 1fr;
             }
         }
@@ -1559,6 +1707,137 @@
             return reservations.filter(reservation => reservation.date === date);
         }
 
+        function enableDayTimelineDrag(timeline) {
+            let isPointerDown = false;
+            let isDragging = false;
+            let isTouchDown = false;
+            let isTouchDragging = false;
+            let startX = 0;
+            let startY = 0;
+            let startScrollLeft = 0;
+            let suppressClick = false;
+
+            function startDrag(clientX, clientY) {
+                startX = clientX;
+                startY = clientY;
+                startScrollLeft = timeline.scrollLeft;
+                suppressClick = false;
+            }
+
+            function moveDrag(clientX, clientY, event) {
+                const deltaX = clientX - startX;
+                const deltaY = clientY - startY;
+
+                if (! isDragging && ! isTouchDragging && Math.abs(deltaX) <= 6) {
+                    return false;
+                }
+
+                if (! isDragging && ! isTouchDragging && Math.abs(deltaY) > Math.abs(deltaX)) {
+                    return false;
+                }
+
+                isDragging = true;
+                isTouchDragging = true;
+                suppressClick = true;
+                timeline.classList.add('is-dragging');
+                timeline.scrollLeft = startScrollLeft - deltaX;
+                event.preventDefault();
+
+                return true;
+            }
+
+            function endDrag() {
+                isPointerDown = false;
+                isTouchDown = false;
+                isDragging = false;
+                isTouchDragging = false;
+                timeline.classList.remove('is-dragging');
+
+                window.setTimeout(() => {
+                    suppressClick = false;
+                }, 0);
+            }
+
+            timeline.addEventListener('pointerdown', event => {
+                if (event.pointerType === 'touch') {
+                    return;
+                }
+
+                if (event.button !== 0 && event.pointerType === 'mouse') {
+                    return;
+                }
+
+                isPointerDown = true;
+                isDragging = false;
+                startDrag(event.clientX, event.clientY);
+            });
+
+            timeline.addEventListener('pointermove', event => {
+                if (! isPointerDown) {
+                    return;
+                }
+
+                moveDrag(event.clientX, event.clientY, event);
+            });
+
+            window.addEventListener('pointerup', endDrag);
+
+            timeline.addEventListener('pointercancel', () => {
+                suppressClick = false;
+                endDrag();
+            });
+
+            timeline.addEventListener('touchstart', event => {
+                if (event.touches.length !== 1) {
+                    return;
+                }
+
+                isTouchDown = true;
+                isTouchDragging = false;
+                const touch = event.touches[0];
+                startDrag(touch.clientX, touch.clientY);
+            }, { passive: true });
+
+            timeline.addEventListener('touchmove', event => {
+                if (! isTouchDown || event.touches.length !== 1) {
+                    return;
+                }
+
+                const touch = event.touches[0];
+                moveDrag(touch.clientX, touch.clientY, event);
+            }, { passive: false });
+
+            window.addEventListener('touchend', endDrag, { passive: true });
+            window.addEventListener('touchcancel', () => {
+                suppressClick = false;
+                endDrag();
+            }, { passive: true });
+
+            timeline.addEventListener('wheel', event => {
+                if (! event.shiftKey && Math.abs(event.deltaX) <= Math.abs(event.deltaY)) {
+                    return;
+                }
+
+                timeline.scrollLeft += event.deltaX || event.deltaY;
+                event.preventDefault();
+            }, { passive: false });
+
+            timeline.querySelectorAll('article').forEach(card => {
+                card.addEventListener('dragstart', event => {
+                    event.preventDefault();
+                });
+            });
+
+            timeline.addEventListener('click', event => {
+                if (! suppressClick) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+            }, true);
+        }
+
         function createReservationCard(reservation) {
             const card = document.createElement('article');
             card.className = `reservation-card ${reservation.status}`;
@@ -1647,13 +1926,31 @@
                 return selectedLaneIds.has(String(reservation.line_id));
             });
             const totalPositions = visibleLanes.reduce((sum, lane) => sum + lane.positions, 0);
-            const availableBoardWidth = Math.max(720, content.clientWidth - 80);
+            const isMobileDayView = window.matchMedia('(max-width: 575.98px)').matches;
+            const timeColumnWidth = isMobileDayView ? 64 : 80;
+            const minPositionWidth = isMobileDayView ? 60 : 72;
+            const contentStyles = window.getComputedStyle(content);
+            const horizontalContentPadding = (
+                Number.parseFloat(contentStyles.paddingLeft) || 0
+            ) + (
+                Number.parseFloat(contentStyles.paddingRight) || 0
+            );
+            const viewportContentWidth = isMobileDayView
+                ? Math.max(0, window.innerWidth - 24)
+                : 0;
+            const contentWidth = Math.max(
+                0,
+                viewportContentWidth,
+                (content.getBoundingClientRect().width || window.innerWidth || 0) - horizontalContentPadding
+            );
+            const availableBoardWidth = Math.max(0, contentWidth - timeColumnWidth);
+            const minimumBoardWidth = totalPositions * minPositionWidth;
+            const boardWidth = Math.max(availableBoardWidth, minimumBoardWidth);
             const positionWidth = totalPositions > 0
-                ? Math.max(72, availableBoardWidth / totalPositions)
-                : 72;
-            const boardWidth = Math.max(720, totalPositions * positionWidth);
+                ? Math.max(minPositionWidth, boardWidth / totalPositions)
+                : minPositionWidth;
             const requiresHorizontalScroll = totalPositions > 0
-                && (totalPositions * 72) > availableBoardWidth;
+                && minimumBoardWidth > availableBoardWidth;
 
             document.getElementById('calendarTitle').textContent = readableDate(selected, {
                 weekday: 'long',
@@ -1728,10 +2025,36 @@
                 scrollHint.style.display = 'block';
             }
 
+            const scrollControls = document.createElement('div');
+            scrollControls.className = 'day-scroll-controls';
+            if (requiresHorizontalScroll) {
+                scrollControls.classList.add('is-visible');
+            }
+            scrollControls.innerHTML = `
+                <button type="button" data-scroll-direction="-1" aria-label="Przewiń kalendarz w lewo">
+                    <i class="bi bi-chevron-left" aria-hidden="true"></i>
+                </button>
+                <span>Przesuwaj palcem lub użyj strzałek</span>
+                <button type="button" data-scroll-direction="1" aria-label="Przewiń kalendarz w prawo">
+                    <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                </button>
+            `;
+
             const timeline = document.createElement('div');
             timeline.className = 'day-timeline';
             timeline.style.setProperty('--hour-height', `${hourHeight}px`);
-            timeline.style.overflowX = requiresHorizontalScroll ? 'auto' : 'hidden';
+            timeline.style.overflowX = 'auto';
+            enableDayTimelineDrag(timeline);
+
+            scrollControls.querySelectorAll('button').forEach(button => {
+                button.addEventListener('click', () => {
+                    const direction = Number(button.dataset.scrollDirection || 1);
+                    timeline.scrollBy({
+                        left: direction * Math.max(180, timeline.clientWidth * .65),
+                        behavior: 'smooth'
+                    });
+                });
+            });
 
             const timeLabels = document.createElement('div');
             timeLabels.className = 'day-time-labels';
@@ -1888,6 +2211,7 @@
             board.appendChild(laneFilter);
             board.appendChild(statusLegend);
             board.appendChild(scrollHint);
+            board.appendChild(scrollControls);
             board.appendChild(timeline);
             content.appendChild(board);
         }

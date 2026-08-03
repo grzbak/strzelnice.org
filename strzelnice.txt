@@ -63,3 +63,4 @@ commit: Add staff reservation deletion
 commit: Unify email dark theme and search result logos
 commit: Improve reservation calendar day view and hero location search
 2026-08-02 17:31:31 - Komponent ostatnio dodanych strzelnic i poprawki logo/wynikow wyszukiwania.
+2026-08-03 10:17:42 - Poprawki responsywnoœci dziennego kalendarza rezerwacji w panelu personelu.
