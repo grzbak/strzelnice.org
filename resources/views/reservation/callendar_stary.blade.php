@@ -55,7 +55,6 @@
         </div>
     @endif
 
-    @include('components.breadcrumb')
 
     <div class="container px-4 mx-auto my-6">
         <div class="flex items-center justify-between gap-4 p-4 bg-white border border-b-0 rounded-t-lg shadow-sm">

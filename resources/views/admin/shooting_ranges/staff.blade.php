@@ -1,17 +1,18 @@
 <x-app-layout>
     <div class="page-bg-2"></div>
 
-    @include('components.breadcrumb')
-
     <main class="container py-4">
         <x-session-alerts />
 
-        <section class="p-4 mb-4 bg-white border rounded shadow-sm">
-            <div class="gap-3 d-flex flex-wrap align-items-center justify-content-between">
+        <section class="p-4 mb-4 text-white rounded bg-secondary">
+            <div class="gap-3 d-flex flex-column flex-md-row align-items-md-center justify-content-between">
                 <div>
-                    <span class="text-uppercase small text-secondary">Panel strzelnicy</span>
+                    <div class="gap-2 mb-2 d-flex align-items-center">
+                        <i class="bi bi-people-fill fs-4"></i>
+                        <span class="opacity-75 text-uppercase small">Panel strzelnicy</span>
+                    </div>
                     <h1 class="mb-1 h3">Personel</h1>
-                    <p class="mb-0 text-secondary">{{ $shootingRange->name }}</p>
+                    <p class="mb-0 opacity-75">{{ $shootingRange->name }}</p>
                 </div>
 
                 <button

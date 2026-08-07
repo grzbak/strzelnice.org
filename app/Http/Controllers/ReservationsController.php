@@ -12,6 +12,7 @@ use App\Services\ShootingRangeAvailabilityService;
 use App\Services\UserSecurityService;
 use App\Support\ReservationIntentSession;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -601,10 +602,18 @@ class ReservationsController extends Controller
                     ?? 'Brak danych',
                 'user_email' => $reservation->customer_email
                     ?? $reservation->customer?->email
-                    ?? $reservation->user?->email,
+                    ?? (
+                        $reservation->source === Reservation::SOURCE_STAFF_GUEST
+                            ? null
+                            : $reservation->user?->email
+                    ),
                 'user_phone' => $reservation->customer_phone
                     ?? $reservation->customer?->telephone
-                    ?? $reservation->user?->telephone,
+                    ?? (
+                        $reservation->source === Reservation::SOURCE_STAFF_GUEST
+                            ? null
+                            : $reservation->user?->telephone
+                    ),
                 'customer_user_id' => $reservation->customer_user_id,
                 'customer_type' => $reservation->customer_user_id
                     ? 'account'
@@ -885,11 +894,11 @@ class ReservationsController extends Controller
 
     public function storeByStaff(Request $request): RedirectResponse
     {
-        $validated = $this->validateStaffReservationInput($request);
-
         $actor = $request->user();
 
         try {
+            $validated = $this->validateStaffReservationInput($request);
+
             $reservation = DB::transaction(function () use ($validated, $actor): Reservation {
                 $shootingRange = ShootingRange::findOrFail(
                     $validated['shooting_range_id']
@@ -935,7 +944,7 @@ class ReservationsController extends Controller
                     'customer_name' => $customer?->name
                         ?? ($validated['customer_name'] ?? 'Brak danych'),
                     'customer_email' => $customer?->email
-                        ?? $validated['customer_email'],
+                        ?? ($validated['customer_email'] ?? null),
                     'customer_phone' => $customer?->telephone
                         ?? ($validated['customer_phone'] ?? null),
                     'created_by_user_id' => $actor->id,
@@ -955,7 +964,12 @@ class ReservationsController extends Controller
                 ]);
             });
         } catch (ValidationException $exception) {
-            return $this->reservationValidationRedirect($exception);
+            return $this->reservationValidationRedirect($exception, 'create');
+        } catch (ModelNotFoundException) {
+            return $this->staffReservationErrorRedirect(
+                'Nie udało się odnaleźć wybranej strzelnicy, osi lub użytkownika. Odśwież kalendarz i spróbuj ponownie.',
+                'create'
+            );
         }
 
         $this->sendReservationNotifications(
@@ -980,10 +994,11 @@ class ReservationsController extends Controller
             $request->user()->managesShootingRange($reservation->shootingRange),
             403
         );
-        $validated = $this->validateStaffReservationInput($request);
         $actor = $request->user();
 
         try {
+            $validated = $this->validateStaffReservationInput($request);
+
             DB::transaction(function () use (
                 $reservation,
                 $validated,
@@ -1070,7 +1085,17 @@ class ReservationsController extends Controller
                 ]);
             });
         } catch (ValidationException $exception) {
-            return $this->reservationValidationRedirect($exception);
+            return $this->reservationValidationRedirect(
+                $exception,
+                'edit',
+                $reservation->id
+            );
+        } catch (ModelNotFoundException) {
+            return $this->staffReservationErrorRedirect(
+                'Nie udało się odnaleźć edytowanej rezerwacji, osi lub użytkownika. Odśwież kalendarz i spróbuj ponownie.',
+                'edit',
+                $reservation->id
+            );
         }
 
         $this->sendReservationNotifications(
@@ -1387,7 +1412,11 @@ class ReservationsController extends Controller
         $recipients = [];
         $customerEmail = $reservation->customer_email
             ?? $reservation->customer?->email
-            ?? $reservation->user?->email;
+            ?? (
+                $reservation->source === Reservation::SOURCE_STAFF_GUEST
+                    ? null
+                    : $reservation->user?->email
+            );
 
         if ($customerEmail && filter_var($customerEmail, FILTER_VALIDATE_EMAIL)) {
             $recipients[mb_strtolower($customerEmail)] = [
@@ -1480,6 +1509,28 @@ class ReservationsController extends Controller
             'customer_email' => $customerEmailRules,
             'customer_phone' => $customerPhoneRules,
             'notes' => ['nullable', 'string', 'max:2000'],
+        ], [
+            'customer_type.required' => 'Wybierz rodzaj klienta.',
+            'customer_type.in' => 'Wybrany rodzaj klienta jest nieprawidłowy.',
+            'customer_user_id.required_if' => 'Dla użytkownika z kontem wyszukaj i wybierz aktywne konto przed zapisem.',
+            'customer_user_id.exists' => 'Wybrane konto użytkownika nie istnieje albo nie jest aktywne.',
+            'customer_name.required_if' => 'Dla gościa bez konta wpisz imię i nazwisko.',
+            'customer_email.required_without' => 'Dla gościa bez konta podaj e-mail albo telefon.',
+            'customer_email.email' => 'Wpisz poprawny adres e-mail klienta.',
+            'customer_phone.required_without' => 'Dla gościa bez konta podaj telefon albo e-mail.',
+            'shooting_range_id.required' => 'Nie wybrano strzelnicy.',
+            'shooting_range_id.exists' => 'Wybrana strzelnica nie istnieje.',
+            'line_id.required' => 'Wybierz oś strzelecką.',
+            'line_id.exists' => 'Wybrana oś strzelecka nie istnieje.',
+            'date.required' => 'Wybierz datę rezerwacji.',
+            'date.date_format' => 'Data rezerwacji musi mieć format RRRR-MM-DD.',
+            'start_time.required' => 'Wybierz godzinę rozpoczęcia.',
+            'start_time.date_format' => 'Godzina rozpoczęcia musi mieć format GG:MM.',
+            'end_time.required' => 'Wybierz godzinę zakończenia.',
+            'end_time.regex' => 'Godzina zakończenia musi mieć format GG:MM.',
+            'positions_count.required' => 'Wybierz liczbę stanowisk.',
+            'positions_count.integer' => 'Liczba stanowisk musi być liczbą.',
+            'positions_count.min' => 'Liczba stanowisk musi być większa od zera.',
         ]);
         $this->ensureReservationEndIsAfterStart($validated);
 
@@ -1487,14 +1538,46 @@ class ReservationsController extends Controller
     }
 
     private function reservationValidationRedirect(
-        ValidationException $exception
+        ValidationException $exception,
+        ?string $staffModalMode = null,
+        ?int $staffReservationId = null
     ): RedirectResponse {
         $message = $exception->errors()['reservation'][0]
+            ?? collect($exception->errors())->flatten()->first()
             ?? 'Nie udało się zapisać rezerwacji.';
 
+        $redirect = back()
+            ->withInput()
+            ->withErrors($exception->errors())
+            ->with('error', $message);
+
+        if ($staffModalMode) {
+            $redirect->with('staff_reservation_modal', [
+                'mode' => $staffModalMode,
+                'reservation_id' => $staffReservationId,
+                'message' => $message,
+            ]);
+        }
+
+        return $redirect;
+    }
+
+    private function staffReservationErrorRedirect(
+        string $message,
+        string $mode,
+        ?int $reservationId = null
+    ): RedirectResponse {
         return back()
             ->withInput()
-            ->with('error', $message);
+            ->withErrors([
+                'reservation' => $message,
+            ])
+            ->with('error', $message)
+            ->with('staff_reservation_modal', [
+                'mode' => $mode,
+                'reservation_id' => $reservationId,
+                'message' => $message,
+            ]);
     }
 
     private function reservationRules(): array

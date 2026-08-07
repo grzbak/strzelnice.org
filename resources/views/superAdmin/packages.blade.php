@@ -3,7 +3,6 @@
 
     <div class="page-bg-2"></div>
 
-    @include('components.breadcrumb')
 
     @php
         $packageColumns = [

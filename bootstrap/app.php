@@ -44,9 +44,7 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return redirect()
-                ->route('login')
-                ->with('status', $message)
-                ->with('status_type', 'warning');
+                ->route('login');
         });
 
         $exceptions->render(function (AuthenticationException $exception, Request $request) {
@@ -54,13 +52,6 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
-            $redirect = redirect()->guest(route('login'));
-
-            if ($request->hasCookie(config('session.cookie'))) {
-                $redirect->with('status', 'Sesja wygasła. Zaloguj się ponownie, aby kontynuować pracę.')
-                    ->with('status_type', 'warning');
-            }
-
-            return $redirect;
+            return redirect()->guest(route('login'));
         });
     })->create();

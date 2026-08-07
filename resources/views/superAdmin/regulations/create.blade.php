@@ -1,7 +1,5 @@
 <x-app-layout>
     <div class="page-bg-2"></div>
-    @include('components.breadcrumb')
-
     <div class="container py-4">
         <h1 class="mb-3">Dodaj regulamin</h1>
 

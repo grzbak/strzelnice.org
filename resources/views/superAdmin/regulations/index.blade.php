@@ -13,8 +13,6 @@
 
     <div class="page-bg-2"></div>
 
-    @include('components.breadcrumb')
-
     <div class="container py-4">
         <header class="p-4 text-white rounded bg-secondary">
             <div class="gap-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center">

@@ -16,7 +16,6 @@
         </script>
     @endif
 
-    @include('components.breadcrumb')
 
 
 

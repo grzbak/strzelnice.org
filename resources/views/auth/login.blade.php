@@ -3,7 +3,6 @@
     <x-auth-session-status class="mb-4" :status="session('status')" />
     <div class="page-bg-2"></div>
 
-    @include('components.breadcrumb')
 
     <div class="flex flex-col items-center pt-6">
         <div class="w-full px-6 py-4 mt-6 overflow-hidden bg-white shadow-md sm:max-w-md sm:rounded-lg">

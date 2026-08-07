@@ -44,7 +44,6 @@
 <x-app-layout>
     <div class="page-bg-2"></div>
 
-    @include('components.breadcrumb')
 
     <main class="container py-4 day-booking">
         <x-session-alerts />

@@ -352,6 +352,13 @@
         .public-lanes-table td,
         .public-lanes-table th {
             border-bottom-color: rgba(52, 58, 64, .1);
+            overflow-wrap: anywhere;
+            word-break: normal;
+        }
+
+        .public-info-table a,
+        .public-lanes-table a {
+            overflow-wrap: anywhere;
         }
 
         .public-lanes-table thead th {
@@ -494,6 +501,7 @@
                 gap: 8px;
             }
 
+            .public-info-table,
             .public-lanes-table {
                 border: 0;
                 border-collapse: separate;
@@ -513,6 +521,11 @@
                 border: 0;
             }
 
+            .public-info-table,
+            .public-info-table tbody,
+            .public-info-table tr,
+            .public-info-table th,
+            .public-info-table td,
             .public-lanes-table,
             .public-lanes-table tbody,
             .public-lanes-table tr,
@@ -521,12 +534,19 @@
                 width: 100%;
             }
 
+            .public-info-table tr,
             .public-lanes-table tr {
                 border: 1px solid rgba(0, 0, 0, .08);
                 border-radius: .75rem;
                 background: #fff;
                 box-shadow: 0 .35rem 1rem rgba(15, 23, 42, .08);
                 overflow: hidden;
+            }
+
+            .public-info-table tr {
+                display: grid;
+                grid-template-columns: minmax(7rem, 38%) minmax(0, 1fr);
+                align-items: stretch;
             }
 
             .public-lanes-table td {
@@ -538,12 +558,40 @@
                 border-bottom: 1px solid rgba(0, 0, 0, .06);
             }
 
+            .public-info-table th {
+                width: 100%;
+                display: flex;
+                align-items: center;
+                background: #f8fafc;
+                border-right: 1px solid rgba(0, 0, 0, .06);
+                border-bottom: 0;
+            }
+
+            .public-info-table td {
+                display: flex;
+                align-items: center;
+                min-width: 0;
+                padding: .65rem .85rem;
+                border-bottom: 0;
+            }
+
             .public-lanes-table td::before {
                 content: attr(data-label);
                 color: #6c757d;
                 font-size: .78rem;
                 font-weight: 700;
                 text-transform: uppercase;
+            }
+
+            @media (max-width: 420px) {
+                .public-info-table tr {
+                    grid-template-columns: 1fr;
+                }
+
+                .public-info-table th {
+                    border-right: 0;
+                    border-bottom: 1px solid rgba(0, 0, 0, .06);
+                }
             }
         }
     </style>

@@ -15,7 +15,6 @@
         </script>
     @endif
 
-    @include('components.breadcrumb')
 
 
     <div class="flex flex-col items-center ">

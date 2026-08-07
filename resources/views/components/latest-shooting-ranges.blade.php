@@ -14,16 +14,6 @@
 @if ($ranges->isNotEmpty())
     <section class="latest-ranges-section">
         <div class="container">
-            <div class="latest-ranges-header">
-                <div>
-                    <h2>Ostatnio dodane</h2>
-                </div>
-                <a href="{{ route('shootings.list') }}">
-                    Zobacz wszystkie
-                    <i class="bi bi-arrow-right" aria-hidden="true"></i>
-                </a>
-            </div>
-
             <div class="latest-ranges-slider splide" data-latest-ranges-slider>
                 <div class="latest-ranges-viewport splide__track overflow-visible! splide__track--loop splide__track--ltr splide__track--draggable">
                     <div class="latest-ranges-track splide__list">
@@ -49,9 +39,6 @@
                                         </span>
                                     @endif
                                 </span>
-                                <span class="latest-range-hover-mask" aria-hidden="true">
-                                    <i class="bi bi-search"></i>
-                                </span>
                             </a>
                         @endforeach
                     </div>
@@ -63,9 +50,9 @@
     <style>
         .latest-ranges-section {
             --latest-logo-height: clamp(46px, 6vw, 74px);
-            --latest-logo-max-width: clamp(120px, 24vw, 260px);
+            --latest-logo-max-width: clamp(120px, 24vw, 180px);
             --latest-slider-height: var(--latest-logo-height);
-            --latest-logo-gap: clamp(.75rem, 2vw, 1.15rem);
+            --latest-logo-gap: clamp(.25rem, .8vw, .55rem);
             padding: clamp(.45rem, 1.2vw, .75rem) 0;
             background: #fff;
             border-top: 1px solid #e6ebeb;
@@ -75,33 +62,6 @@
 
         .latest-ranges-section > .container {
             display: block;
-        }
-
-        .latest-ranges-header {
-            display: flex;
-            align-items: end;
-            flex-direction: row;
-            justify-content: space-between;
-            gap: 1rem;
-            margin-bottom: clamp(.35rem, .9vw, .55rem);
-        }
-
-        .latest-ranges-header h2 {
-            margin: 0;
-            color: #b42318;
-            font-size: clamp(.98rem, 2vw, 1.12rem);
-            font-weight: 800;
-        }
-
-        .latest-ranges-header a {
-            display: inline-flex;
-            align-items: center;
-            gap: .35rem;
-            color: #b42318;
-            font-size: clamp(.74rem, 1.6vw, .82rem);
-            font-weight: 800;
-            text-decoration: none;
-            white-space: nowrap;
         }
 
         .latest-ranges-slider {
@@ -153,30 +113,6 @@
             color: #fff;
         }
 
-        .latest-range-hover-mask {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            position: absolute;
-            inset: 0 .35rem;
-            color: #b42318;
-            background: rgb(255 255 255 / 72%);
-            border-radius: 8px;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity .18s ease;
-        }
-
-        .latest-range-hover-mask i {
-            font-size: clamp(1.4rem, 3vw, 2rem);
-            line-height: 1;
-        }
-
-        .latest-range-card:hover .latest-range-hover-mask,
-        .latest-range-card:focus-visible .latest-range-hover-mask {
-            opacity: 1;
-        }
-
         .latest-range-logo {
             display: inline-flex;
             align-items: center;
@@ -195,9 +131,15 @@
             max-width: var(--latest-logo-max-width);
             height: var(--latest-logo-height) !important;
             max-height: none !important;
+            filter: grayscale(1) saturate(0) opacity(.78);
             object-fit: contain;
+            transition: filter .22s ease, opacity .22s ease;
         }
 
+        .latest-range-card:hover .latest-range-logo img,
+        .latest-range-card:focus-visible .latest-range-logo img {
+            filter: grayscale(0) saturate(1) opacity(1);
+        }
         .latest-range-fallback {
             display: inline-flex;
             align-items: center;
@@ -240,19 +182,8 @@
             .latest-ranges-section {
                 --latest-logo-height: clamp(44px, 13vw, 58px);
                 --latest-logo-max-width: min(58vw, 190px);
-                --latest-logo-gap: .8rem;
+                --latest-logo-gap: .35rem;
                 padding: .55rem 0;
-            }
-
-            .latest-ranges-header {
-                align-items: stretch;
-                flex-direction: column;
-                gap: .35rem;
-                margin-bottom: .6rem;
-            }
-
-            .latest-ranges-header a {
-                width: fit-content;
             }
         }
     </style>

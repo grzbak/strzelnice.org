@@ -212,6 +212,27 @@
                 </div>
 
                 <div class="modal-body">
+                    <div
+                        id="staffReservationErrorPanel"
+                        @class([
+                            'alert',
+                            'alert-warning',
+                            'd-flex',
+                            'gap-2',
+                            'align-items-start',
+                            'd-none' => ! session('staff_reservation_modal'),
+                        ])
+                        role="alert"
+                    >
+                        <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
+                        <div>
+                            <strong class="d-block">Nie można zapisać rezerwacji.</strong>
+                            <span id="staffReservationErrorText">
+                                {{ session('staff_reservation_modal.message') }}
+                            </span>
+                        </div>
+                    </div>
+
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label for="staffCustomerType" class="form-label">Rodzaj klienta</label>
@@ -1524,7 +1545,9 @@
             statusRouteTemplate: @json(route('admin.reservations.status', ['reservation' => '__ID__'])),
             updateRouteTemplate: @json(route('admin.reservations.update', ['reservation' => '__ID__'])),
             deleteRouteTemplate: @json(route('admin.reservations.destroy', ['reservation' => '__ID__'])),
-            storeRoute: @json(route('admin.reservations.store'))
+            storeRoute: @json(route('admin.reservations.store')),
+            staffReservationRestore: @json(session('staff_reservation_modal')),
+            oldInput: @json(session()->getOldInput())
         };
 
         const statusLabels = {
@@ -2514,10 +2537,24 @@
             const staffAvailability = document.getElementById('staffAvailability');
             const staffSubmit = document.getElementById('staffReservationSubmit');
             const staffModal = document.getElementById('staffReservationModal');
+            const staffErrorPanel = document.getElementById('staffReservationErrorPanel');
+            const staffErrorText = document.getElementById('staffReservationErrorText');
             let editingReservationId = null;
             let staffReservations = [];
             let staffAvailabilityLoading = false;
             let staffAvailabilityError = null;
+            let staffScheduleError = null;
+
+            function setStaffReservationMessage(message = '', type = 'warning') {
+                staffErrorText.textContent = message;
+                staffErrorPanel.classList.toggle('d-none', !message);
+                staffErrorPanel.classList.remove(
+                    'alert-warning',
+                    'alert-danger',
+                    'alert-info'
+                );
+                staffErrorPanel.classList.add(`alert-${type}`);
+            }
 
             function customerFieldsDiffer(user) {
                 const nameDiffers = normalizeText(customerName.value)
@@ -2559,6 +2596,14 @@
             }
 
             async function handleStaffReservationSubmit(event) {
+                const blockingMessage = staffReservationBlockingMessage();
+
+                if (blockingMessage) {
+                    event.preventDefault();
+                    setStaffReservationMessage(blockingMessage, 'warning');
+                    return;
+                }
+
                 if (skipCustomerMatchCheck) {
                     skipCustomerMatchCheck = false;
                     return;
@@ -2569,6 +2614,7 @@
 
                 if (isAccountCustomer && !email) {
                     event.preventDefault();
+                    setStaffReservationMessage('Dla użytkownika z kontem wpisz e-mail i wyszukaj konto przed zapisem.', 'warning');
                     setCustomerSearchMessage('Dla użytkownika z kontem wpisz e-mail i wyszukaj konto przed zapisem.', 'warning');
                     customerEmail.focus();
                     return;
@@ -2577,6 +2623,7 @@
                 if (isAccountCustomer && !customerEmail.checkValidity()) {
                     event.preventDefault();
                     customerEmail.reportValidity();
+                    setStaffReservationMessage('Wpisz poprawny adres e-mail użytkownika z kontem.', 'warning');
                     setCustomerSearchMessage('Wpisz poprawny adres e-mail użytkownika z kontem.', 'warning');
                     return;
                 }
@@ -2593,6 +2640,7 @@
                     const user = await fetchCustomerByEmail(email);
 
                     if (isAccountCustomer && !user) {
+                        setStaffReservationMessage('Nie znaleziono aktywnego konta z podanym adresem e-mail. Sprawdź adres albo wybierz gościa bez konta.', 'warning');
                         setCustomerSearchMessage('Nie znaleziono aktywnego konta z podanym adresem e-mail. Sprawdź adres albo wybierz gościa bez konta.', 'warning');
                         customerEmail.focus();
                         return;
@@ -2611,6 +2659,7 @@
                     skipCustomerMatchCheck = true;
                     staffForm.requestSubmit();
                 } catch (error) {
+                    setStaffReservationMessage('Nie udało się sprawdzić adresu e-mail w bazie użytkowników.', 'danger');
                     setCustomerSearchMessage('Nie udało się sprawdzić adresu e-mail w bazie użytkowników.', 'danger');
                 } finally {
                     staffSubmit.disabled = false;
@@ -2644,6 +2693,42 @@
                 staffForm.requestSubmit();
             }
 
+            function staffReservationBlockingMessage() {
+                if (staffAvailabilityLoading) {
+                    return 'Trwa sprawdzanie dostępności. Poczekaj chwilę przed zapisem.';
+                }
+
+                if (staffScheduleError) {
+                    return staffScheduleError;
+                }
+
+                if (staffAvailabilityError) {
+                    return staffAvailabilityError;
+                }
+
+                if (!staffDate.value) {
+                    return 'Wybierz datę rezerwacji.';
+                }
+
+                if (!staffLane.value) {
+                    return 'Wybierz oś strzelecką.';
+                }
+
+                if (!staffStart.value || !staffEnd.value) {
+                    return staffAvailability.textContent || 'Wybierz pełny zakres godzin rezerwacji.';
+                }
+
+                if (!staffPositions.value) {
+                    return staffAvailability.textContent || 'Wybierz liczbę stanowisk.';
+                }
+
+                if (staffSubmit.disabled) {
+                    return staffAvailability.textContent || 'Rezerwacja nie jest dostępna dla wybranych parametrów.';
+                }
+
+                return '';
+            }
+
             staffForm.addEventListener('submit', handleStaffReservationSubmit);
             customerMatchKeepTypedButton.addEventListener('click', submitStaffFormWithoutCustomerAccount);
             customerMatchUseAccountButton.addEventListener('click', submitStaffFormWithCustomerAccount);
@@ -2675,6 +2760,7 @@
                 staffEnd.innerHTML = '';
 
                 if (!hours || !staffStart.value) {
+                    updateStaffPositions();
                     return;
                 }
 
@@ -2701,8 +2787,14 @@
                 const hours = adminCalendar.openingHours[isoDay];
                 staffStart.innerHTML = '';
                 staffEnd.innerHTML = '';
+                staffScheduleError = null;
 
                 if (!hours) {
+                    staffScheduleError = 'Strzelnica jest nieczynna w wybranym dniu.';
+                    staffAvailability.className = 'small text-danger';
+                    staffAvailability.textContent = staffScheduleError;
+                    setStaffReservationMessage(staffScheduleError, 'warning');
+                    staffSubmit.disabled = true;
                     return;
                 }
 
@@ -2720,6 +2812,15 @@
                     if (!isToday || minutes > currentMinutes) {
                         addTimeOption(staffStart, minutes);
                     }
+                }
+
+                if (staffStart.options.length === 0) {
+                    staffScheduleError = 'Brak dostępnych godzin rozpoczęcia w wybranym dniu.';
+                    staffAvailability.className = 'small text-danger';
+                    staffAvailability.textContent = staffScheduleError;
+                    setStaffReservationMessage(staffScheduleError, 'warning');
+                    staffSubmit.disabled = true;
+                    return;
                 }
 
                 updateStaffEndTimes();
@@ -2770,8 +2871,25 @@
                 staffPositions.innerHTML = '';
                 staffAvailability.className = 'small text-muted';
 
+                if (!option || capacity < 1) {
+                    const message = 'Brak dostępnej osi strzeleckiej do rezerwacji.';
+                    staffAvailability.className = 'small text-danger';
+                    staffAvailability.textContent = message;
+                    setStaffReservationMessage(message, 'warning');
+                    staffSubmit.disabled = true;
+                    return;
+                }
+
                 if (staffAvailabilityLoading) {
                     staffAvailability.textContent = 'Sprawdzanie dostępności...';
+                    staffSubmit.disabled = true;
+                    return;
+                }
+
+                if (staffScheduleError) {
+                    staffAvailability.className = 'small text-danger';
+                    staffAvailability.textContent = staffScheduleError;
+                    setStaffReservationMessage(staffScheduleError, 'warning');
                     staffSubmit.disabled = true;
                     return;
                 }
@@ -2779,12 +2897,17 @@
                 if (staffAvailabilityError) {
                     staffAvailability.className = 'small text-danger';
                     staffAvailability.textContent = staffAvailabilityError;
+                    setStaffReservationMessage(staffAvailabilityError, 'danger');
                     staffSubmit.disabled = true;
                     return;
                 }
 
                 if (occupied === null) {
-                    staffAvailability.textContent = 'Wybierz oś i zakres godzin.';
+                    const message = !staffStart.value || !staffEnd.value
+                        ? 'Wybierz pełny zakres godzin rezerwacji.'
+                        : 'Wybierz oś i zakres godzin.';
+                    staffAvailability.textContent = message;
+                    setStaffReservationMessage(message, 'warning');
                     staffSubmit.disabled = true;
                     return;
                 }
@@ -2801,6 +2924,12 @@
                     staffAvailability.textContent = dynamicAvailable
                         ? 'Cała oś jest dostępna w wybranym czasie.'
                         : 'Strzelanie dynamiczne wymaga dostępności wszystkich stanowisk osi.';
+                    setStaffReservationMessage(
+                        dynamicAvailable
+                            ? ''
+                            : 'Strzelanie dynamiczne wymaga dostępności wszystkich stanowisk osi.',
+                        'warning'
+                    );
                     staffSubmit.disabled = !dynamicAvailable;
                     return;
                 }
@@ -2818,6 +2947,12 @@
                 staffAvailability.textContent = available > 0
                     ? `Dostępne stanowiska w całym przedziale: ${available}.`
                     : 'Brak wolnych stanowisk w wybranym czasie.';
+                setStaffReservationMessage(
+                    available > 0
+                        ? ''
+                        : 'Brak wolnych stanowisk w wybranym czasie.',
+                    'warning'
+                );
                 staffSubmit.disabled = available === 0;
             }
 
@@ -2862,6 +2997,7 @@
             }
 
             async function resetStaffForm() {
+                setStaffReservationMessage('', 'warning');
                 editingReservationId = null;
                 staffForm.action = adminCalendar.storeRoute;
                 staffMethod.disabled = true;
@@ -2877,6 +3013,7 @@
             }
 
             async function configureStaffEdit(reservation) {
+                setStaffReservationMessage('', 'warning');
                 editingReservationId = Number(reservation.id);
                 staffForm.action = adminCalendar.updateRouteTemplate.replace(
                     '__ID__',
@@ -2924,6 +3061,72 @@
                 )) {
                     staffPositions.value = reservation.positions_count;
                 }
+            }
+
+            async function restoreStaffReservationModal() {
+                const restore = adminCalendar.staffReservationRestore;
+
+                if (!restore) {
+                    return;
+                }
+
+                const oldInput = adminCalendar.oldInput || {};
+
+                if (restore.mode === 'edit' && restore.reservation_id) {
+                    const reservation = adminCalendar.reservations.find(
+                        item => Number(item.id) === Number(restore.reservation_id)
+                    );
+
+                    if (reservation) {
+                        await configureStaffEdit(reservation);
+                    } else {
+                        await resetStaffForm();
+                    }
+                } else {
+                    await resetStaffForm();
+                }
+
+                customerType.value = oldInput.customer_type || customerType.value;
+                updateCustomerFields(false);
+                customerUserId.value = oldInput.customer_user_id || '';
+                customerName.value = oldInput.customer_name || '';
+                customerEmail.value = oldInput.customer_email || '';
+                customerPhone.value = oldInput.customer_phone || '';
+                staffDate.value = oldInput.date || staffDate.value;
+                staffLane.value = oldInput.line_id || staffLane.value;
+                staffDynamic.checked = String(oldInput.is_dynamic_shooting || '0') === '1';
+                staffNotes.value = oldInput.notes || '';
+
+                updateStaffTimeOptions();
+
+                if ([...staffStart.options].some(
+                    option => option.value === oldInput.start_time
+                )) {
+                    staffStart.value = oldInput.start_time;
+                }
+
+                updateStaffEndTimes();
+
+                if ([...staffEnd.options].some(
+                    option => option.value === oldInput.end_time
+                )) {
+                    staffEnd.value = oldInput.end_time;
+                }
+
+                await loadStaffAvailability();
+
+                if ([...staffPositions.options].some(
+                    option => String(option.value) === String(oldInput.positions_count)
+                )) {
+                    staffPositions.value = oldInput.positions_count;
+                }
+
+                setStaffReservationMessage(
+                    restore.message || 'Nie można zapisać rezerwacji dla wybranych parametrów.',
+                    'warning'
+                );
+
+                bootstrap.Modal.getOrCreateInstance(staffModal).show();
             }
 
             staffDate.addEventListener('change', () => {
@@ -3215,6 +3418,7 @@
             });
 
             statusSelect.addEventListener('change', updateCancellationField);
+            restoreStaffReservationModal();
         });
     </script>
 </x-app-layout>

@@ -23,7 +23,6 @@
         </script>
     @endif
 
-    @include('components.breadcrumb')
 
     @php
         $shootingColumns = [

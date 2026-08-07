@@ -1,7 +1,6 @@
 <x-app-layout>
     <div class="page-bg-2"></div>
 
-    <!--@include('components.breadcrumb')-->
 
     <div class="container py-3">
         <div class="mb-3 row g-2">
