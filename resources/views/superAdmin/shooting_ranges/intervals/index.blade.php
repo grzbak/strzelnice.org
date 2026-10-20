@@ -45,69 +45,39 @@
                 </div>
 
                 <div class="col-md-3">
-                    <label class="form-label">Pakiet</label>
-                    <select name="package_id" id="package_id" class="form-select">
-                        @forelse ($rangePackages as $package)
-                            <option
-                                value="{{ $package->id }}"
-                                data-months="{{ $package->period_months }}"
-                                data-value="{{ $package->value }}"
-                                @selected(old('package_id') == $package->id)
-                            >
-                                {{ $package->period_months }} mies. - {{ $package->value }} zł
-                            </option>
-                        @empty
-                            <option value="">Brak aktywnych pakietów</option>
-                        @endforelse
-                    </select>
-                    @error('package_id')
-                        <div class="text-danger">{{ $message }}</div>
-                    @enderror
-                </div>
-
-                <div class="col-md-3">
-                    <label class="form-label">Termin płatności</label>
+                    <label class="form-label">Data końcowa</label>
                     <input
                         type="date"
-                        name="payment_due_date"
-                        id="payment_due_date"
+                        name="end_date"
+                        id="end_date"
                         class="form-control"
-                        value="{{ old('payment_due_date', $suggestedPaymentDueDate) }}"
+                        value="{{ old('end_date', $suggestedEndDate) }}"
                         max="3000-12-31"
                         min="2000-01-01"
                     >
-                    @error('payment_due_date')
+                    @error('end_date')
                         <div class="text-danger">{{ $message }}</div>
                     @enderror
                 </div>
 
-                <div class="col-md-3">
-                    <label class="form-label">Data opłacenia</label>
+                <div class="col-md-6">
+                    <label class="form-label">Powód / notatka</label>
                     <input
-                        type="datetime-local"
-                        name="datePaid"
+                        type="text"
+                        name="manual_reason"
                         class="form-control"
-                        value="{{ old('datePaid') }}"
+                        value="{{ old('manual_reason') }}"
+                        placeholder="np. dostęp testowy, promocja, korekta"
                     >
-                    @error('datePaid')
+                    @error('manual_reason')
                         <div class="text-danger">{{ $message }}</div>
                     @enderror
-                </div>
-
-                <div class="col-md-3">
-                    <label class="form-label">Data końcowa</label>
-                    <input type="text" id="end_date_preview" class="form-control" readonly>
-                </div>
-
-                <div class="col-md-3">
-                    <label class="form-label">Cena do zapłaty</label>
-                    <input type="text" id="package_value_preview" class="form-control" readonly>
                 </div>
 
                 <div class="col-12">
-                    <button class="btn btn-success" @disabled($rangePackages->isEmpty())>
+                    <button class="btn btn-success">
                         <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>
-                        Dodaj przedział
+                        Dodaj / rozszerz ręczny przedział
                     </button>
                 </div>
             </div>
@@ -122,7 +92,7 @@
                 <tr>
                     <th>Od</th>
                     <th>Do</th>
-                    <th>Termin płatności</th>
+                    <th>Źródło</th>
                     <th>Wartość</th>
                     <th>Status</th>
                     <th>Akcje</th>
@@ -133,11 +103,25 @@
                     <tr>
                         <td>{{ $interval->start_date->format('Y-m-d') }}</td>
                         <td>{{ $interval->end_date->format('Y-m-d') }}</td>
-                        <td>{{ optional($interval->payment_due_date)->format('Y-m-d') }}</td>
-                        <td>{{ $interval->value }} zł</td>
+                        <td>
+                            <span class="badge bg-dark">
+                                {{ $interval->source === 'mixed' ? 'Abonament + ręcznie' : ($interval->source === 'package_order' ? 'Abonament' : 'Ręcznie') }}
+                            </span>
+                        </td>
+                        <td>{{ number_format((float) $interval->value, 2, ',', ' ') }} zł</td>
                         <td>{{ $interval->is_active ? 'Aktywny' : 'Nieaktywny' }}</td>
                         <td>
                             <div class="interval-actions">
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-dark data-table-icon-button"
+                                data-bs-toggle="modal"
+                                data-bs-target="#intervalHistoryModal{{ $interval->id }}"
+                                aria-label="Historia przedziału"
+                            >
+                                <i class="bi bi-clock-history" aria-hidden="true"></i>
+                            </button>
+
                             <a
                                 href="{{ route('admin.shootings.intervals.edit', [$shootingRange, $interval]) }}"
                                 class="btn btn-sm btn-outline-primary data-table-icon-button"
@@ -189,7 +173,7 @@
                 <tr>
                     <th>Od</th>
                     <th>Do</th>
-                    <th>Termin płatności</th>
+                    <th>Źródło</th>
                     <th>Wartość</th>
                     <th>Status</th>
                 </tr>
@@ -199,8 +183,8 @@
                     <tr>
                         <td>{{ $interval->start_date->format('Y-m-d') }}</td>
                         <td>{{ $interval->end_date->format('Y-m-d') }}</td>
-                        <td>{{ optional($interval->payment_due_date)->format('Y-m-d') }}</td>
-                        <td>{{ $interval->value }} zł</td>
+                        <td>{{ $interval->source === 'mixed' ? 'Abonament + ręcznie' : ($interval->source === 'package_order' ? 'Abonament' : 'Ręcznie') }}</td>
+                        <td>{{ number_format((float) $interval->value, 2, ',', ' ') }} zł</td>
                         <td>{{ $interval->is_active ? 'Aktywny' : 'Archiwalny' }}</td>
                     </tr>
                 @empty
@@ -213,6 +197,149 @@
             </div>
         </section>
     </div>
+
+    @foreach ($intervals as $interval)
+        <div class="modal fade" id="intervalHistoryModal{{ $interval->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title h5">Historia przedziału aktywności</h2>
+                            <div class="small text-muted">
+                                {{ $interval->start_date->format('Y-m-d') }} - {{ $interval->end_date->format('Y-m-d') }}
+                            </div>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+                    </div>
+                    <div class="modal-body">
+                        <h3 class="mb-3 h6">Zamówienia abonamentów</h3>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Pakiet</th>
+                                        <th>Okres</th>
+                                        <th>Kwota</th>
+                                        <th>Status płatności</th>
+                                        <th>Forma</th>
+                                        <th>Termin</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse ($interval->packageOrders as $order)
+                                        <tr>
+                                            <td>#{{ $order->id }}</td>
+                                            <td>{{ $order->package?->display_name ?? 'Pakiet usunięty' }}</td>
+                                            <td>{{ $order->starts_at?->format('Y-m-d') }} - {{ $order->ends_at?->format('Y-m-d') }}</td>
+                                            <td>{{ number_format((float) $order->amount_gross, 2, ',', ' ') }} {{ $order->currency }}</td>
+                                            <td>
+                                                <span class="badge bg-{{ $order->payment_status_badge_class }}">
+                                                    {{ $order->payment_status_label }}
+                                                </span>
+                                            </td>
+                                            <td>{{ $order->payment_method_label }}</td>
+                                            <td>{{ $order->payment_due_at?->format('Y-m-d H:i') ?? '-' }}</td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="7" class="text-muted">Brak zamówień powiązanych z tym przedziałem.</td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <h3 class="mt-4 mb-3 h6">Wpłaty</h3>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Zamówienie</th>
+                                        <th>Status</th>
+                                        <th>Kwota</th>
+                                        <th>Operator</th>
+                                        <th>Potwierdzono</th>
+                                        <th>Notatka</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @php
+                                        $payments = $interval->packageOrders->flatMap->payments;
+                                    @endphp
+
+                                    @forelse ($payments as $payment)
+                                        <tr>
+                                            <td>#{{ $payment->id }}</td>
+                                            <td>#{{ $payment->package_order_id }}</td>
+                                            <td>{{ $payment->status }}</td>
+                                            <td>{{ number_format((float) $payment->amount, 2, ',', ' ') }} {{ $payment->currency }}</td>
+                                            <td>{{ $payment->provider }} / {{ $payment->method }}</td>
+                                            <td>{{ $payment->confirmed_at?->format('Y-m-d H:i') ?? '-' }}</td>
+                                            <td>{{ $payment->confirmation_note ?: ($payment->note ?: '-') }}</td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="7" class="text-muted">Brak wpłat powiązanych z tym przedziałem.</td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <h3 class="mt-4 mb-3 h6">Historia zmian przedziału</h3>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th>Zdarzenie</th>
+                                        <th>Źródło</th>
+                                        <th>Zakres źródła</th>
+                                        <th>Zakres po zmianie</th>
+                                        <th>Użytkownik</th>
+                                        <th>Notatka</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse ($interval->events->sortByDesc('created_at') as $event)
+                                        <tr>
+                                            <td>{{ $event->created_at?->format('Y-m-d H:i') }}</td>
+                                            <td>{{ $event->type_label }}</td>
+                                            <td>{{ $event->source_label }}</td>
+                                            <td>
+                                                {{ $event->date_from?->format('Y-m-d') ?? '-' }}
+                                                -
+                                                {{ $event->date_to?->format('Y-m-d') ?? '-' }}
+                                            </td>
+                                            <td>
+                                                {{ $event->new_start_date?->format('Y-m-d') ?? '-' }}
+                                                -
+                                                {{ $event->new_end_date?->format('Y-m-d') ?? '-' }}
+                                            </td>
+                                            <td>{{ $event->createdBy?->name ?? '-' }}</td>
+                                            <td>{{ $event->note ?: '-' }}</td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="7" class="text-muted">Brak historii zmian dla tego przedziału.</td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">Zamknij</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endforeach
 
     <div class="modal fade" id="intervalDeleteModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -256,72 +383,6 @@
     </style>
 
     <script>
-        function addMonthsNoOverflow(date, months) {
-            const result = new Date(date);
-            const day = result.getDate();
-
-            result.setMonth(result.getMonth() + months);
-
-            if (result.getDate() !== day) {
-                result.setDate(0);
-            }
-
-            return result;
-        }
-
-        function formatDate(date) {
-            return date.toISOString().slice(0, 10);
-        }
-
-        function updateIntervalPreview() {
-            const startInput = document.getElementById('start_date');
-            const packageInput = document.getElementById('package_id');
-            const paymentDueInput = document.getElementById('payment_due_date');
-            const endPreview = document.getElementById('end_date_preview');
-            const valuePreview = document.getElementById('package_value_preview');
-
-            const selectedOption = packageInput.options[packageInput.selectedIndex];
-
-            if (!startInput.value || !selectedOption || !selectedOption.value) {
-                endPreview.value = '';
-                valuePreview.value = '';
-                return;
-            }
-
-            const startDate = new Date(startInput.value);
-            const months = parseInt(selectedOption.dataset.months, 10);
-            const value = selectedOption.dataset.value;
-
-            const endDate = addMonthsNoOverflow(startDate, months);
-            endDate.setDate(endDate.getDate() - 1);
-
-            const paymentDueDate = new Date(startDate);
-            paymentDueDate.setDate(paymentDueDate.getDate() + 7);
-
-            endPreview.value = formatDate(endDate);
-            valuePreview.value = `${value} zł`;
-
-            if (!paymentDueInput.value) {
-                paymentDueInput.value = formatDate(paymentDueDate);
-            }
-        }
-
-        document.getElementById('start_date').addEventListener('change', function () {
-            const paymentDueInput = document.getElementById('payment_due_date');
-
-            if (this.value) {
-                const paymentDueDate = new Date(this.value);
-                paymentDueDate.setDate(paymentDueDate.getDate() + 7);
-                paymentDueInput.value = formatDate(paymentDueDate);
-            }
-
-            updateIntervalPreview();
-        });
-
-        document.getElementById('package_id').addEventListener('change', updateIntervalPreview);
-
-        updateIntervalPreview();
-
         document.addEventListener('click', event => {
             const button = event.target.closest('.interval-delete-button');
 

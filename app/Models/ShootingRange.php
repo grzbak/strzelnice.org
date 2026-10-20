@@ -41,8 +41,16 @@ class ShootingRange extends Model
         'is_public_access',
         'max_advance_booking_days',
         'requires_reservation_confirmation',
+        'requires_shooting_leader',
         'is_archived',
         'endpoint',
+        'meta_title',
+        'meta_description',
+        'meta_keywords',
+        'og_title',
+        'og_description',
+        'og_image',
+        'robots',
     ];
 
     protected $casts = [
@@ -52,6 +60,7 @@ class ShootingRange extends Model
         'is_public_access' => 'boolean',
         'max_advance_booking_days' => 'integer',
         'requires_reservation_confirmation' => 'boolean',
+        'requires_shooting_leader' => 'boolean',
         'is_archived' => 'boolean',
     ];
 
@@ -69,6 +78,21 @@ class ShootingRange extends Model
     public function reservations(): HasMany
     {
         return $this->hasMany(Reservation::class);
+    }
+
+    public function paymentAccount(): HasOne
+    {
+        return $this->hasOne(ShootingRangePaymentAccount::class);
+    }
+
+    public function reservationPriceRules(): HasMany
+    {
+        return $this->hasMany(ReservationPriceRule::class);
+    }
+
+    public function reservationPricePromotions(): HasMany
+    {
+        return $this->hasMany(ReservationPricePromotion::class);
     }
     /*
      |--------------------------------------------------------------------------
@@ -151,8 +175,10 @@ class ShootingRange extends Model
     public function activeInterval()
     {
         return $this->hasOne(ShootingRangeInterval::class)
+            ->where('is_active', true)
             ->whereDate('start_date', '<=', now())
-            ->whereDate('end_date', '>=', now());
+            ->whereDate('end_date', '>=', now())
+            ->orderByDesc('end_date');
     }
 
     public function intervalArchives()
@@ -160,9 +186,24 @@ class ShootingRange extends Model
         return $this->hasMany(ShootingRangeIntervalArchive::class);
     }
 
+    public function intervalEvents()
+    {
+        return $this->hasMany(ShootingRangeIntervalEvent::class);
+    }
+
     public function packages()
     {
         return $this->hasMany(ShootingRangePackage::class);
+    }
+
+    public function packageOrders()
+    {
+        return $this->hasMany(PackageOrder::class);
+    }
+
+    public function billingCharges()
+    {
+        return $this->hasMany(BillingCharge::class);
     }
 
     public function invitations()
@@ -245,6 +286,43 @@ class ShootingRange extends Model
     public function getPublicLinkAttribute(): string
     {
         return url('/'.$this->endpoint);
+    }
+
+    public function seoData(): array
+    {
+        $title = $this->meta_title ?: trim($this->name.' - strzelnica'.($this->town ? ' '.$this->town : ''));
+        $description = $this->meta_description ?: $this->defaultSeoDescription();
+
+        return [
+            'title' => $title,
+            'description' => $description,
+            'keywords' => $this->meta_keywords ?: $this->defaultSeoKeywords(),
+            'og_title' => $this->og_title ?: $title,
+            'og_description' => $this->og_description ?: $description,
+            'og_image' => $this->og_image ?: $this->brand_url,
+            'canonical_url' => $this->public_link,
+            'robots' => $this->robots ?: 'index,follow',
+        ];
+    }
+
+    private function defaultSeoDescription(): string
+    {
+        return trim(sprintf(
+            'Zobacz profil strzelnicy %s%s. Sprawdź dane strzelnicy, dostępne osie, galerię oraz możliwość rezerwacji online.',
+            $this->name,
+            $this->town ? ' w miejscowości '.$this->town : ''
+        ));
+    }
+
+    private function defaultSeoKeywords(): string
+    {
+        return collect([
+            'strzelnica',
+            $this->name,
+            $this->town ? 'strzelnica '.$this->town : null,
+            $this->voivodeship,
+            'rezerwacja strzelnicy',
+        ])->filter()->implode(', ');
     }
 
     public function effectiveMaxAdvanceBookingDays(): int

@@ -122,6 +122,16 @@
                     Archiwum
                 </a>
 
+                @if ($canViewHiddenReservations)
+                    <a
+                        href="{{ route('admin.reservations.hidden', ['shooting_range_id' => $shootingRange->id]) }}"
+                        class="btn btn-outline-secondary"
+                    >
+                        <i class="bi bi-eye-slash me-1"></i>
+                        Ukryte
+                    </a>
+                @endif
+
                 <div class="btn-group" role="group" aria-label="Nawigacja po kalendarzu">
                     <button type="button" id="previousPeriod" class="btn btn-light" title="Poprzedni okres">
                         <i class="bi bi-chevron-left"></i>
@@ -141,6 +151,110 @@
                 </div>
             </div>
         </section>
+
+        @if ($pendingChangeRequests->isNotEmpty())
+            <section class="mb-3 reservation-requests-panel">
+                <div class="mb-2 d-flex align-items-center justify-content-between gap-2">
+                    <div>
+                        <span class="calendar-eyebrow">Wnioski klientów</span>
+                        <h2 class="mb-0 h5">Oczekujące zmiany i anulowania</h2>
+                    </div>
+                    <span class="badge bg-warning text-dark">{{ $pendingChangeRequests->count() }}</span>
+                </div>
+
+                <div class="row g-2">
+                    @foreach ($pendingChangeRequests as $changeRequest)
+                        @php
+                            $reservation = $changeRequest->reservation;
+                            $isCancelRequest = $changeRequest->type === \App\Models\ReservationChangeRequest::TYPE_CANCEL;
+                        @endphp
+                        <div class="col-12 col-xl-6">
+                            <article class="p-3 bg-white border rounded shadow-sm">
+                                <div class="d-flex justify-content-between gap-2">
+                                    <div>
+                                        <strong>
+                                            {{ $isCancelRequest ? 'Anulowanie rezerwacji' : 'Zmiana rezerwacji' }}
+                                        </strong>
+                                        <small class="d-block text-muted">
+                                            {{ $changeRequest->requester?->name ?? 'Klient' }}
+                                            @if ($changeRequest->requester?->email)
+                                                · {{ $changeRequest->requester->email }}
+                                            @endif
+                                        </small>
+                                    </div>
+                                    <span class="badge {{ $isCancelRequest ? 'bg-danger' : 'bg-primary' }}">
+                                        {{ $isCancelRequest ? 'Anulowanie' : 'Zmiana' }}
+                                    </span>
+                                </div>
+
+                                <dl class="mt-3 mb-2 row small">
+                                    <dt class="col-sm-4">Obecnie</dt>
+                                    <dd class="col-sm-8">
+                                        {{ $changeRequest->oldLane?->name ?? $reservation->lane?->name ?? 'Oś' }},
+                                        {{ $changeRequest->old_start?->format('d.m.Y H:i') }}
+                                        - {{ $changeRequest->old_end?->format('H:i') }}
+                                    </dd>
+
+                                    @if (! $isCancelRequest)
+                                        <dt class="col-sm-4">Po zmianie</dt>
+                                        <dd class="col-sm-8">
+                                            {{ $changeRequest->newLane?->name ?? 'Oś' }},
+                                            {{ $changeRequest->new_start?->format('d.m.Y H:i') }}
+                                            - {{ $changeRequest->new_end?->format('H:i') }}
+                                        </dd>
+                                    @endif
+
+                                    @if ($changeRequest->customer_note)
+                                        <dt class="col-sm-4">Uwagi klienta</dt>
+                                        <dd class="col-sm-8">{{ $changeRequest->customer_note }}</dd>
+                                    @endif
+                                </dl>
+
+                                <div class="gap-2 d-flex flex-column flex-md-row">
+                                    <form
+                                        method="POST"
+                                        action="{{ route('admin.reservations.requests.approve', $changeRequest) }}"
+                                        class="flex-fill"
+                                    >
+                                        @csrf
+                                        @method('PATCH')
+                                        <input
+                                            type="text"
+                                            name="decision_note"
+                                            class="mb-2 form-control form-control-sm"
+                                            placeholder="Notatka dla klienta (opcjonalnie)"
+                                        >
+                                        <button type="submit" class="w-100 btn btn-sm btn-success">
+                                            <i class="bi bi-check-lg me-1"></i>
+                                            Zatwierdź
+                                        </button>
+                                    </form>
+
+                                    <form
+                                        method="POST"
+                                        action="{{ route('admin.reservations.requests.reject', $changeRequest) }}"
+                                        class="flex-fill"
+                                    >
+                                        @csrf
+                                        @method('PATCH')
+                                        <input
+                                            type="text"
+                                            name="decision_note"
+                                            class="mb-2 form-control form-control-sm"
+                                            placeholder="Powód odrzucenia (opcjonalnie)"
+                                        >
+                                        <button type="submit" class="w-100 btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-x-lg me-1"></i>
+                                            Odrzuć
+                                        </button>
+                                    </form>
+                                </div>
+                            </article>
+                        </div>
+                    @endforeach
+                </div>
+            </section>
+        @endif
 
         <section class="calendar-summary">
             <div>
@@ -371,7 +485,56 @@
                         </div>
 
                         <div class="col-12">
+                            @if ($shootingRange->requires_shooting_leader)
+                                <div class="mb-2 small text-danger fw-semibold">
+                                    <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+                                    Ta strzelnica wymaga prowadzącego strzelanie.
+                                </div>
+                            @endif
+
+                            <input type="hidden" name="has_shooting_leader_license" value="0">
+                            <div class="form-check">
+                                <input
+                                    type="checkbox"
+                                    name="has_shooting_leader_license"
+                                    id="staffHasShootingLeaderLicense"
+                                    class="form-check-input"
+                                    value="1"
+                                >
+                                <label for="staffHasShootingLeaderLicense" class="form-check-label">
+                                    Klient posiada uprawnienia prowadzącego strzelanie
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="col-12" id="staffShootingLeaderLicenseNumberField">
+                            <label for="staffShootingLeaderLicenseNumber" class="form-label">
+                                Numer uprawnień / legitymacji
+                            </label>
+                            <input
+                                type="text"
+                                name="shooting_leader_license_number"
+                                id="staffShootingLeaderLicenseNumber"
+                                class="form-control"
+                                maxlength="100"
+                            >
+                        </div>
+
+                        <div class="col-12">
                             <div id="staffAvailability" class="small text-muted" role="status"></div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="staffPaymentMethod" class="form-label">Płatność</label>
+                            <select name="payment_method" id="staffPaymentMethod" class="form-select">
+                                <option value="none">Bez płatności</option>
+                                <option value="cash">Gotówka</option>
+                                <option value="bank_transfer">Przelew tradycyjny</option>
+                                <option value="payment_link">Link do płatności online</option>
+                            </select>
+                            <div class="form-text">
+                                Link online zostanie automatycznie wysłany na e-mail klienta.
+                            </div>
                         </div>
 
                         <div class="col-12">
@@ -435,8 +598,16 @@
                             <strong id="reservationDetailSource"></strong>
                         </div>
                         <div>
+                            <span>Prowadzący strzelanie</span>
+                            <strong id="reservationDetailShootingLeader"></strong>
+                        </div>
+                        <div>
                             <span>Utworzona</span>
                             <strong id="reservationDetailCreated"></strong>
+                        </div>
+                        <div>
+                            <span>Płatność</span>
+                            <strong id="reservationDetailPayment"></strong>
                         </div>
                     </div>
 
@@ -470,6 +641,7 @@
                             rows="3"
                             maxlength="500"
                         ></textarea>
+                        <div class="mt-2 mb-0 alert alert-warning d-none" id="cancellationSettlementNotice"></div>
                     </div>
                 </div>
 
@@ -488,8 +660,8 @@
                         class="btn btn-outline-danger d-none"
                         id="deleteReservationButton"
                     >
-                        <i class="bi bi-trash3 me-1"></i>
-                        Usuń rezerwację
+                        <i class="bi bi-eye-slash me-1"></i>
+                        Ukryj rezerwację
                     </button>
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Anuluj</button>
                     <button type="submit" class="btn btn-success">Zapisz status</button>
@@ -501,6 +673,7 @@
     <form method="POST" action="" id="deleteReservationForm" class="d-none">
         @csrf
         @method('DELETE')
+        <input type="hidden" name="deletion_reason" id="deleteReservationReasonInput">
     </form>
 
     <div class="modal fade" id="deleteReservationConfirmModal" tabindex="-1" aria-hidden="true">
@@ -508,15 +681,15 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
-                        <span class="calendar-eyebrow">Usuwanie rezerwacji</span>
-                        <h2 class="modal-title fs-5">Potwierdź usunięcie</h2>
+                        <span class="calendar-eyebrow">Ukrywanie rezerwacji</span>
+                        <h2 class="modal-title fs-5">Potwierdź ukrycie</h2>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-0 alert alert-warning">
                         <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                        Czy na pewno chcesz usunąć tę rezerwację? Tej operacji nie można cofnąć.
+                        Rezerwacja zniknie z kalendarza operacyjnego, ale jej dane, historia i płatności pozostaną zachowane. Administrator będzie mógł ją później przywrócić.
                     </div>
                     <dl class="mt-3 mb-0 reservation-delete-summary small">
                         <dt>Klient</dt>
@@ -526,12 +699,24 @@
                         <dt>Oś i stanowiska</dt>
                         <dd id="deleteReservationLane" class="mb-0"></dd>
                     </dl>
+                    <div class="mt-3">
+                        <label for="deleteReservationReason" class="form-label">Powód ukrycia</label>
+                        <textarea
+                            id="deleteReservationReason"
+                            class="form-control"
+                            rows="3"
+                            minlength="5"
+                            maxlength="500"
+                            required
+                            placeholder="Np. omyłkowo utworzony duplikat"
+                        ></textarea>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Anuluj</button>
                     <button type="button" class="btn btn-danger" id="confirmDeleteReservationButton">
-                        <i class="bi bi-trash3 me-1"></i>
-                        Usuń rezerwację
+                        <i class="bi bi-eye-slash me-1"></i>
+                        Ukryj rezerwację
                     </button>
                 </div>
             </div>
@@ -1540,6 +1725,7 @@
             lanes: @json($calendarLanes),
             openingHours: @json($openingHours),
             shootingRangeId: @json($shootingRange->id),
+            requiresShootingLeader: @json((bool) $shootingRange->requires_shooting_leader),
             customerSearchUrl: @json(route('admin.reservations.customers.search')),
             availabilityUrl: @json(route('rezerwacje.availability', $shootingRange->id)),
             statusRouteTemplate: @json(route('admin.reservations.status', ['reservation' => '__ID__'])),
@@ -1561,6 +1747,20 @@
             online_account: 'Użytkownik z kontem - rezerwacja online',
             staff_account: 'Użytkownik z kontem - rezerwacja personelu',
             staff_guest: 'Gość bez konta - rezerwacja personelu'
+        };
+        const paymentStatusLabels = {
+            not_required: 'Nie wymaga płatności',
+            pending: 'Oczekuje na płatność',
+            paid: 'Opłacona',
+            failed: 'Nieudana',
+            expired: 'Wygasła',
+            manual: 'Rozliczenie ręczne',
+            refunded: 'Zwrócona'
+        };
+        const paymentMethodLabels = {
+            p24: 'Przelewy24',
+            cash: 'Gotówka',
+            bank_transfer: 'Przelew tradycyjny'
         };
 
         const weekdayLabels = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Nd'];
@@ -2382,6 +2582,15 @@
             const customerEmail = document.getElementById('staffCustomerEmail');
             const customerPhone = document.getElementById('staffCustomerPhone');
             const customerUserId = document.getElementById('staffCustomerUserId');
+            const staffHasShootingLeaderLicense = document.getElementById(
+                'staffHasShootingLeaderLicense'
+            );
+            const staffShootingLeaderLicenseNumber = document.getElementById(
+                'staffShootingLeaderLicenseNumber'
+            );
+            const staffShootingLeaderLicenseNumberField = document.getElementById(
+                'staffShootingLeaderLicenseNumberField'
+            );
             const customerSearchButton = document.getElementById('staffCustomerSearchButton');
             const customerSearchMessage = document.getElementById('staffCustomerSearchMessage');
             const customerMatchModalElement = document.getElementById('customerMatchModal');
@@ -2424,7 +2633,13 @@
                 customerName.value = user.name ?? '';
                 customerEmail.value = user.email ?? '';
                 customerPhone.value = user.telephone ?? '';
+                staffHasShootingLeaderLicense.checked = Boolean(
+                    user.has_shooting_leader_license
+                );
+                staffShootingLeaderLicenseNumber.value =
+                    user.shooting_leader_license_number ?? '';
                 fillingCustomer = false;
+                updateStaffShootingLeaderFields();
                 setCustomerSearchMessage('Użytkownik został znaleziony i przypisany do rezerwacji.', 'success');
             }
 
@@ -2511,15 +2726,39 @@
                     customerName.value = '';
                     customerEmail.value = '';
                     customerPhone.value = '';
+                    staffHasShootingLeaderLicense.checked = false;
+                    staffShootingLeaderLicenseNumber.value = '';
                 }
 
+                updateStaffShootingLeaderFields();
                 setCustomerSearchMessage('', 'muted');
                 accountSearchHelp.classList.toggle('d-none', isGuest);
+            }
+
+            function updateStaffShootingLeaderFields() {
+                const required = adminCalendar.requiresShootingLeader
+                    || staffHasShootingLeaderLicense.checked;
+
+                staffHasShootingLeaderLicense.required =
+                    adminCalendar.requiresShootingLeader;
+                staffShootingLeaderLicenseNumber.required = required;
+                staffShootingLeaderLicenseNumberField.classList.toggle(
+                    'd-none',
+                    !required
+                );
+
+                if (!required) {
+                    staffShootingLeaderLicenseNumber.value = '';
+                }
             }
 
             customerEmail.addEventListener('input', handleCustomerInput);
             customerSearchButton.addEventListener('click', searchCustomerByEmail);
             customerType.addEventListener('change', () => updateCustomerFields());
+            staffHasShootingLeaderLicense.addEventListener(
+                'change',
+                updateStaffShootingLeaderFields
+            );
             updateCustomerFields();
 
             const staffForm = document.getElementById('staffReservationForm');
@@ -2694,6 +2933,16 @@
             }
 
             function staffReservationBlockingMessage() {
+                if (
+                    adminCalendar.requiresShootingLeader
+                    && (
+                        !staffHasShootingLeaderLicense.checked
+                        || !staffShootingLeaderLicenseNumber.value.trim()
+                    )
+                ) {
+                    return 'Ta strzelnica wymaga wskazania osoby posiadającej uprawnienia prowadzącego strzelanie. Zaznacz uprawnienia i podaj numer legitymacji lub uprawnień.';
+                }
+
                 if (staffAvailabilityLoading) {
                     return 'Trwa sprawdzanie dostępności. Poczekaj chwilę przed zapisem.';
                 }
@@ -3030,6 +3279,11 @@
                 customerName.value = reservation.user_name ?? '';
                 customerEmail.value = reservation.user_email ?? '';
                 customerPhone.value = reservation.user_phone ?? '';
+                staffHasShootingLeaderLicense.checked = Boolean(
+                    reservation.has_shooting_leader_license
+                );
+                staffShootingLeaderLicenseNumber.value =
+                    reservation.shooting_leader_license_number ?? '';
                 staffDate.value = reservation.date;
                 staffLane.value = String(reservation.line_id);
                 staffDynamic.checked = Boolean(
@@ -3038,6 +3292,7 @@
                 staffNotes.value = reservation.notes ?? '';
 
                 updateStaffTimeOptions();
+                updateStaffShootingLeaderFields();
 
                 if ([...staffStart.options].some(
                     option => option.value === reservation.start_time
@@ -3092,12 +3347,17 @@
                 customerName.value = oldInput.customer_name || '';
                 customerEmail.value = oldInput.customer_email || '';
                 customerPhone.value = oldInput.customer_phone || '';
+                staffHasShootingLeaderLicense.checked =
+                    String(oldInput.has_shooting_leader_license || '0') === '1';
+                staffShootingLeaderLicenseNumber.value =
+                    oldInput.shooting_leader_license_number || '';
                 staffDate.value = oldInput.date || staffDate.value;
                 staffLane.value = oldInput.line_id || staffLane.value;
                 staffDynamic.checked = String(oldInput.is_dynamic_shooting || '0') === '1';
                 staffNotes.value = oldInput.notes || '';
 
                 updateStaffTimeOptions();
+                updateStaffShootingLeaderFields();
 
                 if ([...staffStart.options].some(
                     option => option.value === oldInput.start_time
@@ -3148,6 +3408,9 @@
             const statusSelect = document.getElementById('reservationStatus');
             const cancellationField = document.getElementById('cancellationReasonField');
             const cancellationReason = document.getElementById('cancellationReason');
+            const cancellationSettlementNotice = document.getElementById(
+                'cancellationSettlementNotice'
+            );
             const notesSection = document.getElementById('reservationDetailNotesSection');
             const historySection = document.getElementById('reservationDetailHistorySection');
             const editReservationButton = document.getElementById(
@@ -3165,6 +3428,12 @@
             const deleteConfirmModal = new bootstrap.Modal(deleteConfirmModalElement);
             const confirmDeleteReservationButton = document.getElementById(
                 'confirmDeleteReservationButton'
+            );
+            const deleteReservationReason = document.getElementById(
+                'deleteReservationReason'
+            );
+            const deleteReservationReasonInput = document.getElementById(
+                'deleteReservationReasonInput'
             );
             let selectedReservation = null;
 
@@ -3188,6 +3457,8 @@
                     .forEach(backdrop => backdrop.classList.remove('reservation-delete-backdrop'));
 
                 confirmDeleteReservationButton.disabled = false;
+                deleteReservationReason.value = '';
+                deleteReservationReasonInput.value = '';
             });
 
             function setAvailableStatusOptions(reservation) {
@@ -3231,6 +3502,17 @@
                 const isCancelled = statusSelect.value === 'cancelled';
                 cancellationField.classList.toggle('d-none', !isCancelled);
                 cancellationReason.required = isCancelled;
+                const isPaid = selectedReservation?.payment_status === 'paid';
+                cancellationSettlementNotice.classList.toggle(
+                    'd-none',
+                    !isCancelled || !isPaid
+                );
+
+                if (isCancelled && isPaid) {
+                    cancellationSettlementNotice.textContent = selectedReservation.payment_method === 'p24'
+                        ? 'Anulowanie zleci automatyczny zwrot płatności Przelewy24. Jeśli operator odrzuci zwrot, rezerwacja pozostanie anulowana, a płatność będzie wymagała obsługi.'
+                        : 'Anulowanie oznaczy płatność jako oczekującą na ręczny zwrot. Zwrot należy później potwierdzić w module płatności rezerwacji.';
+                }
             }
 
             statusModal.addEventListener('show.bs.modal', event => {
@@ -3284,10 +3566,38 @@
                     sourceLabels[reservation.source] ?? reservation.source
                 );
                 setDetailText(
+                    'reservationDetailShootingLeader',
+                    reservation.has_shooting_leader_license
+                        ? (
+                            reservation.shooting_leader_license_number
+                                ? `Tak · ${reservation.shooting_leader_license_number}`
+                                : 'Tak'
+                        )
+                        : 'Nie'
+                );
+                setDetailText(
                     'reservationDetailCreated',
                     [
                         reservation.created_at,
                         reservation.created_by_name
+                    ].filter(Boolean).join(' · ')
+                );
+                setDetailText(
+                    'reservationDetailPayment',
+                    [
+                        paymentStatusLabels[reservation.payment_status] ?? reservation.payment_status,
+                        reservation.payment_amount
+                            ? `${Number(reservation.payment_amount).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${reservation.payment_currency ?? 'PLN'}`
+                            : null,
+                        reservation.payment_method
+                            ? paymentMethodLabels[reservation.payment_method] ?? reservation.payment_method
+                            : null,
+                        reservation.payment_expires_at && reservation.payment_status === 'pending'
+                            ? `do ${reservation.payment_expires_at}`
+                            : null,
+                        reservation.paid_at
+                            ? `opłacono ${reservation.paid_at}`
+                            : null
                     ].filter(Boolean).join(' · ')
                 );
 
@@ -3340,6 +3650,9 @@
                     'd-none',
                     ! reservation.can_delete
                 );
+                deleteReservationButton.title = reservation.can_delete
+                    ? 'Ukryj rezerwację w kalendarzu'
+                    : (reservation.delete_block_reason ?? 'Nie masz uprawnień do ukrycia tej rezerwacji.');
                 setAvailableStatusOptions(reservation);
                 statusSelect.value = reservation.status;
                 cancellationReason.value = reservation.cancellation_reason ?? '';
@@ -3413,7 +3726,16 @@
                     return;
                 }
 
+                const reason = deleteReservationReason.value.trim();
+
+                if (reason.length < 5) {
+                    deleteReservationReason.reportValidity();
+                    deleteReservationReason.focus();
+                    return;
+                }
+
                 confirmDeleteReservationButton.disabled = true;
+                deleteReservationReasonInput.value = reason;
                 deleteReservationForm.submit();
             });
 

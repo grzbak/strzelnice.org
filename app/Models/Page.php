@@ -17,6 +17,14 @@ class Page extends Model
         'content',
         'baner',
         'background',
+        'meta_title',
+        'meta_description',
+        'meta_keywords',
+        'og_title',
+        'og_description',
+        'og_image',
+        'canonical_url',
+        'robots',
         'is_active',
     ];
 
@@ -54,6 +62,20 @@ class Page extends Model
     public function activeRegulations(): HasMany
     {
         return $this->regulations()->where('status', Regulation::STATUS_ACTIVE);
+    }
+
+    public function seoData(): array
+    {
+        return [
+            'title' => $this->meta_title ?: $this->display_name,
+            'description' => $this->meta_description,
+            'keywords' => $this->meta_keywords,
+            'og_title' => $this->og_title ?: $this->meta_title ?: $this->display_name,
+            'og_description' => $this->og_description ?: $this->meta_description,
+            'og_image' => $this->og_image ?: $this->baner ?: $this->background,
+            'canonical_url' => $this->canonical_url ?: url('/'.$this->navigation_name),
+            'robots' => $this->robots ?: 'index,follow',
+        ];
     }
 
     public static function generateUniqueNavigationName(string $displayName, ?int $ignoreId = null): string

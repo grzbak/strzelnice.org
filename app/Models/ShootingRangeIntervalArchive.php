@@ -11,6 +11,8 @@ class ShootingRangeIntervalArchive extends Model
     protected $fillable = [
         'shooting_range_interval_id',
         'shooting_range_id',
+        'package_order_id',
+        'payment_id',
         'start_date',
         'end_date',
         'operator_insert_id',
@@ -19,6 +21,11 @@ class ShootingRangeIntervalArchive extends Model
         'datePaid',
         'payment_due_date',
         'is_active',
+        'source',
+        'subscription_status',
+        'activated_by_user_id',
+        'activated_at',
+        'blocked_at',
     ];
 
     protected $casts = [
@@ -28,6 +35,8 @@ class ShootingRangeIntervalArchive extends Model
         'payment_due_date' => 'date',
         'value' => 'decimal:2',
         'is_active' => 'boolean',
+        'activated_at' => 'datetime',
+        'blocked_at' => 'datetime',
     ];
 
     public function shootingRange()
@@ -48,5 +57,15 @@ class ShootingRangeIntervalArchive extends Model
     public function interval()
     {
         return $this->belongsTo(ShootingRangeInterval::class, 'shooting_range_interval_id');
+    }
+
+    public function packageOrder()
+    {
+        return $this->belongsTo(PackageOrder::class);
+    }
+
+    public function payment()
+    {
+        return $this->belongsTo(Payment::class);
     }
 }

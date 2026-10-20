@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\ShootingsController;
+use App\Mail\ReservationPaymentNotificationMail;
 use App\Mail\ReservationTodayReminderMail;
 use App\Models\Reservation;
 use App\Models\User;
@@ -10,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -33,6 +35,8 @@ class ReservationWorkflowTest extends TestCase
             $table->string('avatar')->nullable();
             $table->string('role')->default('klient');
             $table->boolean('is_approved')->default(true);
+            $table->boolean('has_shooting_leader_license')->default(false);
+            $table->string('shooting_leader_license_number')->nullable();
             $table->rememberToken();
             $table->timestamps();
         });
@@ -63,11 +67,35 @@ class ReservationWorkflowTest extends TestCase
             $table->string('name');
             $table->string('endpoint')->nullable();
             $table->string('town')->nullable();
+            $table->string('street')->nullable();
+            $table->string('houseNumber')->nullable();
+            $table->string('apartamentNumber')->nullable();
+            $table->string('zipCode')->nullable();
+            $table->string('brand_file_name')->nullable();
             $table->boolean('is_visible')->default(true);
             $table->boolean('is_public_access')->default(true);
             $table->boolean('is_archived')->default(false);
             $table->unsignedSmallInteger('max_advance_booking_days')->nullable();
             $table->boolean('requires_reservation_confirmation')->default(true);
+            $table->boolean('requires_shooting_leader')->default(false);
+            $table->timestamps();
+        });
+
+        Schema::create('shooting_range_payment_accounts', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('shooting_range_id')->unique();
+            $table->boolean('p24_enabled')->default(false);
+            $table->boolean('p24_sandbox')->default(true);
+            $table->string('p24_merchant_id', 50)->nullable();
+            $table->string('p24_pos_id', 50)->nullable();
+            $table->string('p24_crc')->nullable();
+            $table->string('p24_api_key')->nullable();
+            $table->string('currency', 3)->default('PLN');
+            $table->unsignedSmallInteger('reservation_payment_time_limit_minutes')->default(15);
+            $table->string('status', 40)->default('not_configured');
+            $table->dateTime('last_tested_at')->nullable();
+            $table->boolean('last_test_success')->nullable();
+            $table->text('last_test_message')->nullable();
             $table->timestamps();
         });
 
@@ -178,7 +206,16 @@ class ReservationWorkflowTest extends TestCase
             $table->dateTime('end');
             $table->unsignedInteger('positions_count')->default(1);
             $table->boolean('is_dynamic_shooting')->default(false);
+            $table->boolean('has_shooting_leader_license')->default(false);
+            $table->string('shooting_leader_license_number')->nullable();
             $table->string('status');
+            $table->boolean('payment_required')->default(false);
+            $table->string('payment_status', 40)->default('not_required');
+            $table->decimal('payment_amount', 10, 2)->nullable();
+            $table->string('payment_currency', 3)->default('PLN');
+            $table->dateTime('payment_expires_at')->nullable();
+            $table->dateTime('paid_at')->nullable();
+            $table->string('payment_method', 40)->nullable();
             $table->foreignId('approved_by_user_id')->nullable();
             $table->timestamp('approved_at')->nullable();
             $table->foreignId('cancelled_by_user_id')->nullable();
@@ -188,6 +225,9 @@ class ReservationWorkflowTest extends TestCase
             $table->string('cancellation_reason')->nullable();
             $table->text('notes')->nullable();
             $table->timestamp('today_reminder_sent_at')->nullable();
+            $table->softDeletes();
+            $table->foreignId('deleted_by_user_id')->nullable();
+            $table->string('deletion_reason', 500)->nullable();
             $table->timestamps();
         });
 
@@ -212,7 +252,16 @@ class ReservationWorkflowTest extends TestCase
             $table->dateTime('end');
             $table->unsignedInteger('positions_count')->default(1);
             $table->boolean('is_dynamic_shooting')->default(false);
+            $table->boolean('has_shooting_leader_license')->default(false);
+            $table->string('shooting_leader_license_number')->nullable();
             $table->string('status');
+            $table->boolean('payment_required')->default(false);
+            $table->string('payment_status', 40)->default('not_required');
+            $table->decimal('payment_amount', 10, 2)->nullable();
+            $table->string('payment_currency', 3)->default('PLN');
+            $table->dateTime('payment_expires_at')->nullable();
+            $table->dateTime('paid_at')->nullable();
+            $table->string('payment_method', 40)->nullable();
             $table->unsignedBigInteger('approved_by_user_id')->nullable();
             $table->timestamp('approved_at')->nullable();
             $table->unsignedBigInteger('cancelled_by_user_id')->nullable();
@@ -224,6 +273,122 @@ class ReservationWorkflowTest extends TestCase
             $table->timestamp('reservation_created_at')->nullable();
             $table->timestamp('reservation_updated_at')->nullable();
             $table->dateTime('archived_at');
+        });
+
+        Schema::create('reservation_price_rules', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('shooting_range_id');
+            $table->foreignId('lane_id')->nullable();
+            $table->string('name');
+            $table->json('weekdays')->nullable();
+            $table->time('time_from')->nullable();
+            $table->time('time_to')->nullable();
+            $table->date('valid_from')->nullable();
+            $table->date('valid_to')->nullable();
+            $table->decimal('price_per_position_30min', 10, 2);
+            $table->decimal('dynamic_price_per_position_30min', 10, 2)->nullable();
+            $table->string('currency', 3)->default('PLN');
+            $table->unsignedSmallInteger('priority')->default(100);
+            $table->boolean('is_active')->default(true);
+            $table->text('note')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('reservation_change_requests', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('reservation_id');
+            $table->foreignId('requested_by_user_id');
+            $table->foreignId('decided_by_user_id')->nullable();
+            $table->string('type', 30);
+            $table->string('status', 30)->default('pending');
+            $table->foreignId('old_lane_id')->nullable();
+            $table->foreignId('new_lane_id')->nullable();
+            $table->dateTime('old_start')->nullable();
+            $table->dateTime('old_end')->nullable();
+            $table->dateTime('new_start')->nullable();
+            $table->dateTime('new_end')->nullable();
+            $table->unsignedInteger('old_positions_count')->nullable();
+            $table->unsignedInteger('new_positions_count')->nullable();
+            $table->boolean('old_is_dynamic_shooting')->nullable();
+            $table->boolean('new_is_dynamic_shooting')->nullable();
+            $table->boolean('old_has_shooting_leader_license')->nullable();
+            $table->boolean('new_has_shooting_leader_license')->nullable();
+            $table->string('old_shooting_leader_license_number', 100)->nullable();
+            $table->string('new_shooting_leader_license_number', 100)->nullable();
+            $table->text('customer_note')->nullable();
+            $table->text('decision_note')->nullable();
+            $table->dateTime('decided_at')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('reservation_price_promotions', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('shooting_range_id');
+            $table->foreignId('lane_id')->nullable();
+            $table->string('name');
+            $table->string('discount_type', 20);
+            $table->decimal('discount_value', 10, 2);
+            $table->json('weekdays')->nullable();
+            $table->time('time_from')->nullable();
+            $table->time('time_to')->nullable();
+            $table->date('valid_from')->nullable();
+            $table->date('valid_to')->nullable();
+            $table->unsignedSmallInteger('priority')->default(100);
+            $table->boolean('is_active')->default(true);
+            $table->text('note')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('payments', function (Blueprint $table) {
+            $table->id();
+            $table->nullableMorphs('payable');
+            $table->foreignId('package_order_id')->nullable();
+            $table->string('provider', 40)->default('przelewy24');
+            $table->string('method', 40)->default('p24');
+            $table->string('status', 40)->default('created');
+            $table->decimal('amount', 10, 2);
+            $table->unsignedBigInteger('amount_minor');
+            $table->unsignedBigInteger('refunded_amount_minor')->default(0);
+            $table->unsignedBigInteger('refund_requested_amount_minor')->nullable();
+            $table->string('currency', 3)->default('PLN');
+            $table->string('description');
+            $table->string('payer_email')->nullable();
+            $table->string('payer_name')->nullable();
+            $table->string('p24_session_id')->nullable()->unique();
+            $table->string('p24_token')->nullable();
+            $table->unsignedBigInteger('p24_order_id')->nullable();
+            $table->unsignedInteger('p24_method')->nullable();
+            $table->string('url_return')->nullable();
+            $table->string('url_status')->nullable();
+            $table->dateTime('registered_at')->nullable();
+            $table->dateTime('verified_at')->nullable();
+            $table->dateTime('failed_at')->nullable();
+            $table->dateTime('refunded_at')->nullable();
+            $table->string('refund_request_id', 45)->nullable();
+            $table->string('refunds_uuid', 35)->nullable();
+            $table->text('refund_error')->nullable();
+            $table->dateTime('expires_at')->nullable();
+            $table->foreignId('confirmed_by_user_id')->nullable();
+            $table->dateTime('confirmed_at')->nullable();
+            $table->text('confirmation_note')->nullable();
+            $table->text('note')->nullable();
+            $table->json('raw_register_response')->nullable();
+            $table->json('raw_refund_response')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('payment_events', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('payment_id')->nullable();
+            $table->string('provider', 40)->default('przelewy24');
+            $table->string('event_type', 80);
+            $table->json('payload')->nullable();
+            $table->boolean('signature_valid')->nullable();
+            $table->dateTime('received_at')->nullable();
+            $table->dateTime('processed_at')->nullable();
+            $table->string('processing_status', 40)->default('received');
+            $table->text('error_message')->nullable();
+            $table->timestamps();
         });
 
         DB::table('system_configurations')->insert([
@@ -437,6 +602,177 @@ class ReservationWorkflowTest extends TestCase
                 'id' => $rangeId,
                 'date' => $date,
             ]));
+    }
+
+    public function test_customer_reservation_with_p24_creates_pending_payment_and_redirects_to_gateway(): void
+    {
+        Mail::fake();
+        Http::fake([
+            'sandbox.przelewy24.pl/api/v1/transaction/register' => Http::response([
+                'data' => [
+                    'token' => 'reservation-token',
+                ],
+            ]),
+        ]);
+
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $this->enableReservationPayments($rangeId, $laneId);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($client)
+            ->post(route('rezerwacje.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '10:00',
+                'end_time' => '11:00',
+                'positions_count' => 2,
+                'is_dynamic_shooting' => false,
+            ])
+            ->assertRedirect('https://sandbox.przelewy24.pl/trnRequest/reservation-token');
+
+        $this->assertDatabaseHas('reservations', [
+            'shooting_range_id' => $rangeId,
+            'line_id' => $laneId,
+            'status' => Reservation::STATUS_PENDING,
+            'payment_required' => true,
+            'payment_status' => Reservation::PAYMENT_PENDING,
+            'payment_amount' => 100,
+            'payment_method' => 'p24',
+        ]);
+
+        $reservationId = DB::table('reservations')->value('id');
+
+        $this->assertDatabaseHas('payments', [
+            'payable_type' => Reservation::class,
+            'payable_id' => $reservationId,
+            'provider' => 'przelewy24',
+            'method' => 'p24',
+            'status' => 'registered',
+            'amount' => 100,
+            'amount_minor' => 10000,
+            'p24_token' => 'reservation-token',
+        ]);
+    }
+
+    public function test_p24_callback_marks_reservation_payment_as_paid_and_approves_reservation(): void
+    {
+        Mail::fake();
+        Http::fake([
+            'sandbox.przelewy24.pl/api/v1/transaction/register' => Http::response([
+                'data' => [
+                    'token' => 'reservation-token',
+                ],
+            ]),
+            'sandbox.przelewy24.pl/api/v1/transaction/verify' => Http::response([
+                'data' => true,
+            ]),
+        ]);
+
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $this->enableReservationPayments($rangeId, $laneId);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($client)
+            ->post(route('rezerwacje.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '10:00',
+                'end_time' => '10:30',
+                'positions_count' => 1,
+                'is_dynamic_shooting' => false,
+            ])
+            ->assertRedirect('https://sandbox.przelewy24.pl/trnRequest/reservation-token');
+
+        $payment = DB::table('payments')->first();
+
+        $this->post(route('payments.p24.status'), [
+            'sessionId' => $payment->p24_session_id,
+            'orderId' => 123456,
+            'methodId' => 154,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $payment->payable_id,
+            'status' => Reservation::STATUS_APPROVED,
+            'payment_status' => Reservation::PAYMENT_PAID,
+        ]);
+
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment->id,
+            'status' => 'paid',
+            'p24_order_id' => 123456,
+            'p24_method' => 154,
+        ]);
+
+        $this->assertDatabaseHas('payment_events', [
+            'payment_id' => $payment->id,
+            'processing_status' => 'processed',
+        ]);
+    }
+
+    public function test_duplicate_p24_callback_does_not_send_payment_confirmation_again(): void
+    {
+        Mail::fake();
+        Http::fake([
+            'sandbox.przelewy24.pl/api/v1/transaction/register' => Http::response([
+                'data' => [
+                    'token' => 'reservation-token',
+                ],
+            ]),
+            'sandbox.przelewy24.pl/api/v1/transaction/verify' => Http::response([
+                'data' => true,
+            ]),
+        ]);
+
+        [, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $this->enableReservationPayments($rangeId, $laneId);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($client)
+            ->post(route('rezerwacje.store'), [
+                'shooting_range_id' => $rangeId,
+                'line_id' => $laneId,
+                'date' => today()->toDateString(),
+                'start_time' => '10:00',
+                'end_time' => '10:30',
+                'positions_count' => 1,
+                'is_dynamic_shooting' => false,
+            ])
+            ->assertRedirect('https://sandbox.przelewy24.pl/trnRequest/reservation-token');
+
+        $payment = DB::table('payments')->first();
+
+        $payload = [
+            'sessionId' => $payment->p24_session_id,
+            'orderId' => 123456,
+            'methodId' => 154,
+        ];
+
+        $this->post(route('payments.p24.status'), $payload)->assertOk();
+        $this->post(route('payments.p24.status'), $payload)->assertOk();
+
+        Mail::assertSent(ReservationPaymentNotificationMail::class, 2);
+
+        $this->assertDatabaseCount('payment_events', 2);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $payment->payable_id,
+            'status' => Reservation::STATUS_APPROVED,
+            'payment_status' => Reservation::PAYMENT_PAID,
+        ]);
     }
 
     public function test_reservation_can_end_at_midnight_when_range_closes_at_2359(): void
@@ -1127,7 +1463,7 @@ class ReservationWorkflowTest extends TestCase
             'date' => today()->toDateString(),
         ]))
             ->assertOk()
-            ->assertDontSee('Strzelnica testowa');
+            ->assertSee('Brak strzelnic spełniających kryteria.');
 
         $this->actingAs($admin)
             ->post(route('rezerwacje.store'), [
@@ -2041,9 +2377,16 @@ class ReservationWorkflowTest extends TestCase
 
         $this->assertDatabaseHas('reservations', [
             'id' => $approvedId,
-            'status' => Reservation::STATUS_PENDING,
+            'status' => Reservation::STATUS_APPROVED,
             'approved_by_user_id' => null,
             'approved_at' => null,
+        ]);
+        $this->assertDatabaseHas('reservation_change_requests', [
+            'reservation_id' => $approvedId,
+            'type' => 'change',
+            'status' => 'pending',
+            'old_lane_id' => $laneId,
+            'new_lane_id' => $laneId,
         ]);
 
         $this->actingAs($client)
@@ -2094,6 +2437,168 @@ class ReservationWorkflowTest extends TestCase
             'positions_count' => 2,
             'is_dynamic_shooting' => true,
             'notes' => 'Zmieniona notatka',
+        ]);
+    }
+
+    public function test_admin_can_hide_and_restore_unpaid_reservation_without_deleting_history(): void
+    {
+        Mail::fake();
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        $reservationId = $this->insertReservation(
+            $client,
+            $rangeId,
+            $laneId,
+            '12:00',
+            '12:30',
+            1,
+            Reservation::STATUS_PENDING
+        );
+
+        $this->actingAs($admin)
+            ->delete(route('admin.reservations.destroy', $reservationId), [
+                'deletion_reason' => 'Omyłkowo utworzony duplikat.',
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertSoftDeleted('reservations', ['id' => $reservationId]);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservationId,
+            'status' => Reservation::STATUS_CANCELLED,
+            'deleted_by_user_id' => $admin->id,
+            'deletion_reason' => 'Omyłkowo utworzony duplikat.',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.reservations.hidden', [
+                'shooting_range_id' => $rangeId,
+            ]))
+            ->assertOk()
+            ->assertSee('Omyłkowo utworzony duplikat.');
+
+        $this->actingAs($admin)
+            ->patch(route('admin.reservations.hidden.restore', $reservationId))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservationId,
+            'status' => Reservation::STATUS_CANCELLED,
+            'deleted_at' => null,
+            'deleted_by_user_id' => null,
+            'deletion_reason' => null,
+        ]);
+    }
+
+    public function test_employee_cannot_hide_reservation_or_view_hidden_reservations(): void
+    {
+        [$employee, $rangeId, $laneId] = $this->createBookableRange('pracownik', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        $reservationId = $this->insertReservation(
+            $client,
+            $rangeId,
+            $laneId,
+            '12:00',
+            '12:30',
+            1,
+            Reservation::STATUS_PENDING
+        );
+
+        $this->actingAs($employee)
+            ->delete(route('admin.reservations.destroy', $reservationId), [
+                'deletion_reason' => 'Próba ukrycia wpisu.',
+            ])
+            ->assertForbidden();
+        $this->actingAs($employee)
+            ->get(route('admin.reservations.hidden'))
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservationId,
+            'deleted_at' => null,
+        ]);
+    }
+
+    public function test_staff_cancellation_marks_manual_payment_for_refund(): void
+    {
+        Mail::fake();
+        [$admin, $rangeId, $laneId] = $this->createBookableRange('admin', true);
+        $client = User::factory()->create([
+            'role' => 'klient',
+            'is_approved' => true,
+        ]);
+        $reservationId = $this->insertReservation(
+            $client,
+            $rangeId,
+            $laneId,
+            '12:00',
+            '12:30',
+            1,
+            Reservation::STATUS_APPROVED
+        );
+        DB::table('reservations')->where('id', $reservationId)->update([
+            'payment_required' => true,
+            'payment_status' => Reservation::PAYMENT_PAID,
+            'payment_amount' => 50,
+            'payment_currency' => 'PLN',
+            'payment_method' => 'cash',
+            'paid_at' => now(),
+        ]);
+        $paymentId = DB::table('payments')->insertGetId([
+            'payable_type' => Reservation::class,
+            'payable_id' => $reservationId,
+            'provider' => 'manual',
+            'method' => 'cash',
+            'status' => 'paid',
+            'amount' => 50,
+            'amount_minor' => 5000,
+            'currency' => 'PLN',
+            'description' => 'Rezerwacja testowa',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.reservations.status', $reservationId), [
+                'status' => Reservation::STATUS_CANCELLED,
+                'cancellation_reason' => 'Odwołanie przez strzelnicę.',
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservationId,
+            'status' => Reservation::STATUS_CANCELLED,
+            'payment_status' => Reservation::PAYMENT_PAID,
+        ]);
+        $this->assertDatabaseHas('payments', [
+            'id' => $paymentId,
+            'status' => 'refund_pending',
+            'refund_requested_amount_minor' => 5000,
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('shooting.reservation-payments.payments.confirm-refund', $paymentId), [
+                'shooting_range_id' => $rangeId,
+                'refunded_amount' => '50.00',
+                'refunded_at' => now()->format('Y-m-d H:i:s'),
+                'confirmation_note' => 'Zwrot gotówki potwierdzony przez administratora.',
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('payments', [
+            'id' => $paymentId,
+            'status' => 'refunded',
+            'refunded_amount_minor' => 5000,
+            'refund_requested_amount_minor' => null,
+        ]);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservationId,
+            'payment_status' => Reservation::PAYMENT_REFUNDED,
         ]);
     }
 
@@ -2242,6 +2747,37 @@ class ReservationWorkflowTest extends TestCase
         ]);
 
         return [$staff, $rangeId, $laneId];
+    }
+
+    private function enableReservationPayments(int $rangeId, int $laneId): void
+    {
+        DB::table('shooting_range_payment_accounts')->insert([
+            'shooting_range_id' => $rangeId,
+            'p24_enabled' => true,
+            'p24_sandbox' => true,
+            'p24_merchant_id' => '420421',
+            'p24_pos_id' => '420421',
+            'p24_crc' => 'test-crc',
+            'p24_api_key' => 'test-api-key',
+            'currency' => 'PLN',
+            'reservation_payment_time_limit_minutes' => 15,
+            'status' => 'configured',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('reservation_price_rules')->insert([
+            'shooting_range_id' => $rangeId,
+            'lane_id' => $laneId,
+            'name' => 'Cennik testowy',
+            'price_per_position_30min' => 25,
+            'dynamic_price_per_position_30min' => 40,
+            'currency' => 'PLN',
+            'priority' => 10,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function insertReservation(

@@ -19,6 +19,12 @@ Schedule::command('reservations:archive-and-purge')
 Schedule::command('reservations:send-today-reminders')
     ->dailyAt('06:00')
     ->withoutOverlapping();
+Schedule::command('packages:expire-unpaid-orders')
+    ->hourly()
+    ->withoutOverlapping();
+Schedule::command('reservation-payments:expire-pending')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
 Schedule::command('security:prune-audit-history')
     ->dailyAt('03:15')
     ->withoutOverlapping();

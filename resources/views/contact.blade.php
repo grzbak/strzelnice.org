@@ -1,4 +1,9 @@
-<x-app-layout>
+<x-app-layout :seo="[
+    'title' => 'Kontakt - strzelnice.org',
+    'description' => 'Skontaktuj się z administratorem serwisu strzelnice.org.',
+    'robots' => 'index,follow',
+    'canonical_url' => route('contact'),
+]">
     <div class="page-bg-2"></div>
 
     <section class="container py-5">

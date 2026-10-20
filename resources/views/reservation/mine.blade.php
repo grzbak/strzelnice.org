@@ -64,13 +64,26 @@
                                         \App\Models\Reservation::STATUS_CANCELLED => ['Anulowana', 'danger'],
                                         \App\Models\Reservation::STATUS_COMPLETED => ['Zrealizowana', 'primary'],
                                         \App\Models\Reservation::STATUS_NO_SHOW => ['Niezrealizowana', 'secondary'],
+                                        \App\Models\Reservation::STATUS_PAYMENT_EXPIRED => ['Płatność wygasła', 'dark'],
                                         default => [$reservation->status, 'secondary'],
                                     };
                                     $canEdit = in_array($reservation->status, [
                                             \App\Models\Reservation::STATUS_PENDING,
                                             \App\Models\Reservation::STATUS_APPROVED,
                                         ], true)
-                                        && $reservation->canBeEdited();
+                                        && $reservation->canBeEditedByCustomer()
+                                        && ! $reservation->pendingChangeRequests->isNotEmpty();
+                                    $paymentVerificationPending = $reservation->isPaymentVerificationPending();
+                                    $tooLateForPaidChange = $reservation->isPaid()
+                                        && $reservation->start->diffInHours(now()) < 24;
+                                    $canCancel = in_array($reservation->status, [
+                                            \App\Models\Reservation::STATUS_PENDING,
+                                            \App\Models\Reservation::STATUS_APPROVED,
+                                        ], true)
+                                        && $reservation->canBeEditedByCustomer()
+                                        && ! $reservation->pendingChangeRequests->isNotEmpty()
+                                        && ! $paymentVerificationPending
+                                        && ! $tooLateForPaidChange;
                                 @endphp
                                 <tr>
                                     <td data-label="Strzelnica">
@@ -94,8 +107,21 @@
                                     </td>
                                     <td data-label="Status">
                                         <span class="badge text-bg-{{ $status[1] }}">{{ $status[0] }}</span>
+                                        @if ($reservation->pendingChangeRequests->isNotEmpty())
+                                            <small class="d-block mt-1 text-warning fw-semibold">
+                                                Wniosek oczekuje na decyzję
+                                            </small>
+                                        @elseif ($paymentVerificationPending)
+                                            <small class="d-block mt-1 text-muted">
+                                                Płatność w trakcie weryfikacji
+                                            </small>
+                                        @endif
                                     </td>
                                     <td class="text-end" data-label="Akcja">
+                                        @if ($canEdit || $canCancel)
+                                            <div class="d-flex flex-wrap justify-content-end gap-1">
+                                        @endif
+
                                         @if ($canEdit)
                                             <a
                                                 href="{{ route('rezerwacje.edit', $reservation) }}"
@@ -104,6 +130,24 @@
                                                 <i class="bi bi-pencil me-1"></i>
                                                 Edytuj
                                             </a>
+                                        @endif
+
+                                        @if ($canCancel)
+                                            <form
+                                                method="POST"
+                                                action="{{ route('rezerwacje.cancel', $reservation) }}"
+                                                onsubmit="return confirm('Czy na pewno chcesz anulować tę rezerwację?');"
+                                            >
+                                                @csrf
+                                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                    <i class="bi bi-x-circle me-1"></i>
+                                                    Anuluj
+                                                </button>
+                                            </form>
+                                        @endif
+
+                                        @if ($canEdit || $canCancel)
+                                            </div>
                                         @else
                                             <span class="text-muted small">Brak dostępnych akcji</span>
                                         @endif
@@ -141,6 +185,7 @@
                                     \App\Models\Reservation::STATUS_CANCELLED => ['Anulowana', 'danger'],
                                     \App\Models\Reservation::STATUS_COMPLETED => ['Zrealizowana', 'primary'],
                                     \App\Models\Reservation::STATUS_NO_SHOW => ['Niezrealizowana', 'secondary'],
+                                    \App\Models\Reservation::STATUS_PAYMENT_EXPIRED => ['Płatność wygasła', 'dark'],
                                     default => [$reservation->status, 'secondary'],
                                 };
                             @endphp

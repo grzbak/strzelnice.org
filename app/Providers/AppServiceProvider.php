@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -26,6 +27,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Carbon::setLocale(config('app.locale'));
+
+        $appUrl = (string) config('app.url');
+
+        if (str_starts_with($appUrl, 'https://')) {
+            URL::forceScheme('https');
+        }
 
         Event::listen(MessageSending::class, function (MessageSending $event): void {
             $headers = $event->message->getHeaders();

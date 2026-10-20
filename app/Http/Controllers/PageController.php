@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class PageController extends Controller
@@ -76,6 +77,7 @@ class PageController extends Controller
         $page = new Page([
             'display_name' => $validated['display_name'],
             'content' => $validated['content'] ?? null,
+            ...$this->seoPayload($validated),
             'is_active' => $request->boolean('is_active'),
         ]);
 
@@ -102,6 +104,7 @@ class PageController extends Controller
         $page->fill([
             'display_name' => $validated['display_name'],
             'content' => $validated['content'] ?? null,
+            ...$this->seoPayload($validated),
             'is_active' => $request->boolean('is_active'),
         ]);
 
@@ -172,8 +175,43 @@ class PageController extends Controller
             'content' => ['nullable', 'string'],
             'baner' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'background' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'meta_title' => ['nullable', 'string', 'max:255'],
+            'meta_description' => ['nullable', 'string', 'max:500'],
+            'meta_keywords' => ['nullable', 'string', 'max:500'],
+            'og_title' => ['nullable', 'string', 'max:255'],
+            'og_description' => ['nullable', 'string', 'max:500'],
+            'og_image' => ['nullable', 'string', 'max:255'],
+            'canonical_url' => ['nullable', 'url', 'max:255'],
+            'robots' => [
+                'nullable',
+                'string',
+                'max:50',
+                Rule::in([
+                    'index,follow',
+                    'noindex,follow',
+                    'index,nofollow',
+                    'noindex,nofollow',
+                ]),
+            ],
             'is_active' => ['nullable', 'boolean'],
         ]);
+    }
+
+    private function seoPayload(array $validated): array
+    {
+        return collect($validated)
+            ->only([
+                'meta_title',
+                'meta_description',
+                'meta_keywords',
+                'og_title',
+                'og_description',
+                'og_image',
+                'canonical_url',
+                'robots',
+            ])
+            ->map(fn ($value) => filled($value) ? $value : null)
+            ->all();
     }
 
     private function storeImage(Request $request, string $field): ?string

@@ -11,6 +11,8 @@ class ShootingRangeInterval extends Model
 
     protected $fillable = [
         'shooting_range_id',
+        'package_order_id',
+        'payment_id',
         'start_date',
         'end_date',
         'operator_insert_id',
@@ -19,6 +21,11 @@ class ShootingRangeInterval extends Model
         'datePaid',
         'payment_due_date',
         'is_active',
+        'source',
+        'subscription_status',
+        'activated_by_user_id',
+        'activated_at',
+        'blocked_at',
     ];
 
     protected $casts = [
@@ -28,6 +35,8 @@ class ShootingRangeInterval extends Model
         'payment_due_date' => 'date',
         'value' => 'decimal:2',
         'is_active' => 'boolean',
+        'activated_at' => 'datetime',
+        'blocked_at' => 'datetime',
     ];
 
     /*
@@ -41,6 +50,33 @@ class ShootingRangeInterval extends Model
         return $this->belongsTo(\App\Models\ShootingRange::class);
     }
 
+    public function packageOrder()
+    {
+        return $this->belongsTo(PackageOrder::class);
+    }
+
+    public function packageOrders()
+    {
+        return $this->hasMany(PackageOrder::class, 'shooting_range_interval_id');
+    }
+
+    public function hasBlockingPackageOrders(): bool
+    {
+        return $this->packageOrders()
+            ->where('status', '!=', PackageOrder::STATUS_CANCELLED)
+            ->exists();
+    }
+
+    public function payment()
+    {
+        return $this->belongsTo(Payment::class);
+    }
+
+    public function events()
+    {
+        return $this->hasMany(ShootingRangeIntervalEvent::class, 'shooting_range_interval_id');
+    }
+
     public function operatorInsert()
     {
         return $this->belongsTo(\App\Models\User::class, 'operator_insert_id');
@@ -49,6 +85,11 @@ class ShootingRangeInterval extends Model
     public function operatorUpdate()
     {
         return $this->belongsTo(\App\Models\User::class, 'operator_update_id');
+    }
+
+    public function activatedBy()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'activated_by_user_id');
     }
 
     /*

@@ -1,4 +1,9 @@
-<x-app-layout>
+<x-app-layout :seo="[
+    'title' => 'Oferta dla strzelnic - strzelnice.org',
+    'description' => 'Poznaj ofertę serwisu strzelnice.org dla właścicieli i administratorów strzelnic.',
+    'keywords' => 'oferta dla strzelnic, system rezerwacji strzelnic, panel strzelnicy',
+    'canonical_url' => route('offers'),
+]">
     <main class="ssz-main">
         <section class="ssz-hero">
             <div class="ssz-hero-grid"></div>
@@ -40,6 +45,7 @@
                     >
                         @csrf
                         <input type="hidden" name="source" value="hero">
+                        <input type="hidden" name="g-recaptcha-response" data-ssz-recaptcha-token>
                         <input type="text" name="name" value="{{ old('source') === 'hero' ? old('name') : '' }}" placeholder="Imię i nazwisko *" required class="ssz-field @error('name') ssz-error @enderror">
                         <input type="email" name="email" value="{{ old('source') === 'hero' ? old('email') : '' }}" placeholder="E-mail *" required class="ssz-field @error('email') ssz-error @enderror">
                         <input type="tel" name="phone" value="{{ old('source') === 'hero' ? old('phone') : '' }}" placeholder="Telefon" class="ssz-field @error('phone') ssz-error @enderror">
@@ -142,6 +148,7 @@
                         >
                             @csrf
                             <input type="hidden" name="source" value="offer">
+                            <input type="hidden" name="g-recaptcha-response" data-ssz-recaptcha-token>
                             <input type="text" name="name" value="{{ old('source') === 'offer' ? old('name') : '' }}" placeholder="Imię i nazwisko *" required class="ssz-field @error('name') ssz-error @enderror">
                             <input type="email" name="email" value="{{ old('source') === 'offer' ? old('email') : '' }}" placeholder="E-mail *" required class="ssz-field @error('email') ssz-error @enderror">
                             <input type="tel" name="phone" value="{{ old('source') === 'offer' ? old('phone') : '' }}" placeholder="Telefon" class="ssz-field @error('phone') ssz-error @enderror">
@@ -210,6 +217,7 @@
                 >
                     @csrf
                     <input type="hidden" name="source" value="cta">
+                    <input type="hidden" name="g-recaptcha-response" data-ssz-recaptcha-token>
                     <input type="text" name="name" value="{{ old('source') === 'cta' ? old('name') : '' }}" placeholder="Imię i nazwisko *" required class="ssz-field @error('name') ssz-error @enderror">
                     <input type="email" name="email" value="{{ old('source') === 'cta' ? old('email') : '' }}" placeholder="E-mail *" required class="ssz-field @error('email') ssz-error @enderror">
                     <input type="tel" name="phone" value="{{ old('source') === 'cta' ? old('phone') : '' }}" placeholder="Telefon" class="ssz-field @error('phone') ssz-error @enderror">
@@ -430,6 +438,7 @@
         }
     </style>
 
+    <script src="https://www.google.com/recaptcha/api.js?render={{ config('services.recaptcha.site_key') }}"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             document.querySelectorAll('[data-ssz-form-toggle]').forEach(function (button) {
@@ -461,6 +470,32 @@
                         item.classList.add('ssz-open');
                         answer.style.maxHeight = answer.scrollHeight + 'px';
                     }
+                });
+            });
+
+            document.querySelectorAll('form[action="{{ route('offers.send') }}"]').forEach(function (form) {
+                form.addEventListener('submit', function (event) {
+                    const tokenInput = form.querySelector('[data-ssz-recaptcha-token]');
+
+                    if (!tokenInput || tokenInput.value) {
+                        return;
+                    }
+
+                    event.preventDefault();
+
+                    if (!form.checkValidity()) {
+                        form.reportValidity();
+                        return;
+                    }
+
+                    grecaptcha.ready(function () {
+                        grecaptcha.execute(@json(config('services.recaptcha.site_key')), {
+                            action: 'offers'
+                        }).then(function (token) {
+                            tokenInput.value = token;
+                            form.submit();
+                        });
+                    });
                 });
             });
         });

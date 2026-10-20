@@ -45,8 +45,17 @@ class RegisteredUserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'telephone' => ['nullable', 'string', 'max:50'],
+            'has_shooting_leader_license' => ['nullable', 'boolean'],
+            'shooting_leader_license_number' => [
+                'nullable',
+                'required_if:has_shooting_leader_license,1',
+                'string',
+                'max:100',
+            ],
             'g-recaptcha-response' => 'required',
         ], [
+            'shooting_leader_license_number.required_if' => 'Podaj numer uprawnień lub legitymacji prowadzącego strzelanie.',
             'g-recaptcha-response.required' => 'Weryfikacja reCAPTCHA jest wymagana.',
         ]);
 
@@ -75,6 +84,14 @@ class RegisteredUserController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'telephone' => $request->telephone,
+            'has_shooting_leader_license' => $request->boolean(
+                'has_shooting_leader_license'
+            ),
+            'shooting_leader_license_number' => $request->boolean(
+                'has_shooting_leader_license'
+            )
+                ? $request->input('shooting_leader_license_number')
+                : null,
             'role' => $request->input('role', 'klient'),
             'is_approved' => ! $requiresManualApproval && $request->boolean('is_approved', true),
         ];

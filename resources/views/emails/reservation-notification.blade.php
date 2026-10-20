@@ -20,14 +20,14 @@
             \App\Mail\ReservationNotificationMail::EVENT_CREATED => 'Nowa rezerwacja',
             \App\Mail\ReservationNotificationMail::EVENT_UPDATED => 'Zmieniono rezerwację',
             \App\Mail\ReservationNotificationMail::EVENT_STATUS_CHANGED => 'Zmieniono status rezerwacji',
-            \App\Mail\ReservationNotificationMail::EVENT_DELETED => 'Usunięto rezerwację',
+            \App\Mail\ReservationNotificationMail::EVENT_DELETED => 'Ukryto rezerwację',
             default => 'Informacja o rezerwacji',
         };
         $intro = match ($eventType) {
             \App\Mail\ReservationNotificationMail::EVENT_CREATED => 'W systemie została złożona rezerwacja.',
             \App\Mail\ReservationNotificationMail::EVENT_UPDATED => 'Parametry rezerwacji zostały zmienione.',
             \App\Mail\ReservationNotificationMail::EVENT_STATUS_CHANGED => 'Status rezerwacji został zmieniony.',
-            \App\Mail\ReservationNotificationMail::EVENT_DELETED => 'Rezerwacja została usunięta przez personel strzelnicy.',
+            \App\Mail\ReservationNotificationMail::EVENT_DELETED => 'Rezerwacja została ukryta w kalendarzu przez administratora strzelnicy. Jej historia pozostaje zachowana.',
             default => 'Przekazujemy informację o rezerwacji.',
         };
         $customerName = $reservation->customer_name

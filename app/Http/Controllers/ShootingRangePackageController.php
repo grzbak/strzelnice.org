@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ShootingRange;
 use App\Models\ShootingRangePackage;
+use App\Services\ShootingRangeSubscriptionService;
 use Illuminate\Http\Request;
 
 class ShootingRangePackageController extends Controller
@@ -103,13 +104,22 @@ class ShootingRangePackageController extends Controller
         ));
     }
 
-    public function store(Request $request)
+    public function store(Request $request, ShootingRangeSubscriptionService $subscriptions)
     {
         $validated = $request->validate([
             'shooting_range_id' => ['nullable', 'integer', 'min:0'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'type' => ['nullable', 'in:standard,special,one_time,discount'],
             'period_months' => ['required', 'integer', 'min:1'],
+            'bonus_months' => ['nullable', 'integer', 'min:0', 'max:120'],
             'value' => ['required', 'numeric', 'min:0'],
+            'vat_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'valid_from' => ['required', 'date'],
+            'valid_to' => ['nullable', 'date', 'after_or_equal:valid_from'],
+            'is_active' => ['nullable', 'boolean'],
+            'is_public' => ['nullable', 'boolean'],
+            'requires_superadmin_approval' => ['nullable', 'boolean'],
         ]);
 
         $shootingRangeId = (int) ($validated['shooting_range_id'] ?? 0);
@@ -120,21 +130,59 @@ class ShootingRangePackageController extends Controller
                 ->withInput();
         }
 
-        ShootingRangePackage::create([
+        $package = ShootingRangePackage::create([
             'shooting_range_id' => $shootingRangeId,
+            'name' => $validated['name'] ?: $validated['period_months'].' mies.',
+            'description' => $validated['description'] ?? null,
+            'type' => $validated['type'] ?? 'standard',
             'period_months' => $validated['period_months'],
+            'bonus_months' => $validated['bonus_months'] ?? 0,
             'value' => $validated['value'],
+            'price_gross' => $validated['value'],
+            'vat_rate' => $validated['vat_rate'] ?? 23,
+            'currency' => 'PLN',
             'valid_from' => $validated['valid_from'],
+            'valid_to' => $validated['valid_to'] ?? null,
+            'is_active' => $request->boolean('is_active', true),
+            'is_public' => $request->boolean('is_public', true),
+            'requires_superadmin_approval' => $request->boolean('requires_superadmin_approval'),
+            'created_by_user_id' => $request->user()?->id,
         ]);
 
-        return back()->with('success', 'Dodano pakiet.');
+        $cancelledOrders = 0;
+
+        if ($package->is_active && $package->valid_from->toDateString() <= now()->toDateString()) {
+            ShootingRangePackage::query()
+                ->where('id', '!=', $package->id)
+                ->where('shooting_range_id', $package->shooting_range_id)
+                ->where('period_months', $package->period_months)
+                ->whereDate('valid_from', '<=', now()->toDateString())
+                ->get()
+                ->each(function (ShootingRangePackage $oldPackage) use (&$cancelledOrders, $subscriptions, $request): void {
+                    $cancelledOrders += $subscriptions->cancelUnpaidOrdersForPackage($oldPackage, $request->user());
+                });
+        }
+
+        return back()->with(
+            'success',
+            $cancelledOrders > 0
+                ? "Dodano pakiet i anulowano oczekujące zamówienia ze starszych cenników: {$cancelledOrders}."
+                : 'Dodano pakiet.'
+        );
     }
 
-    public function destroy(ShootingRangePackage $package)
+    public function destroy(ShootingRangePackage $package, ShootingRangeSubscriptionService $subscriptions)
     {
+        $cancelledOrders = $subscriptions->cancelUnpaidOrdersForPackage($package, request()->user());
+
         $package->delete();
 
-        return back()->with('success', 'Usunięto pakiet.');
+        return back()->with(
+            'success',
+            $cancelledOrders > 0
+                ? "Usunięto pakiet i anulowano oczekujące zamówienia: {$cancelledOrders}."
+                : 'Usunięto pakiet.'
+        );
     }
 
     private function packageGroupKey(ShootingRangePackage $package): string

@@ -9,6 +9,20 @@
             </p>
         </div>
 
+        @if ($errors->any())
+            <div class="alert alert-danger shadow-sm" role="alert">
+                <div class="mb-2 fw-semibold">
+                    Nie zapisano konfiguracji. Popraw poniższe pola i spróbuj ponownie.
+                </div>
+
+                <ul class="mb-0 ps-3">
+                    @foreach ($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+
         <form
             method="POST"
             action="{{ route('admin.system-configurations.update', $systemConfiguration) }}"

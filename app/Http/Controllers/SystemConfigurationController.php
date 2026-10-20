@@ -4,13 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\SystemConfiguration;
 use App\Rules\PolishBankAccountNumber;
+use App\Services\Przelewy24Service;
 use App\Services\UserSecurityService;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class SystemConfigurationController extends Controller
@@ -79,6 +82,35 @@ class SystemConfigurationController extends Controller
         return redirect()
             ->route('admin.system-configurations.show', $newConfiguration)
             ->with('success', 'PrzywrĂłcono konfiguracjÄ™ jako nowÄ… aktywnÄ… wersjÄ™.');
+    }
+
+    public function testPrzelewy24(
+        Request $request,
+        Przelewy24Service $przelewy24
+    ): JsonResponse {
+        $validated = $request->validate([
+            'p24_enabled' => ['boolean'],
+            'p24_sandbox' => ['boolean'],
+            'p24_merchant_id' => ['nullable', 'string', 'max:50', 'required_if:p24_enabled,1'],
+            'p24_pos_id' => ['nullable', 'string', 'max:50', 'required_if:p24_enabled,1'],
+            'p24_crc' => ['nullable', 'string', 'max:255', 'required_if:p24_enabled,1'],
+            'p24_api_key' => ['nullable', 'string', 'max:255', 'required_if:p24_enabled,1'],
+        ]);
+
+        try {
+            $result = $przelewy24->testAccess([
+                ...$validated,
+                'p24_enabled' => $request->boolean('p24_enabled'),
+                'p24_sandbox' => $request->boolean('p24_sandbox', true),
+            ]);
+        } catch (ConnectionException) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Nie udalo sie polaczyc z Przelewy24. Sprawdz internet, firewall albo adres IP skonfigurowany w panelu P24.',
+            ], 422);
+        }
+
+        return response()->json($result, $result['ok'] ? 200 : 422);
     }
 
     public function contact(): View
@@ -169,6 +201,21 @@ class SystemConfigurationController extends Controller
             'google_analytics_id' => filled($request->input('google_analytics_id'))
                 ? mb_strtoupper(trim((string) $request->input('google_analytics_id')))
                 : null,
+            'reports_enabled' => $request->boolean('reports_enabled', true),
+            'p24_enabled' => $request->boolean('p24_enabled'),
+            'p24_sandbox' => $request->boolean('p24_sandbox', true),
+            'p24_currency' => filled($request->input('p24_currency'))
+                ? mb_strtoupper(trim((string) $request->input('p24_currency')))
+                : 'PLN',
+            'subscription_payment_due_days' => filled($request->input('subscription_payment_due_days'))
+                ? $request->input('subscription_payment_due_days')
+                : 7,
+            'conditional_access_charge_due_days' => filled($request->input('conditional_access_charge_due_days'))
+                ? $request->input('conditional_access_charge_due_days')
+                : 7,
+            'conditional_access_charge_mode' => filled($request->input('conditional_access_charge_mode'))
+                ? $request->input('conditional_access_charge_mode')
+                : 'proportional',
         ]);
 
         return $request->validate([
@@ -205,6 +252,35 @@ class SystemConfigurationController extends Controller
             'audit_retention_months' => ['required', 'integer', 'min:1', 'max:240'],
             'security_events_retention_months' => ['required', 'integer', 'min:1', 'max:240'],
             'google_analytics_id' => ['nullable', 'string', 'max:32', 'regex:/^G-[A-Z0-9]+$/'],
+            'reports_enabled' => ['boolean'],
+            'default_meta_title' => ['nullable', 'string', 'max:255'],
+            'default_meta_description' => ['nullable', 'string', 'max:500'],
+            'default_meta_keywords' => ['nullable', 'string', 'max:500'],
+            'default_og_title' => ['nullable', 'string', 'max:255'],
+            'default_og_description' => ['nullable', 'string', 'max:500'],
+            'default_og_image' => ['nullable', 'string', 'max:255'],
+            'default_robots' => [
+                'nullable',
+                'string',
+                'max:50',
+                Rule::in([
+                    'index,follow',
+                    'noindex,follow',
+                    'index,nofollow',
+                    'noindex,nofollow',
+                ]),
+            ],
+            'p24_enabled' => ['boolean'],
+            'p24_sandbox' => ['boolean'],
+            'p24_merchant_id' => ['nullable', 'string', 'max:50', 'required_if:p24_enabled,1'],
+            'p24_pos_id' => ['nullable', 'string', 'max:50', 'required_if:p24_enabled,1'],
+            'p24_crc' => ['nullable', 'string', 'max:255', 'required_if:p24_enabled,1'],
+            'p24_api_key' => ['nullable', 'string', 'max:255', 'required_if:p24_enabled,1'],
+            'p24_currency' => ['required', 'string', 'size:3'],
+            'p24_time_limit' => ['nullable', 'integer', 'min:0', 'max:99'],
+            'subscription_payment_due_days' => ['required', 'integer', 'min:1', 'max:30'],
+            'conditional_access_charge_due_days' => ['required', 'integer', 'min:1', 'max:60'],
+            'conditional_access_charge_mode' => ['required', 'in:proportional,full'],
         ], [
             'reservation_operational_months.lte' => 'Okres przechowywania rezerwacji bieĹĽÄ…cych nie moĹĽe byÄ‡ dĹ‚uĹĽszy niĹĽ Ĺ‚Ä…czny okres historii.',
             'postal_code.regex' => 'Kod pocztowy musi mieÄ‡ format 00-000.',

@@ -7,10 +7,12 @@ use App\Models\ShootingRange;
 use App\Models\ShootingRangeHoliday;
 use App\Models\ShootingRangeInterval;
 use App\Models\ShootingRangeIntervalArchive;
+use App\Models\ShootingRangeIntervalEvent;
 use App\Models\ShootingRangeOpeningHour;
 use App\Models\ShootingRangePackage;
 use App\Models\User;
 use App\Services\ShootingRangeAvailabilityService;
+use App\Services\ShootingRangeSubscriptionService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -20,13 +22,15 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ShootingsController extends Controller
 {
     public function __construct(
-        private readonly ShootingRangeAvailabilityService $availability
+        private readonly ShootingRangeAvailabilityService $availability,
+        private readonly ShootingRangeSubscriptionService $subscriptions
     ) {}
 
     /**
@@ -394,6 +398,7 @@ class ShootingsController extends Controller
 
         $selectedCity = trim((string) $request->query('m', ''));
         $selectedVoivodeship = $cities[$selectedCity] ?? null;
+        $onlineReservationOnly = $request->boolean('online');
         $today = Carbon::today();
 
         $shootings = ShootingRange::query()
@@ -417,13 +422,20 @@ class ShootingsController extends Controller
 
                 return $shootingRange;
             })
+            ->when(
+                $onlineReservationOnly,
+                fn ($shootings) => $shootings->filter(
+                    fn (ShootingRange $shootingRange) => $shootingRange->can_reserve_online
+                )
+            )
             ->values();
 
         return view('shooting_ranges.index', compact(
             'shootings',
             'cities',
             'selectedCity',
-            'selectedVoivodeship'
+            'selectedVoivodeship',
+            'onlineReservationOnly'
         ));
     }
 
@@ -630,25 +642,25 @@ if (ShootingRangeInterval::hasOverlap(
             $data = array_combine($headers, $row);
 
             $mapped = [
-                'name' => $data['Nazwa *'] ?? null,
-                'voivodeship' => $data['Województwo *'] ?? null,
-                'town' => $data['Miejscowość *'] ?? null,
-                'street' => $data['Ulica *'] ?? null,
-                'houseNumber' => $data['Nr domu *'] ?? null,
-                'apartamentNumber' => $data['Nr lokalu'] ?? null,
-                'plotNumber' => $data['Nr działki'] ?? null,
-                'zipCode' => $data['Kod pocztowy *'] ?? null,
-                'navLink' => $data['Link nawigacji *'] ?? null,
-                'lat' => $data['Szerokość geogr. LAT *'] ?? null,
-                'lng' => $data['Długość geogr. LNG *'] ?? null,
-                'email' => $data['Email *'] ?? null,
-                'url' => $data['Strona www'] ?? null,
-                'facebook' => $data['Facebook'] ?? null,
-                'instagram' => $data['Instagram'] ?? null,
-                'telephone1' => $data['Telefon 1 *'] ?? null,
-                'telephone2' => $data['Telefon 2'] ?? null,
-                'type' => $data['Typ *'] ?? null,
-                'description' => $data['Opis'] ?? null,
+                'name' => $this->importValue($data, 'Nazwa *', 'Nazwa'),
+                'voivodeship' => $this->importValue($data, 'Województwo *', 'Województwo'),
+                'town' => $this->importValue($data, 'Miejscowość *', 'Miejscowość'),
+                'street' => $this->importValue($data, 'Ulica', 'Ulica *'),
+                'houseNumber' => $this->importValue($data, 'Nr domu', 'Nr domu *'),
+                'apartamentNumber' => $this->importValue($data, 'Nr lokalu'),
+                'plotNumber' => $this->importValue($data, 'Nr działki'),
+                'zipCode' => $this->importValue($data, 'Kod pocztowy *', 'Kod pocztowy'),
+                'navLink' => $this->importValue($data, 'Link nawigacji *', 'Link nawigacji'),
+                'lat' => $this->importValue($data, 'Szerokość geogr. LAT *', 'Szerokość geogr. LAT'),
+                'lng' => $this->importValue($data, 'Długość geogr. LNG *', 'Długość geogr. LNG'),
+                'email' => $this->importValue($data, 'Email', 'Email *'),
+                'url' => $this->importValue($data, 'Strona www'),
+                'facebook' => $this->importValue($data, 'Facebook'),
+                'instagram' => $this->importValue($data, 'Instagram'),
+                'telephone1' => $this->importValue($data, 'Telefon 1', 'Telefon 1 *'),
+                'telephone2' => $this->importValue($data, 'Telefon 2'),
+                'type' => $this->importValue($data, 'Typ *', 'Typ'),
+                'description' => $this->importValue($data, 'Opis'),
                 'is_visible' => 1,
             ];
 
@@ -656,15 +668,15 @@ if (ShootingRangeInterval::hasOverlap(
                 'name' => ['required', 'string', 'max:255'],
                 'voivodeship' => ['required', 'string', 'max:255'],
                 'town' => ['required', 'string', 'max:255'],
-                'street' => ['required', 'string', 'max:255'],
-                'houseNumber' => ['required', 'string', 'max:255'],
+                'street' => ['nullable', 'string', 'max:255'],
+                'houseNumber' => ['nullable', 'string', 'max:255'],
                 'zipCode' => ['required', 'regex:/^\d{2}-\d{3}$/'],
                 'navLink' => ['required', 'string'],
                 'lat' => ['required', 'numeric', 'between:-90,90'],
                 'lng' => ['required', 'numeric', 'between:-180,180'],
-                'email' => ['required', 'email'],
+                'email' => ['nullable', 'email'],
                 'url' => ['nullable', 'url'],
-                'telephone1' => ['required', 'string', 'max:255'],
+                'telephone1' => ['nullable', 'string', 'max:255'],
                 'type' => ['required', 'in:otwarta,kryta'],
                 'description' => ['nullable', 'string'],
             ]);
@@ -675,13 +687,17 @@ if (ShootingRangeInterval::hasOverlap(
                 continue;
             }
 
-            $existingByEmail = ShootingRange::where('email', $mapped['email'])->first();
-
             // <sprawdzanie duplikatów
-            if ($existingByEmail) {
-                $errors[] = 'Wiersz '.($index + 1).': pominięto — istnieje już strzelnica z tym samym adresem email: '.$mapped['email'];
+            if (! empty($mapped['email'])) {
+                $existingByEmail = ShootingRange::whereRaw('LOWER(email) = ?', [
+                    mb_strtolower($mapped['email']),
+                ])->first();
 
-                continue;
+                if ($existingByEmail) {
+                    $errors[] = 'Wiersz '.($index + 1).': pominięto — istnieje już strzelnica z tym samym adresem email: '.$mapped['email'];
+
+                    continue;
+                }
             }
 
             $sameAddressRanges = ShootingRange::where('town', $mapped['town'])
@@ -716,6 +732,25 @@ if (ShootingRangeInterval::hasOverlap(
         return $response;
     }
 
+    private function importValue(array $data, string ...$headers): mixed
+    {
+        foreach ($headers as $header) {
+            if (! array_key_exists($header, $data)) {
+                continue;
+            }
+
+            $value = $data[$header];
+
+            if (is_string($value)) {
+                $value = trim($value);
+            }
+
+            return $value === '' ? null : $value;
+        }
+
+        return null;
+    }
+
     // FORMULARZ DODAWANIA STRZELNICY PRZEZ SUPERADMINA
     public function createSuperAdmin()
     {
@@ -736,6 +771,9 @@ if (ShootingRangeInterval::hasOverlap(
         $validated['requires_reservation_confirmation'] = $request->boolean(
             'requires_reservation_confirmation',
             true
+        );
+        $validated['requires_shooting_leader'] = $request->boolean(
+            'requires_shooting_leader'
         );
 
         if ($brandData = $this->storeBrandFile($request)) {
@@ -774,6 +812,9 @@ if (ShootingRangeInterval::hasOverlap(
         $validated['is_public_access'] = $request->boolean('is_public_access');
         $validated['requires_reservation_confirmation'] = $request->boolean(
             'requires_reservation_confirmation'
+        );
+        $validated['requires_shooting_leader'] = $request->boolean(
+            'requires_shooting_leader'
         );
 
         if ($brandData = $this->storeBrandFile($request)) {
@@ -941,17 +982,13 @@ if (ShootingRangeInterval::hasOverlap(
             ? $latestActiveInterval->end_date->copy()->addDay()->format('Y-m-d')
             : $today->format('Y-m-d');
 
-        $rangePackages = $this->activePackagesForShootingRange($shootingRange->id);
-
-        if ($rangePackages->isEmpty()) {
-            $rangePackages = $this->activePackagesForShootingRange(0);
-        }
-
-        $suggestedPaymentDueDate = Carbon::parse($suggestedStartDate)
-            ->addDays(7)
+        $suggestedEndDate = Carbon::parse($suggestedStartDate)
+            ->addMonthNoOverflow()
+            ->subDay()
             ->format('Y-m-d');
 
         $intervals = $shootingRange->intervals()
+            ->with(['packageOrders.package', 'packageOrders.payments', 'events.packageOrder', 'events.payment', 'events.createdBy'])
             ->orderByDesc('start_date')
             ->get();
 
@@ -964,8 +1001,7 @@ if (ShootingRangeInterval::hasOverlap(
             'intervals',
             'archiveIntervals',
             'suggestedStartDate',
-            'suggestedPaymentDueDate',
-            'rangePackages'
+            'suggestedEndDate'
         ));
     }
 
@@ -975,7 +1011,12 @@ if (ShootingRangeInterval::hasOverlap(
 
         return ShootingRangePackage::query()
             ->where('shooting_range_id', $shootingRangeId)
+            ->where('is_active', true)
             ->whereDate('valid_from', '<=', $today)
+            ->where(function ($query) use ($today) {
+                $query->whereNull('valid_to')
+                    ->orWhereDate('valid_to', '>=', $today);
+            })
             ->orderByDesc('valid_from')
             ->orderByDesc('id')
             ->get()
@@ -988,64 +1029,22 @@ if (ShootingRangeInterval::hasOverlap(
     {
         $validated = $request->validate([
             'start_date' => ['required', 'date'],
-            'package_id' => ['required', 'integer', 'exists:shooting_range_packages,id'],
-            'payment_due_date' => ['nullable', 'date'],
-            'datePaid' => ['nullable', 'date'],
+            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'manual_reason' => ['nullable', 'string', 'max:2000'],
         ]);
-
-        $availablePackages = $this->activePackagesForShootingRange($shootingRange->id);
-
-        if ($availablePackages->isEmpty()) {
-            $availablePackages = $this->activePackagesForShootingRange(0);
-        }
-
-        $package = $availablePackages->firstWhere('id', (int) $validated['package_id']);
-
-        if (! $package) {
-            return back()
-                ->withErrors(['package_id' => 'Wybrany pakiet nie jest dostępny dla tej strzelnicy.'])
-                ->withInput();
-        }
 
         $startDate = Carbon::parse($validated['start_date']);
-        $endDate = $startDate->copy()
-            ->addMonthsNoOverflow($package->period_months)
-            ->subDay();
+        $endDate = Carbon::parse($validated['end_date']);
 
-        if (ShootingRangeInterval::hasOverlap(
-            $startDate->format('Y-m-d'),
-            $endDate->format('Y-m-d'),
-            $shootingRange->id
-        )) {
-            return back()
-                ->withErrors(['start_date' => 'Ten przedział nakłada się na istniejący przedział.'])
-                ->withInput();
-        }
+        $this->subscriptions->extendManualAccess(
+            $shootingRange,
+            $startDate,
+            $endDate,
+            $request->user(),
+            $validated['manual_reason'] ?? null
+        );
 
-        $interval = ShootingRangeInterval::create([
-            'shooting_range_id' => $shootingRange->id,
-            'start_date' => $startDate,
-            'end_date' => $endDate,
-            'value' => $package->value,
-            'payment_due_date' => $validated['payment_due_date'] ?? $startDate->copy()->addDays(7),
-            'datePaid' => $validated['datePaid'] ?? null,
-            'is_active' => true,
-        ]);
-
-        ShootingRangeIntervalArchive::create([
-            'shooting_range_interval_id' => $interval->id,
-            'shooting_range_id' => $interval->shooting_range_id,
-            'start_date' => $interval->start_date,
-            'end_date' => $interval->end_date,
-            'operator_insert_id' => $interval->operator_insert_id,
-            'operator_update_id' => $interval->operator_update_id,
-            'value' => $interval->value,
-            'datePaid' => $interval->datePaid,
-            'payment_due_date' => $interval->payment_due_date,
-            'is_active' => $interval->is_active,
-        ]);
-
-        return back()->with('success', 'Dodano przedział aktywności.');
+        return back()->with('success', 'Rozszerzono ręczny przedział aktywności.');
     }
 
     public function editInterval(ShootingRange $shootingRange, ShootingRangeInterval $interval)
@@ -1062,43 +1061,62 @@ if (ShootingRangeInterval::hasOverlap(
         $validated = $request->validate([
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
-            'payment_due_date' => ['nullable', 'date'],
-            'datePaid' => ['nullable', 'date'],
             'is_active' => ['nullable', 'boolean'],
+            'manual_reason' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        if (ShootingRangeInterval::hasOverlap(
-            $validated['start_date'],
-            $validated['end_date'],
-            $shootingRange->id,
-            $interval->id
-        )) {
-            return back()
-                ->withErrors(['start_date' => 'Ten przedział nakłada się na istniejący przedział.'])
-                ->withInput();
+        if ($interval->hasBlockingPackageOrders()) {
+            return back()->with('error', 'Nie można edytować ręcznie przedziału powiązanego z abonamentami. Zarządzaj nim przez zamówienia abonamentów.');
         }
+
+        $previousStartDate = $interval->start_date?->copy();
+        $previousEndDate = $interval->end_date?->copy();
+        $isActive = $request->boolean('is_active');
 
         $interval->update([
             'start_date' => $validated['start_date'],
             'end_date' => $validated['end_date'],
-            'payment_due_date' => $validated['payment_due_date'] ?? null,
-            'datePaid' => $validated['datePaid'] ?? null,
-            'is_active' => $request->boolean('is_active'),
+            'is_active' => $isActive,
+            'source' => 'manual',
+            'subscription_status' => $isActive ? 'active' : 'expired',
+            'datePaid' => $isActive ? ($interval->datePaid ?? now()) : $interval->datePaid,
+            'payment_due_date' => $isActive ? null : $interval->payment_due_date,
+        ]);
+
+        ShootingRangeIntervalEvent::create([
+            'shooting_range_interval_id' => $interval->id,
+            'shooting_range_id' => $interval->shooting_range_id,
+            'created_by_user_id' => $request->user()?->id,
+            'type' => ShootingRangeIntervalEvent::TYPE_MANUAL_EXTENDED,
+            'source' => ShootingRangeIntervalEvent::SOURCE_MANUAL,
+            'date_from' => $interval->start_date,
+            'date_to' => $interval->end_date,
+            'previous_start_date' => $previousStartDate,
+            'previous_end_date' => $previousEndDate,
+            'new_start_date' => $interval->start_date,
+            'new_end_date' => $interval->end_date,
+            'note' => $validated['manual_reason'] ?? null,
         ]);
 
         ShootingRangeIntervalArchive::updateOrCreate(
             [
+                'shooting_range_interval_id' => $interval->id,
+            ],
+            [
                 'shooting_range_id' => $interval->shooting_range_id,
                 'start_date' => $interval->start_date,
                 'end_date' => $interval->end_date,
-            ],
-            [
                 'operator_insert_id' => $interval->operator_insert_id,
                 'operator_update_id' => $interval->operator_update_id,
                 'value' => $interval->value,
                 'datePaid' => $interval->datePaid,
                 'payment_due_date' => $interval->payment_due_date,
                 'is_active' => $interval->is_active,
+                'source' => $interval->source,
+                'subscription_status' => $interval->subscription_status,
+                'activated_by_user_id' => $interval->activated_by_user_id,
+                'activated_at' => $interval->activated_at,
+                'blocked_at' => $interval->blocked_at,
             ]
         );
 
@@ -1110,6 +1128,10 @@ if (ShootingRangeInterval::hasOverlap(
     public function deleteInterval(ShootingRange $shootingRange, ShootingRangeInterval $interval)
     {
         abort_if($interval->shooting_range_id !== $shootingRange->id, 404);
+
+        if ($interval->hasBlockingPackageOrders()) {
+            return back()->with('error', 'Nie można usunąć przedziału powiązanego z abonamentami. Zarządzaj nim przez zamówienia abonamentów.');
+        }
 
         ShootingRangeIntervalArchive::where('shooting_range_interval_id', $interval->id)
             ->update([
@@ -1159,6 +1181,9 @@ if (ShootingRangeInterval::hasOverlap(
         $validated['is_public_access'] = $request->boolean('is_public_access');
         $validated['requires_reservation_confirmation'] = $request->boolean(
             'requires_reservation_confirmation'
+        );
+        $validated['requires_shooting_leader'] = $request->boolean(
+            'requires_shooting_leader'
         );
 
         if ($brandData = $this->storeBrandFile($request)) {
@@ -1390,6 +1415,9 @@ if (ShootingRangeInterval::hasOverlap(
             'requires_reservation_confirmation',
             true
         );
+        $validated['requires_shooting_leader'] = $request->boolean(
+            'requires_shooting_leader'
+        );
 
         if ($brandData = $this->storeBrandFile($request)) {
             $oldBrand = session('shooting_range_form.range.brand_file_name');
@@ -1541,8 +1569,26 @@ if (ShootingRangeInterval::hasOverlap(
             'is_public_access' => ['required', 'boolean'],
             'max_advance_booking_days' => ['nullable', 'integer', 'min:0', 'max:365'],
             'requires_reservation_confirmation' => ['nullable', 'boolean'],
+            'requires_shooting_leader' => ['nullable', 'boolean'],
 
             'description' => ['nullable', 'string', 'max:2000'],
+            'meta_title' => ['nullable', 'string', 'max:255'],
+            'meta_description' => ['nullable', 'string', 'max:500'],
+            'meta_keywords' => ['nullable', 'string', 'max:500'],
+            'og_title' => ['nullable', 'string', 'max:255'],
+            'og_description' => ['nullable', 'string', 'max:500'],
+            'og_image' => ['nullable', 'string', 'max:255'],
+            'robots' => [
+                'nullable',
+                'string',
+                'max:50',
+                Rule::in([
+                    'index,follow',
+                    'noindex,follow',
+                    'index,nofollow',
+                    'noindex,nofollow',
+                ]),
+            ],
         ];
     }
 

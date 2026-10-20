@@ -39,7 +39,11 @@ class ReservationIntentSession
             $query['start'] = $intent['start_time'];
         }
 
-        return route('rezerwacje.calendar', ['id' => $intent['shooting_range_id']])
+        return route(
+            'rezerwacje.calendar',
+            ['id' => $intent['shooting_range_id']],
+            false
+        )
             .'?'.http_build_query($query);
     }
 

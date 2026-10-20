@@ -256,6 +256,10 @@ class ShootingRangeAvailabilityService
                     Reservation::STATUS_PENDING,
                     Reservation::STATUS_APPROVED,
                 ])
+                ->where(function ($query) {
+                    $query->where('payment_status', '!=', Reservation::PAYMENT_EXPIRED)
+                        ->orWhereNull('payment_status');
+                })
                 ->when(
                     $ignoreReservationId,
                     fn ($query) => $query->where('id', '!=', $ignoreReservationId)
@@ -285,6 +289,10 @@ class ShootingRangeAvailabilityService
                 Reservation::STATUS_PENDING,
                 Reservation::STATUS_APPROVED,
             ])
+            ->where(function ($query) {
+                $query->where('payment_status', '!=', Reservation::PAYMENT_EXPIRED)
+                    ->orWhereNull('payment_status');
+            })
             ->whereDate('start', $date)
             ->get(['start', 'end', 'positions_count']);
 

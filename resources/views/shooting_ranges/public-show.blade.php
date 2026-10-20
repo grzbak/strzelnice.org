@@ -1,4 +1,4 @@
-<x-app-layout>
+<x-app-layout :seo="$shootingRange->seoData()">
     @php
         $gallery = $shootingRange->gallery;
         $brandUrl = $shootingRange->brand_url;

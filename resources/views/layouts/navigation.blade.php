@@ -79,7 +79,7 @@
 
 
 {{-- NAVBAR --}}
-<nav class="bg-black shadow-sm navbar navbar-expand-lg navbar-dark">
+<nav class="shadow-sm bg-primary navbar navbar-expand-lg navbar-dark">
     <div class="container">
 
         <a class="navbar-brand fw-bold" href="{{ url('/') }}">
@@ -99,6 +99,8 @@
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.shootings') }}">Strzelnice</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.users') }}">Użytkownicy</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.packages.index') }}">Cenniki</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ route('admin.subscription-orders.index') }}">Abonamenty</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ route('reports.index') }}">Raporty</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.pages.index') }}">Strony</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.regulations.index') }}">Regulaminy</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ route('admin.system-configurations.index') }}">Konfiguracja</a></li>
@@ -120,6 +122,13 @@
                                 Rezerwacje
                             </a>
                         </li>
+                        @if ($activeSystemConfiguration?->reports_enabled ?? true)
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ route('reports.index') }}">
+                                    Raporty
+                                </a>
+                            </li>
+                        @endif
                         <li class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle" href="{{ route('admin.shootings') }}"
                                 id="shootingsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
@@ -140,6 +149,16 @@
                                 <li>
                                     <a class="dropdown-item" href="{{ route('shooting.time.edit') }}">
                                         Godziny otwarcia
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{{ route('shooting.subscription.index') }}">
+                                        Abonament
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{{ route('shooting.reservation-payments.index') }}">
+                                        Płatności rezerwacji
                                     </a>
                                 </li>
                                 <li>
@@ -218,10 +237,10 @@
             <div class="gap-3 d-flex align-items-center">
 
                 @guest
-                    <a href="{{ route('login') }}" class="btn btn-outline-danger btn-sm">
+                    <a href="{{ route('login', absolute: false) }}" class="btn btn-outline-danger btn-sm">
                         Logowanie
                     </a>
-                    <a href="{{ route('register') }}" class="btn btn-danger btn-sm">
+                    <a href="{{ route('register', absolute: false) }}" class="btn btn-danger btn-sm">
                         Rejestracja
                     </a>
                 @endguest

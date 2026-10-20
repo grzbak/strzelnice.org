@@ -58,6 +58,70 @@
     <x-input-error :messages="$errors->get('content')" class="mt-2" />
 </div>
 
+<div class="p-3 mb-3 border rounded bg-light">
+    <h2 class="mb-3 h5">SEO</h2>
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label for="meta_title" class="form-label">Tytuł meta</label>
+            <input type="text" id="meta_title" name="meta_title" class="form-control @error('meta_title') is-invalid @enderror" value="{{ old('meta_title', $page->meta_title) }}" maxlength="255">
+            <div class="form-text">Jeśli puste, użyta zostanie nazwa wyświetlana strony.</div>
+            <x-input-error :messages="$errors->get('meta_title')" class="mt-2" />
+        </div>
+
+        <div class="col-md-6">
+            <label for="robots" class="form-label">Robots</label>
+            <select id="robots" name="robots" class="form-select @error('robots') is-invalid @enderror">
+                @foreach (['index,follow', 'noindex,follow', 'index,nofollow', 'noindex,nofollow'] as $robotsOption)
+                    <option value="{{ $robotsOption }}" @selected(old('robots', $page->robots ?? 'index,follow') === $robotsOption)>
+                        {{ $robotsOption }}
+                    </option>
+                @endforeach
+            </select>
+            <x-input-error :messages="$errors->get('robots')" class="mt-2" />
+        </div>
+
+        <div class="col-12">
+            <label for="meta_description" class="form-label">Opis meta</label>
+            <textarea id="meta_description" name="meta_description" rows="2" class="form-control @error('meta_description') is-invalid @enderror" maxlength="500">{{ old('meta_description', $page->meta_description) }}</textarea>
+            <div class="form-text">Zalecana długość: około 140-160 znaków.</div>
+            <x-input-error :messages="$errors->get('meta_description')" class="mt-2" />
+        </div>
+
+        <div class="col-12">
+            <label for="meta_keywords" class="form-label">Słowa kluczowe</label>
+            <textarea id="meta_keywords" name="meta_keywords" rows="2" class="form-control @error('meta_keywords') is-invalid @enderror" maxlength="500">{{ old('meta_keywords', $page->meta_keywords) }}</textarea>
+            <x-input-error :messages="$errors->get('meta_keywords')" class="mt-2" />
+        </div>
+
+        <div class="col-md-6">
+            <label for="og_title" class="form-label">Tytuł Open Graph</label>
+            <input type="text" id="og_title" name="og_title" class="form-control @error('og_title') is-invalid @enderror" value="{{ old('og_title', $page->og_title) }}" maxlength="255">
+            <x-input-error :messages="$errors->get('og_title')" class="mt-2" />
+        </div>
+
+        <div class="col-md-6">
+            <label for="og_image" class="form-label">Obraz Open Graph</label>
+            <input type="text" id="og_image" name="og_image" class="form-control @error('og_image') is-invalid @enderror" value="{{ old('og_image', $page->og_image) }}" maxlength="255" placeholder="img/pages/example.jpg lub https://...">
+            <div class="form-text">Jeśli puste, użyty zostanie baner lub tło strony.</div>
+            <x-input-error :messages="$errors->get('og_image')" class="mt-2" />
+        </div>
+
+        <div class="col-12">
+            <label for="og_description" class="form-label">Opis Open Graph</label>
+            <textarea id="og_description" name="og_description" rows="2" class="form-control @error('og_description') is-invalid @enderror" maxlength="500">{{ old('og_description', $page->og_description) }}</textarea>
+            <x-input-error :messages="$errors->get('og_description')" class="mt-2" />
+        </div>
+
+        <div class="col-12">
+            <label for="canonical_url" class="form-label">Adres canonical</label>
+            <input type="url" id="canonical_url" name="canonical_url" class="form-control @error('canonical_url') is-invalid @enderror" value="{{ old('canonical_url', $page->canonical_url) }}" maxlength="255">
+            <div class="form-text">Pozostaw puste, aby system użył publicznego adresu strony.</div>
+            <x-input-error :messages="$errors->get('canonical_url')" class="mt-2" />
+        </div>
+    </div>
+</div>
+
 <div class="mb-4 form-check form-switch">
     <input
         type="checkbox"

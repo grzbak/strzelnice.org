@@ -28,6 +28,14 @@
                 <input type="hidden" name="shooting_range_id" value="{{ $shootingRange->id }}">
                 <input type="hidden" name="is_dynamic_shooting" value="0">
 
+                @if ($paidReservation)
+                    <div class="alert alert-warning">
+                        <strong>Opłacona rezerwacja.</strong>
+                        Możesz zmienić termin, oś, godzinę rozpoczęcia oraz dane prowadzącego strzelanie.
+                        Czas trwania i liczba stanowisk pozostają bez zmian, a zmiana wymaga zatwierdzenia przez personel strzelnicy.
+                    </div>
+                @endif
+
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label for="reservationDate" class="form-label">Data</label>
@@ -80,6 +88,7 @@
                             id="reservationEnd"
                             class="form-select"
                             data-initial="{{ old('end_time', $reservation->end->format('H:i')) }}"
+                            @disabled($paidReservation)
                             required
                         ></select>
                         <x-input-error :message="$errors->first('end_time')" />
@@ -92,6 +101,7 @@
                             id="reservationPositions"
                             class="form-select"
                             data-initial="{{ old('positions_count', $reservation->positions_count) }}"
+                            @disabled($paidReservation)
                             required
                         ></select>
                         <x-input-error :message="$errors->first('positions_count')" />
@@ -106,11 +116,59 @@
                                 class="form-check-input"
                                 value="1"
                                 @checked((bool) old('is_dynamic_shooting', $reservation->is_dynamic_shooting))
+                                @disabled($paidReservation)
                             >
                             <label for="dynamicShooting" class="form-check-label">
                                 Strzelanie dynamiczne - rezerwacja całej osi
                             </label>
                         </div>
+                    </div>
+
+                    <div class="col-12">
+                        @if ($shootingRange->requires_shooting_leader)
+                            <div class="mb-2 small text-danger fw-semibold">
+                                <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+                                Ta strzelnica wymaga prowadzącego strzelanie.
+                            </div>
+                        @endif
+
+                        <input type="hidden" name="has_shooting_leader_license" value="0">
+                        <div class="form-check">
+                            <input
+                                type="checkbox"
+                                name="has_shooting_leader_license"
+                                id="hasShootingLeaderLicense"
+                                class="form-check-input"
+                                value="1"
+                                @checked((bool) old(
+                                    'has_shooting_leader_license',
+                                    $reservation->has_shooting_leader_license
+                                ))
+                            >
+                            <label for="hasShootingLeaderLicense" class="form-check-label">
+                                Posiadam uprawnienia prowadzącego strzelanie
+                            </label>
+                        </div>
+                        <x-input-error :message="$errors->first('has_shooting_leader_license')" />
+                    </div>
+
+                    <div class="col-12" id="shootingLeaderLicenseNumberField">
+                        <label for="shootingLeaderLicenseNumber" class="form-label">
+                            Numer uprawnień / legitymacji
+                        </label>
+                        <input
+                            type="text"
+                            name="shooting_leader_license_number"
+                            id="shootingLeaderLicenseNumber"
+                            class="form-control"
+                            maxlength="100"
+                            value="{{ old(
+                                'shooting_leader_license_number',
+                                $reservation->shooting_leader_license_number
+                            ) }}"
+                            @required($shootingRange->requires_shooting_leader)
+                        >
+                        <x-input-error :message="$errors->first('shooting_leader_license_number')" />
                     </div>
                 </div>
 
@@ -198,6 +256,10 @@
             const positions = document.getElementById('reservationPositions');
             const dynamic = document.getElementById('dynamicShooting');
             const dynamicField = document.getElementById('dynamicField');
+            const leaderLicense = document.getElementById('hasShootingLeaderLicense');
+            const leaderLicenseNumber = document.getElementById('shootingLeaderLicenseNumber');
+            const leaderLicenseNumberField = document.getElementById('shootingLeaderLicenseNumberField');
+            const requiresShootingLeader = @json((bool) $shootingRange->requires_shooting_leader);
 
             const minutes = value => {
                 const [hour, minute] = value.split(':').map(Number);
@@ -300,12 +362,25 @@
                 positions.dataset.initial = '';
             }
 
+            function updateShootingLeaderFields() {
+                const required = requiresShootingLeader || leaderLicense.checked;
+                leaderLicense.required = requiresShootingLeader;
+                leaderLicenseNumber.required = required;
+                leaderLicenseNumberField.classList.toggle('d-none', !required);
+
+                if (!required) {
+                    leaderLicenseNumber.value = '';
+                }
+            }
+
             date.addEventListener('change', updateTimes);
             start.addEventListener('change', updateEnd);
             lane.addEventListener('change', updatePositions);
             dynamic.addEventListener('change', updatePositions);
+            leaderLicense.addEventListener('change', updateShootingLeaderFields);
             updateTimes();
             updatePositions();
+            updateShootingLeaderFields();
         });
     </script>
 </x-app-layout>

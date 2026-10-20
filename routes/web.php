@@ -1,20 +1,23 @@
 <?php
 
 use App\Http\Controllers\AdminDashboardController;
-use App\Http\Controllers\API\UserController;
+use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\MessageController;
 // use App\Http\Controllers\EmployeeDashboardController;
 // use App\Http\Controllers\ClientDashboardController;
+use App\Http\Controllers\OffersController;
+use App\Http\Controllers\PackageOrderController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RegulationController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RequiredRegulationController;
 use App\Http\Controllers\ReservationsController;
 use App\Http\Controllers\ShootingRangeGalleryController;
 use App\Http\Controllers\ShootingRangeInvitationController;
 use App\Http\Controllers\ShootingRangePackageController;
+use App\Http\Controllers\ShootingRangeReservationPaymentController;
 use App\Http\Controllers\ShootingRangeStaffController;
-use App\Http\Controllers\OffersController;
 use App\Http\Controllers\ShootingRangeZoneController;
 use App\Http\Controllers\ShootingsController;
 use App\Http\Controllers\SystemConfigurationController;
@@ -38,6 +41,16 @@ Route::get('/kontakt', [SystemConfigurationController::class, 'contact'])
 Route::post('/kontakt', [SystemConfigurationController::class, 'sendContact'])
     ->middleware('throttle:5,1')
     ->name('contact.send');
+Route::post('/platnosci/p24/status', [PackageOrderController::class, 'status'])
+    ->withoutMiddleware([
+        \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
+        \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+    ])
+    ->name('payments.p24.status');
+Route::get('/platnosci/pakiety/{packageOrder}/powrot', [PackageOrderController::class, 'return'])
+    ->name('subscription-orders.return');
+Route::get('/platnosci/rezerwacje/{reservation}/powrot', [PackageOrderController::class, 'reservationReturn'])
+    ->name('reservation-payments.return');
 Route::get('/zaproszenia/{token}', [ShootingRangeInvitationController::class, 'accept'])
     ->name('shooting.invitations.accept');
 Route::post('/zaproszenia/{token}/odrzuc', [ShootingRangeInvitationController::class, 'decline'])
@@ -152,14 +165,25 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
 
     Route::post('/rezerwacje', [ReservationsController::class, 'store'])
         ->name('rezerwacje.store');
+    Route::post('/rezerwacje/wycena', [ReservationsController::class, 'quote'])
+        ->name('rezerwacje.quote');
     Route::get('/moje-rezerwacje', [ReservationsController::class, 'myReservations'])
         ->name('rezerwacje.mine');
     Route::get('/moje-rezerwacje/{reservation}/edytuj', [ReservationsController::class, 'editByCustomer'])
         ->name('rezerwacje.edit');
     Route::patch('/moje-rezerwacje/{reservation}', [ReservationsController::class, 'updateByCustomer'])
         ->name('rezerwacje.update');
+    Route::post('/moje-rezerwacje/{reservation}/anuluj', [ReservationsController::class, 'cancelByCustomer'])
+        ->name('rezerwacje.cancel');
 
     Route::middleware('role:superadmin,admin,pracownik')->group(function () {
+        Route::get('/raporty', [ReportController::class, 'index'])
+            ->name('reports.index');
+        Route::get('/raporty/historia-rezerwacji', [ReportController::class, 'reservationHistory'])
+            ->name('reports.reservations.history');
+        Route::get('/raporty/historia-rezerwacji/eksport/{format}', [ReportController::class, 'exportReservationHistory'])
+            ->whereIn('format', ['pdf', 'xml', 'xls', 'xlsx', 'csv'])
+            ->name('reports.reservations.history.export');
         Route::get('/panel/rezerwacje', [ReservationsController::class, 'adminCalendar'])
             ->name('admin.reservations.calendar');
         Route::get('/panel/rezerwacje/archiwum', [ReservationsController::class, 'adminArchive'])
@@ -176,9 +200,47 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
             ->name('admin.reservations.status');
         Route::delete('/panel/rezerwacje/{reservation}', [ReservationsController::class, 'destroyByStaff'])
             ->name('admin.reservations.destroy');
+        Route::patch('/panel/rezerwacje/wnioski/{changeRequest}/zatwierdz', [ReservationsController::class, 'approveChangeRequest'])
+            ->name('admin.reservations.requests.approve');
+        Route::patch('/panel/rezerwacje/wnioski/{changeRequest}/odrzuc', [ReservationsController::class, 'rejectChangeRequest'])
+            ->name('admin.reservations.requests.reject');
+        Route::get('/abonamenty/{packageOrder}/oplac', [PackageOrderController::class, 'pay'])
+            ->name('subscription-orders.pay');
     });
 
     Route::middleware('role:superadmin,admin')->group(function () {
+        Route::get('/panel/rezerwacje/ukryte', [ReservationsController::class, 'hiddenReservations'])
+            ->name('admin.reservations.hidden');
+        Route::patch('/panel/rezerwacje/ukryte/{reservation}/przywroc', [ReservationsController::class, 'restoreHiddenReservation'])
+            ->whereNumber('reservation')
+            ->name('admin.reservations.hidden.restore');
+        Route::get('/strzelnica/platnosci-rezerwacji', [ShootingRangeReservationPaymentController::class, 'index'])
+            ->name('shooting.reservation-payments.index');
+        Route::patch('/strzelnica/platnosci-rezerwacji/konto-p24', [ShootingRangeReservationPaymentController::class, 'updateAccount'])
+            ->name('shooting.reservation-payments.account');
+        Route::post('/strzelnica/platnosci-rezerwacji/test-p24', [ShootingRangeReservationPaymentController::class, 'testAccount'])
+            ->name('shooting.reservation-payments.test-p24');
+        Route::post('/strzelnica/platnosci-rezerwacji/cennik', [ShootingRangeReservationPaymentController::class, 'storePriceRule'])
+            ->name('shooting.reservation-payments.price-rules.store');
+        Route::patch('/strzelnica/platnosci-rezerwacji/cennik/{priceRule}', [ShootingRangeReservationPaymentController::class, 'updatePriceRule'])
+            ->name('shooting.reservation-payments.price-rules.update');
+        Route::delete('/strzelnica/platnosci-rezerwacji/cennik/{priceRule}', [ShootingRangeReservationPaymentController::class, 'destroyPriceRule'])
+            ->name('shooting.reservation-payments.price-rules.destroy');
+        Route::post('/strzelnica/platnosci-rezerwacji/promocje', [ShootingRangeReservationPaymentController::class, 'storePromotion'])
+            ->name('shooting.reservation-payments.promotions.store');
+        Route::patch('/strzelnica/platnosci-rezerwacji/promocje/{promotion}', [ShootingRangeReservationPaymentController::class, 'updatePromotion'])
+            ->name('shooting.reservation-payments.promotions.update');
+        Route::delete('/strzelnica/platnosci-rezerwacji/promocje/{promotion}', [ShootingRangeReservationPaymentController::class, 'destroyPromotion'])
+            ->name('shooting.reservation-payments.promotions.destroy');
+        Route::patch('/strzelnica/platnosci-rezerwacji/platnosci/{payment}/rozlicz', [ShootingRangeReservationPaymentController::class, 'confirmManualPayment'])
+            ->name('shooting.reservation-payments.payments.confirm');
+        Route::patch('/strzelnica/platnosci-rezerwacji/platnosci/{payment}/rozlicz-zwrot', [ShootingRangeReservationPaymentController::class, 'confirmManualRefund'])
+            ->name('shooting.reservation-payments.payments.confirm-refund');
+        Route::post('/strzelnica/platnosci-rezerwacji/platnosci/{payment}/wyslij-link', [ShootingRangeReservationPaymentController::class, 'resendPaymentLink'])
+            ->name('shooting.reservation-payments.payments.resend-link');
+        Route::get('/strzelnica/platnosci-rezerwacji/eksport', [ShootingRangeReservationPaymentController::class, 'export'])
+            ->name('shooting.reservation-payments.export');
+
         Route::get('/strzelnice/{shootingRange}/pracownicy', [
             ShootingRangeStaffController::class,
             'index',
@@ -230,13 +292,19 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
             ->names('admin.pages');
         Route::get('/konfiguracja-systemu', [SystemConfigurationController::class, 'index'])
             ->name('admin.system-configurations.index');
+        Route::post('/konfiguracja-systemu/test-przelewy24', [SystemConfigurationController::class, 'testPrzelewy24'])
+            ->name('admin.system-configurations.test-p24');
         Route::get('/konfiguracja-systemu/{systemConfiguration}', [SystemConfigurationController::class, 'show'])
+            ->whereNumber('systemConfiguration')
             ->name('admin.system-configurations.show');
         Route::get('/konfiguracja-systemu/{systemConfiguration}/edytuj', [SystemConfigurationController::class, 'edit'])
+            ->whereNumber('systemConfiguration')
             ->name('admin.system-configurations.edit');
         Route::patch('/konfiguracja-systemu/{systemConfiguration}', [SystemConfigurationController::class, 'update'])
+            ->whereNumber('systemConfiguration')
             ->name('admin.system-configurations.update');
         Route::patch('/konfiguracja-systemu/{systemConfiguration}/przywroc', [SystemConfigurationController::class, 'restore'])
+            ->whereNumber('systemConfiguration')
             ->name('admin.system-configurations.restore');
         Route::resource('/regulaminy', RegulationController::class)
             ->except(['show', 'destroy'])
@@ -274,6 +342,16 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
         Route::get('/pakiety', [ShootingRangePackageController::class, 'index'])->name('admin.packages.index');
         Route::post('/pakiety', [ShootingRangePackageController::class, 'store'])->name('admin.packages.store');
         Route::delete('/pakiety/{package}', [ShootingRangePackageController::class, 'destroy'])->name('admin.packages.destroy');
+        Route::get('/abonamenty', [PackageOrderController::class, 'adminIndex'])
+            ->name('admin.subscription-orders.index');
+        Route::post('/abonamenty/manualne', [PackageOrderController::class, 'storeManual'])
+            ->name('admin.subscription-orders.manual-store');
+        Route::patch('/abonamenty/{packageOrder}/potwierdz-platnosc', [PackageOrderController::class, 'confirmManualPayment'])
+            ->name('admin.subscription-orders.confirm-payment');
+        Route::patch('/abonamenty/{packageOrder}/zmien-metode', [PackageOrderController::class, 'changePaymentMethod'])
+            ->name('admin.subscription-orders.change-method');
+        Route::delete('/abonamenty/{packageOrder}', [PackageOrderController::class, 'destroy'])
+            ->name('admin.subscription-orders.destroy');
 
         Route::patch('/user/{id}/activate', [UserController::class, 'userActivate']);
         Route::patch('/user/{id}/deactivate', [UserController::class, 'userDeactivate']);
@@ -288,6 +366,10 @@ Route::middleware(['auth', 'verified', 'approved'])->group(function () {
         // EDYCJA STRZELNICY - dane podstawowe
         Route::get('/strzelnica/edytuj', [ShootingsController::class, 'edit'])->name('shooting.edit');
         Route::post('/strzelnica/zapisz/{shootingRange}', [ShootingsController::class, 'update'])->name('shooting.update');
+        Route::get('/strzelnica/abonament', [PackageOrderController::class, 'index'])
+            ->name('shooting.subscription.index');
+        Route::post('/strzelnica/abonament', [PackageOrderController::class, 'store'])
+            ->name('shooting.subscription.store');
         // EDYCJA STRZELNICY - godziny otwarcie
         Route::get('/strzelnica/edytuj-godziny', [ShootingsController::class, 'editTime'])->name('shooting.time.edit');
         Route::post('/strzelnica/zapisz-godziny/{shootingRange}', [ShootingsController::class, 'updateTime'])->name('shooting.time.update');

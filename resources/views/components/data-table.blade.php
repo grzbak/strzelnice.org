@@ -206,7 +206,13 @@
 
                     <form method="GET" action="{{ $action }}">
                         @foreach ($queryFor() as $name => $value)
-                            <input type="hidden" name="{{ $name }}" value="{{ $value }}">
+                            @if (is_array($value))
+                                @foreach ($value as $item)
+                                    <input type="hidden" name="{{ $name }}[]" value="{{ $item }}">
+                                @endforeach
+                            @else
+                                <input type="hidden" name="{{ $name }}" value="{{ $value }}">
+                            @endif
                         @endforeach
 
                         <label class="visually-hidden" for="page">

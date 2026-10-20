@@ -47,6 +47,43 @@
             @endif
         </div>
 
+        <div>
+            <x-input-label for="telephone" :value="__('Telephone')" />
+            <x-text-input id="telephone" name="telephone" type="text" class="mt-1 block w-full" :value="old('telephone', $user->telephone)" autocomplete="telephone" />
+            <x-input-error class="mt-2" :messages="$errors->get('telephone')" />
+        </div>
+
+        <div>
+            <input type="hidden" name="has_shooting_leader_license" value="0">
+            <label class="inline-flex items-start gap-2">
+                <input
+                    type="checkbox"
+                    name="has_shooting_leader_license"
+                    id="profileHasShootingLeaderLicense"
+                    value="1"
+                    class="mt-1 rounded border-gray-300 text-red-700 shadow-sm focus:ring-red-700"
+                    @checked((bool) old('has_shooting_leader_license', $user->has_shooting_leader_license))
+                >
+                <span class="text-sm text-gray-700">
+                    Posiadam uprawnienia prowadzącego strzelanie
+                </span>
+            </label>
+            <x-input-error class="mt-2" :messages="$errors->get('has_shooting_leader_license')" />
+        </div>
+
+        <div id="profileShootingLeaderLicenseNumberField">
+            <x-input-label for="profileShootingLeaderLicenseNumber" value="Numer uprawnień / legitymacji" />
+            <x-text-input
+                id="profileShootingLeaderLicenseNumber"
+                name="shooting_leader_license_number"
+                type="text"
+                maxlength="100"
+                class="mt-1 block w-full"
+                :value="old('shooting_leader_license_number', $user->shooting_leader_license_number)"
+            />
+            <x-input-error class="mt-2" :messages="$errors->get('shooting_leader_license_number')" />
+        </div>
+
         <div class="flex items-center gap-4">
             <x-primary-button>{{ __('Save') }}</x-primary-button>
 
@@ -61,4 +98,25 @@
             @endif
         </div>
     </form>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const checkbox = document.getElementById('profileHasShootingLeaderLicense');
+            const field = document.getElementById('profileShootingLeaderLicenseNumberField');
+            const input = document.getElementById('profileShootingLeaderLicenseNumber');
+
+            function toggleLicenseNumber() {
+                const checked = checkbox.checked;
+                input.required = checked;
+                field.classList.toggle('hidden', !checked);
+
+                if (!checked) {
+                    input.value = '';
+                }
+            }
+
+            checkbox.addEventListener('change', toggleLicenseNumber);
+            toggleLicenseNumber();
+        });
+    </script>
 </section>

@@ -43,6 +43,25 @@ class SystemConfiguration extends Model
         'audit_retention_months',
         'security_events_retention_months',
         'google_analytics_id',
+        'reports_enabled',
+        'default_meta_title',
+        'default_meta_description',
+        'default_meta_keywords',
+        'default_og_title',
+        'default_og_description',
+        'default_og_image',
+        'default_robots',
+        'p24_enabled',
+        'p24_sandbox',
+        'p24_merchant_id',
+        'p24_pos_id',
+        'p24_crc',
+        'p24_api_key',
+        'p24_currency',
+        'p24_time_limit',
+        'subscription_payment_due_days',
+        'conditional_access_charge_due_days',
+        'conditional_access_charge_mode',
     ];
 
     protected $fillable = [
@@ -58,6 +77,12 @@ class SystemConfiguration extends Model
         'ip_retention_months' => 'integer',
         'audit_retention_months' => 'integer',
         'security_events_retention_months' => 'integer',
+        'reports_enabled' => 'boolean',
+        'p24_enabled' => 'boolean',
+        'p24_sandbox' => 'boolean',
+        'p24_time_limit' => 'integer',
+        'subscription_payment_due_days' => 'integer',
+        'conditional_access_charge_due_days' => 'integer',
     ];
 
     public function scopeActive(Builder $query): Builder
@@ -94,5 +119,13 @@ class SystemConfiguration extends Model
     public function getFormattedBankAccountNumberAttribute(): ?string
     {
         return self::formatBankAccountNumber($this->bank_account_number);
+    }
+
+    public static function activeConfiguration(): ?self
+    {
+        return self::query()
+            ->active()
+            ->latest('id')
+            ->first();
     }
 }

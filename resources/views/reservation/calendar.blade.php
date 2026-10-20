@@ -39,6 +39,15 @@
                 : null,
         ])
         ->values();
+
+    $userHasShootingLeaderLicense = old(
+        'has_shooting_leader_license',
+        auth()->user()?->has_shooting_leader_license ? '1' : '0'
+    );
+    $userShootingLeaderLicenseNumber = old(
+        'shooting_leader_license_number',
+        auth()->user()?->shooting_leader_license_number
+    );
 @endphp
 
 <x-app-layout>
@@ -185,6 +194,7 @@
 
                 <div class="modal-body">
                     <div id="modalAvailability" class="modal-availability"></div>
+                    <div id="reservationPaymentSummary" class="reservation-payment-summary d-none"></div>
 
                     <div class="mb-3">
                         <label for="lineId" class="form-label">Oś</label>
@@ -230,6 +240,45 @@
                                 </label>
                             </div>
                         </div>
+
+                        <div class="col-12">
+                            @if ($shootingRange->requires_shooting_leader)
+                                <div class="mb-2 small text-danger fw-semibold">
+                                    <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+                                    Ta strzelnica wymaga prowadzącego strzelanie.
+                                </div>
+                            @endif
+
+                            <input type="hidden" name="has_shooting_leader_license" value="0">
+                            <div class="form-check">
+                                <input
+                                    type="checkbox"
+                                    name="has_shooting_leader_license"
+                                    id="hasShootingLeaderLicense"
+                                    class="form-check-input"
+                                    value="1"
+                                    @checked((bool) $userHasShootingLeaderLicense)
+                                >
+                                <label for="hasShootingLeaderLicense" class="form-check-label">
+                                    Posiadam uprawnienia prowadzącego strzelanie
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="col-12" id="shootingLeaderLicenseNumberField">
+                            <label for="shootingLeaderLicenseNumber" class="form-label">
+                                Numer uprawnień / legitymacji
+                            </label>
+                            <input
+                                type="text"
+                                name="shooting_leader_license_number"
+                                id="shootingLeaderLicenseNumber"
+                                class="form-control"
+                                maxlength="100"
+                                value="{{ $userShootingLeaderLicenseNumber }}"
+                                @required($shootingRange->requires_shooting_leader)
+                            >
+                        </div>
                     </div>
                 </div>
 
@@ -237,7 +286,7 @@
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Anuluj</button>
                     <button type="submit" id="submitReservation" class="btn btn-success">
                         <i class="bi bi-calendar-check me-1"></i>
-                        Zarezerwuj
+                        <span id="submitReservationLabel">Zarezerwuj</span>
                     </button>
                 </div>
             </form>
@@ -574,6 +623,28 @@
             border-left-color: var(--red);
         }
 
+        .reservation-payment-summary {
+            margin-bottom: 1rem;
+            padding: .8rem .9rem;
+            color: #28322e;
+            font-size: .86rem;
+            background: #fff8df;
+            border: 1px solid #f0d98b;
+            border-left: 3px solid #d39a00;
+            border-radius: 4px;
+        }
+
+        .reservation-payment-summary strong {
+            color: #111;
+        }
+
+        .reservation-payment-summary.is-error {
+            color: var(--red);
+            background: var(--red-soft);
+            border-color: #f2c7c2;
+            border-left-color: var(--red);
+        }
+
         @media (max-width: 767.98px) {
             .booking-head {
                 align-items: stretch;
@@ -636,6 +707,7 @@
             intervals: @json($activeIntervals),
             reservations: @json($reservations ?? []),
             availabilityUrl: @json(route('rezerwacje.availability', $shootingRange->id)),
+            quoteUrl: @json(route('rezerwacje.quote')),
             intentUrl: @json(route('rezerwacje.intent.store')),
             csrfToken: @json(csrf_token()),
             initialDate: @json($calendarDate),
@@ -644,6 +716,7 @@
             minDate: @json(now()->format('Y-m-d')),
             maxDate: @json($maxBookingDate->format('Y-m-d')),
             maxAdvanceDays: @json($maxAdvanceBookingDays),
+            requiresShootingLeader: @json((bool) $shootingRange->requires_shooting_leader),
             canViewCalendar: @json($canViewCalendar),
             requiresLoginToReserve: @json($requiresLoginToReserve),
             resumeLaneId: @json(request('lane')),
@@ -653,6 +726,7 @@
 
         let currentDate = parseDate(bookingConfig.initialDate);
         let pendingReservationIntent = null;
+        let quoteRequestId = 0;
 
         function parseDate(value) {
             const [year, month, day] = value.split('-').map(Number);
@@ -1079,6 +1153,125 @@
             }
 
             submit.disabled = !isAvailable;
+
+            if (isAvailable) {
+                updatePaymentQuote();
+            } else {
+                resetPaymentSummary();
+            }
+        }
+
+        function resetPaymentSummary() {
+            const summary = document.getElementById('reservationPaymentSummary');
+            const label = document.getElementById('submitReservationLabel');
+
+            if (summary) {
+                summary.classList.add('d-none');
+                summary.classList.remove('is-error');
+                summary.innerHTML = '';
+            }
+
+            if (label) {
+                label.textContent = 'Zarezerwuj';
+            }
+        }
+
+        async function updatePaymentQuote() {
+            const form = document.querySelector('#reservationModal form');
+            const summary = document.getElementById('reservationPaymentSummary');
+            const submit = document.getElementById('submitReservation');
+            const label = document.getElementById('submitReservationLabel');
+
+            if (!form || !summary || !submit || !label) {
+                return;
+            }
+
+            const requestId = ++quoteRequestId;
+            const originalDisabled = submit.disabled;
+            const payload = new FormData(form);
+
+            summary.classList.remove('d-none', 'is-error');
+            summary.innerHTML = 'Sprawdzam koszt rezerwacji...';
+            submit.disabled = true;
+
+            try {
+                const response = await fetch(bookingConfig.quoteUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': bookingConfig.csrfToken
+                    },
+                    body: payload
+                });
+
+                const result = await response.json();
+
+                if (requestId !== quoteRequestId) {
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(result.message ?? 'Nie udało się wyliczyć ceny rezerwacji.');
+                }
+
+                if (!result.payment_required) {
+                    summary.classList.add('d-none');
+                    summary.innerHTML = '';
+                    label.textContent = 'Zarezerwuj';
+                    submit.disabled = originalDisabled;
+
+                    return;
+                }
+
+                const promotion = result.promotion_name
+                    ? `<br><span>Promocja: ${escapeHtml(result.promotion_name)}</span>`
+                    : '';
+
+                summary.innerHTML = `
+                    <strong>Do zapłaty: ${escapeHtml(result.formatted_amount)}</strong>
+                    <br>
+                    <span>Płatność online Przelewy24. Termin zostanie zablokowany na ${result.expires_minutes} min.</span>
+                    ${promotion}
+                `;
+                label.textContent = 'Rezerwuj i opłać';
+                submit.disabled = originalDisabled;
+            } catch (error) {
+                if (requestId !== quoteRequestId) {
+                    return;
+                }
+
+                summary.classList.remove('d-none');
+                summary.classList.add('is-error');
+                summary.textContent = error.message;
+                label.textContent = 'Zarezerwuj';
+                submit.disabled = true;
+            }
+        }
+
+        function escapeHtml(value) {
+            const element = document.createElement('span');
+            element.textContent = value ?? '';
+
+            return element.innerHTML;
+        }
+
+        function updateShootingLeaderFields() {
+            const checkbox = document.getElementById('hasShootingLeaderLicense');
+            const field = document.getElementById('shootingLeaderLicenseNumberField');
+            const input = document.getElementById('shootingLeaderLicenseNumber');
+
+            if (!checkbox || !field || !input) {
+                return;
+            }
+
+            const required = bookingConfig.requiresShootingLeader || checkbox.checked;
+            checkbox.required = bookingConfig.requiresShootingLeader;
+            input.required = required;
+            field.classList.toggle('d-none', !required);
+
+            if (!required) {
+                input.value = '';
+            }
         }
 
         function openModal(axis, date, start) {
@@ -1097,6 +1290,7 @@
             );
             updateStartTimes(start, end);
             updateModalAvailability();
+            updateShootingLeaderFields();
             bootstrap.Modal.getOrCreateInstance(document.getElementById('reservationModal')).show();
         }
 
@@ -1183,8 +1377,12 @@
                 updateModalAvailability();
             });
             document.getElementById('endTime').addEventListener('change', updateModalAvailability);
+            document.getElementById('positionsCount').addEventListener('change', updatePaymentQuote);
             document.getElementById('dynamicShooting')
                 .addEventListener('change', updateModalAvailability);
+            document.getElementById('hasShootingLeaderLicense')
+                ?.addEventListener('change', updateShootingLeaderFields);
+            updateShootingLeaderFields();
         });
     </script>
 </x-app-layout>

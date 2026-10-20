@@ -31,6 +31,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'email',
         'password',
         'telephone',
+        'has_shooting_leader_license',
+        'shooting_leader_license_number',
         'avatar',
         'role',
         'is_approved',
@@ -66,6 +68,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_approved' => 'boolean',
+            'has_shooting_leader_license' => 'boolean',
             'approved_at' => 'datetime',
         ];
     }
@@ -148,6 +151,27 @@ class User extends Authenticatable implements MustVerifyEmail
             ->whereKey($shootingRange->id)
             ->wherePivot('is_approved', true)
             ->wherePivotIn('role', ['admin', 'pracownik'])
+            ->exists();
+    }
+
+    public function administersShootingRange(ShootingRange $shootingRange): bool
+    {
+        if (! $this->is_approved) {
+            return false;
+        }
+
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        if (! $this->isAdmin()) {
+            return false;
+        }
+
+        return $this->shootingRanges()
+            ->whereKey($shootingRange->id)
+            ->wherePivot('is_approved', true)
+            ->wherePivot('role', 'admin')
             ->exists();
     }
 

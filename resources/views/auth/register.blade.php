@@ -149,11 +149,49 @@
                             type="text"
                             autocomplete="telephone"
                             placeholder="{{__('Telephone')}}"
+                            value="{{ old('telephone') }}"
                             class="block w-full border-gray-300 rounded-none rounded-r-md focus:border-indigo-500 focus:ring-indigo-500"
                         >
                     </div>
                     <x-input-error :messages="$errors->get('telephone')" class="mt-2" />
                 </div>
+
+                @if($role == 'klient')
+                    <div class="mt-4">
+                        <input type="hidden" name="has_shooting_leader_license" value="0">
+                        <label class="flex items-start gap-2 text-sm text-gray-700">
+                            <input
+                                type="checkbox"
+                                name="has_shooting_leader_license"
+                                id="hasShootingLeaderLicense"
+                                value="1"
+                                class="mt-1 border-gray-300 rounded text-red-700 focus:ring-red-700"
+                                @checked((bool) old('has_shooting_leader_license'))
+                            >
+                            <span>Posiadam uprawnienia prowadzącego strzelanie</span>
+                        </label>
+                        <x-input-error :messages="$errors->get('has_shooting_leader_license')" class="mt-2" />
+                    </div>
+
+                    <div class="mt-3" id="shootingLeaderLicenseNumberField">
+                        <div class="flex rounded-md shadow-sm">
+                            <span class="inline-flex items-center px-3 text-gray-500 bg-gray-100 border border-r-0 border-gray-300 rounded-l-md">
+                                <i class="text-lg bi bi-card-checklist"></i>
+                            </span>
+
+                            <input
+                                id="shootingLeaderLicenseNumber"
+                                name="shooting_leader_license_number"
+                                type="text"
+                                maxlength="100"
+                                placeholder="Numer uprawnień / legitymacji"
+                                value="{{ old('shooting_leader_license_number') }}"
+                                class="block w-full border-gray-300 rounded-none rounded-r-md focus:border-indigo-500 focus:ring-indigo-500"
+                            >
+                        </div>
+                        <x-input-error :messages="$errors->get('shooting_leader_license_number')" class="mt-2" />
+                    </div>
+                @endif
                 <div>
                     <input type="hidden" name="g-recaptcha-response" id="g-recaptcha-response">
 
@@ -187,8 +225,29 @@
                         document.getElementById('g-recaptcha-response').value = token;
                         document.getElementById('contactForm').submit();
                     });
-            });
+                });
         });
+
+        const leaderLicenseCheckbox = document.getElementById('hasShootingLeaderLicense');
+        const leaderLicenseNumber = document.getElementById('shootingLeaderLicenseNumber');
+        const leaderLicenseNumberField = document.getElementById('shootingLeaderLicenseNumberField');
+
+        function toggleLeaderLicenseNumber() {
+            if (!leaderLicenseCheckbox || !leaderLicenseNumber || !leaderLicenseNumberField) {
+                return;
+            }
+
+            const checked = leaderLicenseCheckbox.checked;
+            leaderLicenseNumber.required = checked;
+            leaderLicenseNumberField.classList.toggle('d-none', !checked);
+
+            if (!checked) {
+                leaderLicenseNumber.value = '';
+            }
+        }
+
+        leaderLicenseCheckbox?.addEventListener('change', toggleLeaderLicenseNumber);
+        toggleLeaderLicenseNumber();
     </script>
     <style>
         .invitation-auth-notice {

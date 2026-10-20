@@ -1,4 +1,4 @@
-<x-app-layout>
+<x-app-layout :seo="$page->seoData()">
     @php
         //dd($page->background)
     @endphp

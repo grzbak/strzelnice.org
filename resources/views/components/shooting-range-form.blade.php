@@ -221,6 +221,27 @@
 </div>
 
 <div class="mb-4">
+    <input type="hidden" name="requires_shooting_leader" value="0">
+
+    <label class="flex items-center gap-2">
+        <input
+            type="checkbox"
+            name="requires_shooting_leader"
+            value="1"
+            @checked((bool) $fieldValue('requires_shooting_leader', false))
+        >
+        Wymagaj prowadzącego strzelanie przy rezerwacji
+    </label>
+
+    <div class="mt-1 text-sm text-muted">
+        Po włączeniu tej opcji rezerwację będzie można zapisać tylko po podaniu
+        informacji o uprawnieniach prowadzącego strzelanie.
+    </div>
+
+    <x-input-error :messages="$errors->get('requires_shooting_leader')" class="mt-1"/>
+</div>
+
+<div class="mb-4">
     @php
         $globalBookingDays = \App\Models\SystemConfiguration::query()
             ->active()
@@ -258,6 +279,113 @@
 >{{ $fieldValue('description') }}</textarea>
 
 <x-input-error :messages="$errors->get('description')" class="mt-1"/>
+
+<h2 class="mt-6 mb-3 font-semibold">SEO</h2>
+
+<div class="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
+    <div>
+        <label for="meta_title" class="block mb-1 text-sm font-medium">Tytuł meta</label>
+        <input
+            id="meta_title"
+            name="meta_title"
+            type="text"
+            value="{{ $fieldValue('meta_title') }}"
+            maxlength="255"
+            class="w-full border-gray-300 rounded-md focus:border-indigo-500 focus:ring-indigo-500 @error('meta_title') is-invalid @enderror"
+        >
+        <div class="mt-1 text-sm text-muted">
+            Jeśli puste, system utworzy tytuł z nazwy i miejscowości strzelnicy.
+        </div>
+        <x-input-error :messages="$errors->get('meta_title')" class="mt-1"/>
+    </div>
+
+    <div>
+        <label for="robots" class="block mb-1 text-sm font-medium">Robots</label>
+        <select
+            id="robots"
+            name="robots"
+            class="w-full border-gray-300 rounded-md @error('robots') is-invalid @enderror"
+        >
+            @foreach (['index,follow', 'noindex,follow', 'index,nofollow', 'noindex,nofollow'] as $robotsOption)
+                <option value="{{ $robotsOption }}" @selected($fieldValue('robots', 'index,follow') === $robotsOption)>
+                    {{ $robotsOption }}
+                </option>
+            @endforeach
+        </select>
+        <x-input-error :messages="$errors->get('robots')" class="mt-1"/>
+    </div>
+</div>
+
+<div class="mb-4">
+    <label for="meta_description" class="block mb-1 text-sm font-medium">Opis meta</label>
+    <textarea
+        id="meta_description"
+        name="meta_description"
+        rows="2"
+        maxlength="500"
+        class="w-full border-gray-300 rounded-md @error('meta_description') is-invalid @enderror"
+    >{{ $fieldValue('meta_description') }}</textarea>
+    <div class="mt-1 text-sm text-muted">
+        Zalecana długość: około 140-160 znaków.
+    </div>
+    <x-input-error :messages="$errors->get('meta_description')" class="mt-1"/>
+</div>
+
+<div class="mb-4">
+    <label for="meta_keywords" class="block mb-1 text-sm font-medium">Słowa kluczowe</label>
+    <textarea
+        id="meta_keywords"
+        name="meta_keywords"
+        rows="2"
+        maxlength="500"
+        class="w-full border-gray-300 rounded-md @error('meta_keywords') is-invalid @enderror"
+    >{{ $fieldValue('meta_keywords') }}</textarea>
+    <x-input-error :messages="$errors->get('meta_keywords')" class="mt-1"/>
+</div>
+
+<div class="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
+    <div>
+        <label for="og_title" class="block mb-1 text-sm font-medium">Tytuł Open Graph</label>
+        <input
+            id="og_title"
+            name="og_title"
+            type="text"
+            value="{{ $fieldValue('og_title') }}"
+            maxlength="255"
+            class="w-full border-gray-300 rounded-md focus:border-indigo-500 focus:ring-indigo-500 @error('og_title') is-invalid @enderror"
+        >
+        <x-input-error :messages="$errors->get('og_title')" class="mt-1"/>
+    </div>
+
+    <div>
+        <label for="og_image" class="block mb-1 text-sm font-medium">Obraz Open Graph</label>
+        <input
+            id="og_image"
+            name="og_image"
+            type="text"
+            value="{{ $fieldValue('og_image') }}"
+            maxlength="255"
+            placeholder="files/brands/logo.png lub https://..."
+            class="w-full border-gray-300 rounded-md focus:border-indigo-500 focus:ring-indigo-500 @error('og_image') is-invalid @enderror"
+        >
+        <div class="mt-1 text-sm text-muted">
+            Jeśli puste, system użyje logo strzelnicy.
+        </div>
+        <x-input-error :messages="$errors->get('og_image')" class="mt-1"/>
+    </div>
+</div>
+
+<div class="mb-4">
+    <label for="og_description" class="block mb-1 text-sm font-medium">Opis Open Graph</label>
+    <textarea
+        id="og_description"
+        name="og_description"
+        rows="2"
+        maxlength="500"
+        class="w-full border-gray-300 rounded-md @error('og_description') is-invalid @enderror"
+    >{{ $fieldValue('og_description') }}</textarea>
+    <x-input-error :messages="$errors->get('og_description')" class="mt-1"/>
+</div>
 
 <div class="flex justify-end mt-6">
     <x-primary-button>{{ $submitLabel }}</x-primary-button>

@@ -56,7 +56,7 @@ class ReservationNotificationMail extends Mailable
             self::EVENT_CREATED => 'Nowa rezerwacja',
             self::EVENT_UPDATED => 'Zmieniono rezerwację',
             self::EVENT_STATUS_CHANGED => 'Zmieniono status rezerwacji',
-            self::EVENT_DELETED => 'Usunięto rezerwację',
+            self::EVENT_DELETED => 'Ukryto rezerwację',
             default => 'Informacja o rezerwacji',
         };
 

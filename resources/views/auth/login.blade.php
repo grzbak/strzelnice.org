@@ -36,7 +36,7 @@
                     </div>
                 </div>
             @endif
-            <form method="POST" action="{{ route('login') }}">
+            <form method="POST" action="{{ route('login', absolute: false) }}">
                 @csrf
 
                 <!-- Email Address -->
@@ -91,7 +91,7 @@
 
                 <div class="flex items-center justify-end mt-4">
                     @if (Route::has('password.request'))
-                        <a class="text-sm text-gray-600 underline rounded-md hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" href="{{ route('password.request') }}">
+                        <a class="text-sm text-gray-600 underline rounded-md hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" href="{{ route('password.request', absolute: false) }}">
                             {{ __('Forgot your password?') }}
                         </a>
                     @endif
@@ -106,7 +106,7 @@
                 <div class="pt-4 mt-2 text-sm text-center text-gray-600 border-t border-gray-200">
                     Nie masz jeszcze konta?
                     <a
-                        href="{{ route('register') }}"
+                        href="{{ route('register', absolute: false) }}"
                         class="font-semibold text-indigo-600 rounded-md hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                     >
                         Załóż je TUTAJ!

@@ -1,4 +1,9 @@
-<x-app-layout>
+<x-app-layout :seo="[
+    'title' => 'Strefa strzelnic - przewodnik po systemie',
+    'description' => 'Sprawdź, jak działa strefa strzelnic w serwisie strzelnice.org i jak wykorzystać system rezerwacji.',
+    'keywords' => 'strefa strzelnic, przewodnik dla strzelnic, system rezerwacji',
+    'canonical_url' => route('shooting-range-zone'),
+]">
     <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 

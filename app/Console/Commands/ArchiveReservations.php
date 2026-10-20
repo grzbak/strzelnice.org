@@ -127,7 +127,9 @@ class ArchiveReservations extends Command
 
                         $archivedCount += Reservation::query()
                             ->whereKey($archivedIds)
-                            ->delete();
+                            ->get()
+                            ->each(fn (Reservation $reservation) => $reservation->forceDelete())
+                            ->count();
                     });
                 }
             );
@@ -180,6 +182,8 @@ class ArchiveReservations extends Command
             'end' => $reservation->end,
             'positions_count' => $reservation->positions_count,
             'is_dynamic_shooting' => $reservation->is_dynamic_shooting,
+            'has_shooting_leader_license' => $reservation->has_shooting_leader_license,
+            'shooting_leader_license_number' => $reservation->shooting_leader_license_number,
             'status' => $reservation->status,
             'approved_by_user_id' => $reservation->approved_by_user_id,
             'approved_at' => $reservation->approved_at,

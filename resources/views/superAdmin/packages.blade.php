@@ -72,10 +72,32 @@
                 <input type="hidden" name="shooting_range_id" id="shooting_range_id" value="{{ old('shooting_range_id', 0) }}">
 
                 <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label" for="name">Nazwa</label>
+                        <input id="name" type="text" name="name" class="form-control" value="{{ old('name') }}" placeholder="np. Standard 12 mies.">
+                        @error('name') <div class="text-danger small">{{ $message }}</div> @enderror
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="form-label" for="type">Typ</label>
+                        <select id="type" name="type" class="form-select">
+                            <option value="standard" @selected(old('type', 'standard') === 'standard')>Standard</option>
+                            <option value="special" @selected(old('type') === 'special')>Akcja specjalna</option>
+                            <option value="discount" @selected(old('type') === 'discount')>Rabat</option>
+                            <option value="one_time" @selected(old('type') === 'one_time')>Jednorazowy</option>
+                        </select>
+                        @error('type') <div class="text-danger small">{{ $message }}</div> @enderror
+                    </div>
                     <div class="col-md-2">
                         <label class="form-label" for="period_months">Okres</label>
                         <input id="period_months" type="number" name="period_months" class="form-control" min="1" value="{{ old('period_months') }}">
                         @error('period_months') <div class="text-danger small">{{ $message }}</div> @enderror
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="form-label" for="bonus_months">Bonus</label>
+                        <input id="bonus_months" type="number" name="bonus_months" class="form-control" min="0" value="{{ old('bonus_months', 0) }}">
+                        @error('bonus_months') <div class="text-danger small">{{ $message }}</div> @enderror
                     </div>
 
                     <div class="col-md-2">
@@ -96,6 +118,20 @@
                             min="2000-01-01"
                         >
                         @error('valid_from') <div class="text-danger small">{{ $message }}</div> @enderror
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="form-label" for="valid_to">Obowiazuje do</label>
+                        <input
+                            id="valid_to"
+                            type="date"
+                            name="valid_to"
+                            class="form-control"
+                            value="{{ old('valid_to') }}"
+                            max="3000-12-31"
+                            min="2000-01-01"
+                        >
+                        @error('valid_to') <div class="text-danger small">{{ $message }}</div> @enderror
                     </div>
 
                     <div class="col-md-4">
@@ -132,6 +168,28 @@
                             <i class="bi bi-plus-lg" aria-hidden="true"></i>
                             <span>Dodaj</span>
                         </button>
+                    </div>
+
+                    <div class="col-12">
+                        <div class="gap-3 d-flex flex-wrap">
+                            <input type="hidden" name="is_active" value="0">
+                            <label class="form-check">
+                                <input type="checkbox" name="is_active" value="1" class="form-check-input" @checked(old('is_active', true))>
+                                <span class="form-check-label">Aktywny</span>
+                            </label>
+
+                            <input type="hidden" name="is_public" value="0">
+                            <label class="form-check">
+                                <input type="checkbox" name="is_public" value="1" class="form-check-input" @checked(old('is_public', true))>
+                                <span class="form-check-label">Dostepny dla adminow strzelnic</span>
+                            </label>
+
+                            <input type="hidden" name="requires_superadmin_approval" value="0">
+                            <label class="form-check">
+                                <input type="checkbox" name="requires_superadmin_approval" value="1" class="form-check-input" @checked(old('requires_superadmin_approval'))>
+                                <span class="form-check-label">Tylko superadmin</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
             </form>

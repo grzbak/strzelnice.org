@@ -25,6 +25,21 @@ class ProfileUpdateRequest extends FormRequest
                 'max:255',
                 Rule::unique(User::class)->ignore($this->user()->id),
             ],
+            'telephone' => ['nullable', 'string', 'max:50'],
+            'has_shooting_leader_license' => ['nullable', 'boolean'],
+            'shooting_leader_license_number' => [
+                'nullable',
+                'required_if:has_shooting_leader_license,1',
+                'string',
+                'max:100',
+            ],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'shooting_leader_license_number.required_if' => 'Podaj numer uprawnień lub legitymacji prowadzącego strzelanie.',
         ];
     }
 }

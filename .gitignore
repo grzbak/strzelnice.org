@@ -11,6 +11,9 @@
 /.phpunit.cache
 /.vscode
 /.zed
+/.codex-work
+/outputs
+/app/plik testowy sfrp.txl
 /auth.json
 /node_modules
 /public/build

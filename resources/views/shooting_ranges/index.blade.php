@@ -1,4 +1,9 @@
-<x-app-layout>
+<x-app-layout :seo="[
+    'title' => 'Lista strzelnic - strzelnice.org',
+    'description' => 'Przeglądaj listę strzelnic, filtruj obiekty i sprawdzaj możliwość rezerwacji online.',
+    'keywords' => 'lista strzelnic, strzelnice w Polsce, rezerwacja online',
+    'canonical_url' => route('shootings.list'),
+]">
     <div class="page-bg-2"></div>
 
     <main class="shooting-list-page">
@@ -32,6 +37,9 @@
                                 type="checkbox"
                                 class="form-check-input"
                                 id="onlineReservationOnly"
+                                name="online"
+                                value="1"
+                                @checked($onlineReservationOnly)
                             >
 
                             <label class="form-check-label fw-semibold" for="onlineReservationOnly">
@@ -95,7 +103,7 @@
                                     </div>
                                 </div>
 
-                                <div class="gap-2 mt-3 d-flex align-items-center">
+                                <div class="gap-2 mt-3 d-flex align-items-center shooting-range-primary-actions">
                                     @if ($shootingRange->navLink)
                                         <a
                                             href="{{ $shootingRange->navLink }}"
@@ -125,6 +133,32 @@
                             </div>
 
                             <div class="p-3 p-md-4 shooting-range-actions">
+                                @if ($shootingRange->navLink)
+                                    <a
+                                        href="{{ $shootingRange->navLink }}"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="btn btn-outline-primary btn-sm shooting-range-icon-action shooting-range-mobile-action"
+                                        title="Nawiguj"
+                                        aria-label="Nawiguj"
+                                    >
+                                        <i class="bi bi-signpost-2-fill me-1" aria-hidden="true"></i>
+                                        Nawiguj
+                                    </a>
+                                @endif
+
+                                @if ($shootingRange->can_reserve_online)
+                                    <a
+                                        href="{{ url('/rezerwacje/' . $shootingRange->id) }}?date={{ now()->format('Y-m-d') }}"
+                                        class="btn btn-success btn-sm shooting-range-icon-action shooting-range-mobile-action"
+                                        title="Rezerwuj"
+                                        aria-label="Rezerwuj"
+                                    >
+                                        <i class="bi bi-calendar-check-fill me-1" aria-hidden="true"></i>
+                                        Rezerwuj
+                                    </a>
+                                @endif
+
                                 <a
                                     href="{{ route('shooting.public.show', ['endpoint' => $shootingRange->endpoint]) }}"
                                     class="shooting-range-more-link"
@@ -216,6 +250,10 @@
             border-left: 1px solid #e1e7e7;
         }
 
+        .shooting-range-mobile-action {
+            display: none !important;
+        }
+
         .shooting-range-icon-action {
             height: 36px;
             padding: 0 12px;
@@ -303,24 +341,76 @@
 
         @media (max-width: 767.98px) {
             .shooting-range-card {
-                grid-template-columns: 90px minmax(0, 1fr) auto;
+                grid-template-columns: 92px minmax(0, 1fr);
+                min-height: 0;
             }
 
             .shooting-range-brand {
-                min-height: 120px;
+                min-height: 118px;
                 padding: 10px;
             }
 
+            .shooting-range-primary-actions {
+                display: none !important;
+            }
+
             .shooting-range-actions {
-                min-width: 92px;
-                padding-left: 6px !important;
-                padding-right: 6px !important;
+                grid-column: 1 / -1;
+                min-width: 0;
+                padding: 10px !important;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
+                gap: 8px;
+                border-top: 1px solid #e1e7e7;
+                border-left: 0;
+                background: #fbfcfc;
+            }
+
+            .shooting-range-mobile-action,
+            .shooting-range-more-link {
+                width: 100%;
+                min-height: 38px;
+                display: inline-flex !important;
+                align-items: center;
+                justify-content: center;
+                border-radius: 4px;
+                text-align: center;
+                white-space: nowrap;
             }
 
             .shooting-range-more-link {
-                font-size: 0.75rem;
+                padding: 0 10px;
+                color: #212529;
+                background: #fff;
+                border: 1px solid #adb5bd;
             }
 
+            .shooting-range-more-link:hover,
+            .shooting-range-more-link:focus-visible {
+                color: #fff;
+                background: #212529;
+                border-color: #212529;
+            }
+
+        }
+
+        @media (max-width: 380px) {
+            .shooting-range-actions {
+                gap: 6px;
+                padding: 8px !important;
+            }
+
+            .shooting-range-mobile-action,
+            .shooting-range-more-link {
+                min-height: 36px;
+                padding-left: 6px;
+                padding-right: 6px;
+                font-size: 0.74rem;
+            }
+
+            .shooting-range-mobile-action i {
+                margin-right: 0.25rem !important;
+            }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -367,7 +457,7 @@
 
             onlineOnly.addEventListener('change', function () {
                 visibleLimit = pageSize;
-                renderResults();
+                form.submit();
             });
 
             showMoreButton.addEventListener('click', function () {
