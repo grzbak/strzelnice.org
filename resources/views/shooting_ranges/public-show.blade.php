@@ -1,4 +1,4 @@
-<x-app-layout :seo="$shootingRange->seoData()">
+<x-app-layout :seo="$seo">
     @php
         $gallery = $shootingRange->gallery;
         $brandUrl = $shootingRange->brand_url;
@@ -9,6 +9,20 @@
     <div class="page-bg-2"></div>
 
     <div class="container py-4">
+        <nav aria-label="Ścieżka nawigacji" class="mb-3 public-breadcrumbs">
+            <ol>
+                @foreach ($breadcrumbs as $crumb)
+                    <li>
+                        @if ($loop->last)
+                            <span aria-current="page">{{ $crumb['name'] }}</span>
+                        @else
+                            <a href="{{ $crumb['url'] }}">{{ $crumb['name'] }}</a>
+                        @endif
+                    </li>
+                @endforeach
+            </ol>
+        </nav>
+
         <header class="mb-4 overflow-hidden bg-white border rounded shadow-sm">
             <div class="gap-4 p-4 d-flex flex-column flex-md-row align-items-center">
                 {{-- Logo --}}
@@ -210,6 +224,23 @@
                             </tbody>
                         </table>
 
+                        @if ($shootingRange->hasRealOpeningHours())
+                            <h2 class="mt-5 mb-3 h4">Godziny otwarcia</h2>
+
+                            <table class="table align-middle public-info-table">
+                                <tbody>
+                                    @foreach ($shootingRange->openingHours->sortBy('day_of_week') as $hour)
+                                        <tr>
+                                            <th data-label="Dzień">{{ $hour->day_name }}</th>
+                                            <td data-label="Godziny">
+                                                {{ $hour->opens_at?->format('H:i') }}–{{ $hour->closes_at?->format('H:i') }}
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        @endif
+
                         <h2 class="mt-5 mb-3 h4">Osie strzeleckie</h2>
 
                         <table class="table align-middle table-hover public-lanes-table">
@@ -306,13 +337,89 @@
                     </div>
                 @endif
             </div>
-
-
-
         </div>
+
+        @if ($nearbyRanges->isNotEmpty())
+            <section class="p-4 mt-4 bg-white border rounded shadow-sm" aria-labelledby="nearbyRangesTitle">
+                <div class="flex-wrap gap-2 mb-3 d-flex justify-content-between align-items-baseline">
+                    <h2 id="nearbyRangesTitle" class="mb-0 h4">Strzelnice w pobliżu</h2>
+
+                    @if ($shootingRange->voivodeship_link)
+                        <a href="{{ $shootingRange->voivodeship_link }}" class="small">
+                            Wszystkie strzelnice – województwo {{ mb_strtolower($shootingRange->voivodeship) }}
+                        </a>
+                    @endif
+                </div>
+
+                <ul class="public-nearby-list">
+                    @foreach ($nearbyRanges as $nearby)
+                        <li>
+                            <a href="{{ $nearby->public_link }}">{{ $nearby->name }}</a>
+                            <span class="text-muted small">
+                                {{ $nearby->town }}@isset($nearby->distance_km) · {{ number_format($nearby->distance_km, 0, ',', ' ') }} km @endisset
+                            </span>
+                        </li>
+                    @endforeach
+                </ul>
+            </section>
+        @endif
     </div>
 
     <style>
+        .public-breadcrumbs ol {
+            display: inline-flex;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: 6px;
+            box-shadow: 0 1px 4px rgba(31, 45, 48, 0.12);
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 0;
+            list-style: none;
+            font-size: 0.85rem;
+        }
+
+        .public-breadcrumbs li + li::before {
+            content: "›";
+            margin-right: 4px;
+            color: #8a9396;
+        }
+
+        .public-breadcrumbs a {
+            color: #495057;
+            text-decoration: none;
+        }
+
+        .public-breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .public-nearby-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 8px 20px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .public-nearby-list li {
+            display: flex;
+            flex-direction: column;
+            padding: 8px 0;
+            border-bottom: 1px solid #eef1f1;
+        }
+
+        .public-nearby-list a {
+            color: #212529;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .public-nearby-list a:hover {
+            text-decoration: underline;
+        }
+
         .public-brand-marker {
             width: 42px;
             height: 42px;

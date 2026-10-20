@@ -13,6 +13,7 @@ use App\Http\Controllers\RegulationController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RequiredRegulationController;
 use App\Http\Controllers\ReservationsController;
+use App\Http\Controllers\ShootingRangeDirectoryController;
 use App\Http\Controllers\ShootingRangeGalleryController;
 use App\Http\Controllers\ShootingRangeInvitationController;
 use App\Http\Controllers\ShootingRangePackageController;
@@ -20,6 +21,7 @@ use App\Http\Controllers\ShootingRangeReservationPaymentController;
 use App\Http\Controllers\ShootingRangeStaffController;
 use App\Http\Controllers\ShootingRangeZoneController;
 use App\Http\Controllers\ShootingsController;
+use App\Http\Controllers\SitemapController;
 use App\Http\Controllers\SystemConfigurationController;
 use Illuminate\Support\Facades\Route;
 
@@ -27,7 +29,17 @@ use Illuminate\Support\Facades\Route;
 // STRONY PUBLICZNE
 // -----------------------------------------------------------------------------
 Route::get('/', [ShootingsController::class, 'index'])->name('index');
-Route::get('/lista-strzelnic', [ShootingsController::class, 'listAll'])->name('shootings.list');
+Route::get('/lista-strzelnic', [ShootingRangeDirectoryController::class, 'index'])->name('shootings.list');
+Route::get('/lista-strzelnic/{voivodeship}', [ShootingRangeDirectoryController::class, 'voivodeship'])
+    ->where('voivodeship', '[a-z-]+')
+    ->name('shootings.voivodeship');
+Route::get('/lista-strzelnic/{voivodeship}/{town}', [ShootingRangeDirectoryController::class, 'town'])
+    ->where(['voivodeship' => '[a-z-]+', 'town' => '[a-z0-9-]+'])
+    ->name('shootings.town');
+
+// SEO / GEO: mapa witryny i opis serwisu dla modeli językowych
+Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('sitemap');
+Route::get('/llms.txt', [SitemapController::class, 'llms'])->name('llms');
 Route::get('/mapa-strzelnic', [ShootingsController::class, 'maps'])->name('maps'); // strzelnice na mapie
 Route::get('/oferta', [OffersController::class, 'show'])
     ->name('offers');

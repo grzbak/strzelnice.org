@@ -67,3 +67,11 @@
 
 <meta property="og:type" content="{{ $data['og_type'] ?? 'website' }}">
 <meta property="og:url" content="{{ $canonicalUrl }}">
+<meta property="og:site_name" content="Strzelnice.org">
+<meta property="og:locale" content="pl_PL">
+<meta name="twitter:card" content="{{ $absoluteImage ? 'summary_large_image' : 'summary' }}">
+
+{{-- Dane strukturalne schema.org (JSON-LD) --}}
+@foreach (array_filter($data['schema'] ?? []) as $schema)
+    <script type="application/ld+json">{!! json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP) !!}</script>
+@endforeach

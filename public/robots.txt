@@ -1,2 +1,11 @@
 User-agent: *
-Disallow:
+Disallow: /panel/
+Disallow: /moje-rezerwacje
+Disallow: /rezerwacje/
+Disallow: /profile
+Disallow: /platnosci/
+Disallow: /zaproszenia/
+Disallow: /strzelnica/dodaj/
+Disallow: /*?*online=
+
+Sitemap: https://strzelnice.org/sitemap.xml

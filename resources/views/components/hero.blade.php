@@ -1,9 +1,10 @@
 <section class="text-white hero-search d-flex align-items-center">
     <div class="container mb-4 text-center">
 
-        <h3 class="mt-4 mb-3 mt-md-0 display-4 fw-bold">
-            <i class="bi bi-calendar-check text-danger"></i> sprawdzasz. klikasz. strzelasz
-        </h3>
+        <h1 class="mt-4 mb-3 mt-md-0 display-4 fw-bold">
+            <i class="bi bi-calendar-check text-danger" aria-hidden="true"></i> sprawdzasz. klikasz. strzelasz
+            <span class="mt-2 d-block fs-5 fw-normal">Wyszukiwarka i rezerwacja strzelnic w całej Polsce</span>
+        </h1>
 
         <p class="mb-4 lead">
             Skorzystaj z formularza i znajdź wolną strzelnicę w określonej lokalizacji i czasie:

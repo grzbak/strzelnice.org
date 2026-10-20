@@ -288,9 +288,37 @@ class ShootingRange extends Model
         return url('/'.$this->endpoint);
     }
 
+    /**
+     * Czy strzelnica ma uzupełnione godziny otwarcia. Domyślne 00:00–23:59
+     * dla wszystkich dni (dodawane automatycznie) traktujemy jako brak danych.
+     */
+    public function hasRealOpeningHours(): bool
+    {
+        $hours = $this->openingHours;
+
+        if ($hours->isEmpty()) {
+            return false;
+        }
+
+        return $hours->contains(function ($hour) {
+            return $hour->opens_at?->format('H:i') !== '00:00'
+                || ! in_array($hour->closes_at?->format('H:i'), ['23:59', '00:00'], true);
+        }) || $hours->count() < 7;
+    }
+
+    /**
+     * Strona województwa, do której należy strzelnica (null, gdy brak dopasowania).
+     */
+    public function getVoivodeshipLinkAttribute(): ?string
+    {
+        $slug = \App\Support\Voivodeships::slugFor($this->voivodeship);
+
+        return $slug ? route('shootings.voivodeship', ['voivodeship' => $slug]) : null;
+    }
+
     public function seoData(): array
     {
-        $title = $this->meta_title ?: trim($this->name.' - strzelnica'.($this->town ? ' '.$this->town : ''));
+        $title = $this->meta_title ?: $this->defaultSeoTitle();
         $description = $this->meta_description ?: $this->defaultSeoDescription();
 
         return [
@@ -305,12 +333,46 @@ class ShootingRange extends Model
         ];
     }
 
+    private function defaultSeoTitle(): string
+    {
+        $name = trim((string) $this->name);
+        $town = trim((string) $this->town);
+
+        // "Strzelnica Texas – strzelnica Rozwadów, woj. lubelskie"
+        $title = $name;
+
+        if ($town !== '' && ! Str::contains(mb_strtolower($name), mb_strtolower($town))) {
+            $title .= ' – strzelnica '.$town;
+        } elseif ($town !== '') {
+            $title .= ' – strzelnica';
+        }
+
+        if ($this->voivodeship) {
+            $title .= ', woj. '.mb_strtolower($this->voivodeship);
+        }
+
+        return $title;
+    }
+
     private function defaultSeoDescription(): string
     {
+        $lanes = $this->relationLoaded('lanes')
+            ? $this->lanes
+                ->pluck('length')
+                ->filter()
+                ->map(fn ($length) => (int) $length)
+                ->sortDesc()
+                ->unique()
+                ->map(fn ($length) => $length.' m')
+                ->implode(', ')
+            : '';
+
         return trim(sprintf(
-            'Zobacz profil strzelnicy %s%s. Sprawdź dane strzelnicy, dostępne osie, galerię oraz możliwość rezerwacji online.',
+            '%s%s%s. %sAdres, telefon, osie strzeleckie i rezerwacja stanowiska online.',
             $this->name,
-            $this->town ? ' w miejscowości '.$this->town : ''
+            $this->full_address ? ', '.$this->full_address : '',
+            $this->voivodeship ? ' (woj. '.mb_strtolower($this->voivodeship).')' : '',
+            $lanes !== '' ? 'Osie: '.$lanes.'. ' : ''
         ));
     }
 

@@ -1,32 +1,36 @@
 @php
-    $cityColumns = [
-        ['Białystok', 'Bydgoszcz', 'Gdańsk', 'Gorzów Wielkopolski', 'Katowice'],
-        ['Kielce', 'Kraków', 'Lublin', 'Łódź', 'Olsztyn'],
-        ['Opole', 'Poznań', 'Rzeszów', 'Szczecin'],
-        ['Toruń', 'Warszawa', 'Wrocław', 'Zielona Góra'],
-    ];
+    // 16 województw w 4 kolumnach; link prowadzi do indeksowalnej strony województwa.
+    $regionColumns = collect(\App\Support\Voivodeships::names())
+        ->map(fn ($name, $slug) => [
+            'name' => $name,
+            'cities' => implode(', ', \App\Support\Voivodeships::capitals($slug)),
+            'url' => route('shootings.voivodeship', ['voivodeship' => $slug]),
+        ])
+        ->values()
+        ->chunk(4);
 @endphp
 
 <section class="shooting-cities" aria-labelledby="shooting-cities-title">
     <div class="container">
-        <h4 id="shooting-cities-title" class="shooting-cities-title">
-            Znajdź strzelnicę według miasta
-        </h4>
+        <h2 id="shooting-cities-title" class="shooting-cities-title">
+            Znajdź strzelnicę w swoim województwie
+        </h2>
 
         <div class="shooting-cities-grid">
-            @foreach ($cityColumns as $columnIndex => $cities)
+            @foreach ($regionColumns as $columnIndex => $regions)
                 <ul
                     class="shooting-cities-list"
-                    style="--city-column-delay: {{ $columnIndex * 110 }}ms;"
+                    style="--city-column-delay: {{ $loop->index * 110 }}ms;"
                 >
-                    @foreach ($cities as $city)
+                    @foreach ($regions as $region)
                         <li>
                             <a
-                                href="{{ url('/lista-strzelnic') }}?m={{ urlencode($city) }}"
+                                href="{{ $region['url'] }}"
                                 class="shooting-city-link"
+                                title="Strzelnice – województwo {{ $region['name'] }}"
                             >
                                 <i class="bi bi-chevron-right" aria-hidden="true"></i>
-                                <span>{{ $city }}</span>
+                                <span>{{ $region['cities'] }} <small class="text-muted">({{ $region['name'] }})</small></span>
                             </a>
                         </li>
                     @endforeach

@@ -1,13 +1,32 @@
-<x-app-layout :seo="[
-    'title' => 'Lista strzelnic - strzelnice.org',
-    'description' => 'Przeglądaj listę strzelnic, filtruj obiekty i sprawdzaj możliwość rezerwacji online.',
-    'keywords' => 'lista strzelnic, strzelnice w Polsce, rezerwacja online',
-    'canonical_url' => route('shootings.list'),
-]">
+<x-app-layout :seo="$seo">
     <div class="page-bg-2"></div>
 
     <main class="shooting-list-page">
         <div class="container py-4 py-lg-5">
+            {{-- Okruszki --}}
+            <nav aria-label="Ścieżka nawigacji" class="mb-3 directory-breadcrumbs">
+                <ol>
+                    @foreach ($breadcrumbs as $crumb)
+                        <li>
+                            @if ($loop->last)
+                                <span aria-current="page">{{ $crumb['name'] }}</span>
+                            @else
+                                <a href="{{ $crumb['url'] }}">{{ $crumb['name'] }}</a>
+                            @endif
+                        </li>
+                    @endforeach
+                </ol>
+            </nav>
+
+            {{-- Nagłówek i opis --}}
+            <header class="p-3 mb-4 bg-white border shadow-sm p-md-4 directory-intro">
+                <h1 class="mb-3 h2">{{ $heading }}</h1>
+
+                @foreach ($intro as $paragraph)
+                    <p class="mb-2 text-muted">{{ $paragraph }}</p>
+                @endforeach
+            </header>
+
             <form
                 method="GET"
                 action="{{ route('shootings.list') }}"
@@ -16,16 +35,20 @@
             >
                 <div class="row g-3 align-items-end">
                     <div class="col-md-7 col-lg-8">
-                        <label for="cityFilter" class="form-label fw-semibold">
-                            Miasto wojewódzkie
+                        <label for="voivodeshipFilter" class="form-label fw-semibold">
+                            Województwo
                         </label>
 
-                        <select id="cityFilter" name="m" class="form-select">
-                            <option value="">Cała Polska</option>
+                        <select id="voivodeshipFilter" name="w" class="form-select">
+                            <option value="" data-url="{{ route('shootings.list') }}">Cała Polska</option>
 
-                            @foreach ($cities as $city => $voivodeship)
-                                <option value="{{ $city }}" @selected($selectedCity === $city)>
-                                    {{ $city }} — {{ $voivodeship }}
+                            @foreach ($voivodeships as $slug => $name)
+                                <option
+                                    value="{{ $slug }}"
+                                    data-url="{{ route('shootings.voivodeship', ['voivodeship' => $slug]) }}"
+                                    @selected($selectedVoivodeship === $slug)
+                                >
+                                    {{ $name }}
                                 </option>
                             @endforeach
                         </select>
@@ -50,7 +73,7 @@
                 </div>
 
                 <div class="gap-3 pt-3 mt-4 border-top d-flex align-items-center justify-content-between">
-                    <h2 class="mb-0 h4">Strzelnice</h2>
+                    <h2 class="mb-0 h4">Lista strzelnic</h2>
                     <span id="visibleResultsInfo" class="text-muted small"></span>
                 </div>
             </form>
@@ -76,7 +99,12 @@
 
                             <div class="p-3 p-md-4 d-flex flex-column justify-content-center flex-grow-1">
                                 <div class="flex-wrap gap-2 mb-2 d-flex align-items-center">
-                                    <h3 class="mb-0 h5">{{ $shootingRange->name }}</h3>
+                                    <h3 class="mb-0 h5">
+                                        <a
+                                            href="{{ route('shooting.public.show', ['endpoint' => $shootingRange->endpoint]) }}"
+                                            class="shooting-range-title-link"
+                                        >{{ $shootingRange->name }}</a>
+                                    </h3>
 
                                     @if ($shootingRange->can_reserve_online)
                                         <span class="shooting-online-status">
@@ -182,12 +210,143 @@
                     <i class="bi bi-chevron-down ms-1" aria-hidden="true"></i>
                 </button>
             </div>
+
+            @if ($regionLinks->isNotEmpty())
+                <section class="p-3 mt-5 bg-white border shadow-sm p-md-4 directory-regions" aria-labelledby="directoryRegionsTitle">
+                    <h2 id="directoryRegionsTitle" class="mb-3 h4">{{ $regionLinksTitle }}</h2>
+
+                    <ul class="directory-region-list">
+                        @foreach ($regionLinks as $region)
+                            <li>
+                                <a href="{{ $region['url'] }}">
+                                    <span class="directory-region-name">{{ $region['name'] }}</span>
+                                    @if (! empty($region['hint']))
+                                        <span class="directory-region-hint">{{ $region['hint'] }}</span>
+                                    @endif
+                                    <span class="directory-region-count">{{ $region['count'] }}</span>
+                                </a>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endif
+
+            @if (! empty($faq))
+                <section class="p-3 mt-4 bg-white border shadow-sm p-md-4 directory-faq" aria-labelledby="directoryFaqTitle">
+                    <h2 id="directoryFaqTitle" class="mb-3 h4">Najczęstsze pytania</h2>
+
+                    @foreach ($faq as $item)
+                        <details @if ($loop->first) open @endif>
+                            <summary><h3 class="h6 d-inline">{{ $item['question'] }}</h3></summary>
+                            <p class="mt-2 mb-0 text-muted">{{ $item['answer'] }}</p>
+                        </details>
+                    @endforeach
+                </section>
+            @endif
         </div>
     </main>
 
     <style>
         .shooting-list-page {
             min-height: 70vh;
+        }
+
+        .shooting-range-title-link {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .shooting-range-title-link:hover {
+            text-decoration: underline;
+        }
+
+        .directory-breadcrumbs ol {
+            display: inline-flex;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: 6px;
+            box-shadow: 0 1px 4px rgba(31, 45, 48, 0.12);
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 0;
+            list-style: none;
+            font-size: 0.85rem;
+        }
+
+        .directory-breadcrumbs li + li::before {
+            content: "›";
+            margin-right: 4px;
+            color: #8a9396;
+        }
+
+        .directory-breadcrumbs a {
+            color: #495057;
+            text-decoration: none;
+        }
+
+        .directory-breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .directory-intro,
+        .directory-regions,
+        .directory-faq {
+            border-radius: 6px;
+        }
+
+        .directory-region-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 6px 16px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .directory-region-list a {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            padding: 6px 0;
+            color: #212529;
+            text-decoration: none;
+            border-bottom: 1px solid #eef1f1;
+        }
+
+        .directory-region-list a:hover .directory-region-name {
+            text-decoration: underline;
+        }
+
+        .directory-region-name {
+            font-weight: 600;
+        }
+
+        .directory-region-hint {
+            color: #6c757d;
+            font-size: 0.8rem;
+        }
+
+        .directory-region-count {
+            margin-left: auto;
+            color: #6c757d;
+            font-size: 0.8rem;
+        }
+
+        .directory-faq details {
+            padding: 10px 0;
+            border-bottom: 1px solid #eef1f1;
+        }
+
+        .directory-faq details:last-child {
+            border-bottom: 0;
+        }
+
+        .directory-faq summary {
+            cursor: pointer;
+        }
+
+        .directory-faq summary h3 {
+            font-weight: 600;
         }
 
         .shooting-list-filters,
@@ -423,7 +582,7 @@
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             const form = document.getElementById('shootingListFilters');
-            const cityFilter = document.getElementById('cityFilter');
+            const voivodeshipFilter = document.getElementById('voivodeshipFilter');
             const onlineOnly = document.getElementById('onlineReservationOnly');
             const results = [...document.querySelectorAll('.shooting-range-result')];
             const showMoreButton = document.getElementById('showMoreShootingRanges');
@@ -451,13 +610,26 @@
                 showMoreButton.classList.toggle('d-none', visibleCount >= filtered.length);
             }
 
-            cityFilter.addEventListener('change', function () {
-                form.submit();
-            });
+            function goToSelectedRegion() {
+                const option = voivodeshipFilter.options[voivodeshipFilter.selectedIndex];
+                const url = new URL(option.dataset.url, window.location.origin);
+
+                if (onlineOnly.checked) {
+                    url.searchParams.set('online', '1');
+                }
+
+                window.location.href = url.toString();
+            }
+
+            voivodeshipFilter.addEventListener('change', goToSelectedRegion);
 
             onlineOnly.addEventListener('change', function () {
                 visibleLimit = pageSize;
-                form.submit();
+
+                // Na stronie miejscowości zostajemy na tym samym adresie.
+                const url = new URL(window.location.href);
+                onlineOnly.checked ? url.searchParams.set('online', '1') : url.searchParams.delete('online');
+                window.location.href = url.toString();
             });
 
             showMoreButton.addEventListener('click', function () {

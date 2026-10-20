@@ -1,4 +1,10 @@
-<x-app-layout>
+<x-app-layout :seo="[
+    'title' => 'Galeria zdjęć – '.$shootingRange->name,
+    'description' => 'Zdjęcia strzelnicy '.$shootingRange->name.($shootingRange->town ? ' ('.$shootingRange->town.')' : '').': stanowiska, osie strzeleckie i otoczenie obiektu.',
+    'canonical_url' => url('/'.$shootingRange->endpoint.'/galeria'),
+    'og_image' => $shootingRange->brand_url,
+    'robots' => ($gallery && $gallery->photos->isNotEmpty()) ? 'index,follow' : 'noindex,follow',
+]">
     <div class="container py-4">
         <h1 class="mb-4">Galeria: {{ $shootingRange->name }}</h1>
 

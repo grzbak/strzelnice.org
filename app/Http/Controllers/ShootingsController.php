@@ -13,6 +13,8 @@ use App\Models\ShootingRangePackage;
 use App\Models\User;
 use App\Services\ShootingRangeAvailabilityService;
 use App\Services\ShootingRangeSubscriptionService;
+use App\Support\StructuredData;
+use App\Support\Voivodeships;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -373,72 +375,6 @@ class ShootingsController extends Controller
         return view('maps.index', compact('shootings'));
     }
 
-    public function listAll(Request $request)
-    {
-        $cities = [
-            'Białystok' => 'podlaskie',
-            'Bydgoszcz' => 'kujawsko-pomorskie',
-            'Gdańsk' => 'pomorskie',
-            'Gorzów Wielkopolski' => 'lubuskie',
-            'Katowice' => 'śląskie',
-            'Kielce' => 'świętokrzyskie',
-            'Kraków' => 'małopolskie',
-            'Lublin' => 'lubelskie',
-            'Łódź' => 'łódzkie',
-            'Olsztyn' => 'warmińsko-mazurskie',
-            'Opole' => 'opolskie',
-            'Poznań' => 'wielkopolskie',
-            'Rzeszów' => 'podkarpackie',
-            'Szczecin' => 'zachodniopomorskie',
-            'Toruń' => 'kujawsko-pomorskie',
-            'Warszawa' => 'mazowieckie',
-            'Wrocław' => 'dolnośląskie',
-            'Zielona Góra' => 'lubuskie',
-        ];
-
-        $selectedCity = trim((string) $request->query('m', ''));
-        $selectedVoivodeship = $cities[$selectedCity] ?? null;
-        $onlineReservationOnly = $request->boolean('online');
-        $today = Carbon::today();
-
-        $shootings = ShootingRange::query()
-            ->where('is_visible', true)
-            ->where('is_archived', false)
-            ->when(
-                $selectedVoivodeship,
-                fn ($query) => $query->where('voivodeship', $selectedVoivodeship)
-            )
-            ->with([
-                'lanes',
-                'openingHours',
-                'intervals',
-                'employees',
-            ])
-            ->orderBy('name')
-            ->get()
-            ->map(function (ShootingRange $shootingRange) use ($today) {
-                $shootingRange->can_reserve_online = $this->availability
-                    ->basicRequirements($shootingRange, $today)['allowed'];
-
-                return $shootingRange;
-            })
-            ->when(
-                $onlineReservationOnly,
-                fn ($shootings) => $shootings->filter(
-                    fn (ShootingRange $shootingRange) => $shootingRange->can_reserve_online
-                )
-            )
-            ->values();
-
-        return view('shooting_ranges.index', compact(
-            'shootings',
-            'cities',
-            'selectedCity',
-            'selectedVoivodeship',
-            'onlineReservationOnly'
-        ));
-    }
-
     /**
      * Show the form for creating a new resource.
      */
@@ -489,11 +425,79 @@ class ShootingsController extends Controller
         $canReserve = $availability['allowed'];
         $reservationUnavailableReason = $availability['reason'] ?? '';
 
+        $nearbyRanges = $this->nearbyShootingRanges($shootingRange);
+
+        $voivodeshipSlug = Voivodeships::slugFor($shootingRange->voivodeship);
+        $breadcrumbs = array_values(array_filter([
+            ['name' => 'Strzelnice.org', 'url' => url('/')],
+            ['name' => 'Lista strzelnic', 'url' => route('shootings.list')],
+            $voivodeshipSlug ? [
+                'name' => 'Województwo '.Voivodeships::name($voivodeshipSlug),
+                'url' => route('shootings.voivodeship', ['voivodeship' => $voivodeshipSlug]),
+            ] : null,
+            ['name' => $shootingRange->name, 'url' => $shootingRange->public_link],
+        ]));
+
+        $seo = $shootingRange->seoData();
+        $seo['schema'] = array_values(array_filter([
+            StructuredData::shootingRange($shootingRange, $canReserve),
+            StructuredData::breadcrumbs($breadcrumbs),
+        ]));
+
         return view('shooting_ranges.public-show', compact(
             'shootingRange',
             'canReserve',
-            'reservationUnavailableReason'
+            'reservationUnavailableReason',
+            'nearbyRanges',
+            'breadcrumbs',
+            'seo'
         ));
+    }
+
+    /**
+     * Najbliższe strzelnice (linkowanie wewnętrzne na profilu).
+     */
+    private function nearbyShootingRanges(ShootingRange $shootingRange, int $limit = 6)
+    {
+        $candidates = ShootingRange::query()
+            ->where('is_visible', true)
+            ->where('is_archived', false)
+            ->where('id', '!=', $shootingRange->id)
+            ->whereNotNull('endpoint')
+            ->get(['id', 'name', 'endpoint', 'town', 'voivodeship', 'lat', 'lng']);
+
+        if ($shootingRange->lat && $shootingRange->lng) {
+            return $candidates
+                ->filter(fn (ShootingRange $range) => $range->lat && $range->lng)
+                ->each(function (ShootingRange $range) use ($shootingRange) {
+                    $range->distance_km = $this->distanceKm(
+                        $shootingRange->lat,
+                        $shootingRange->lng,
+                        $range->lat,
+                        $range->lng
+                    );
+                })
+                ->sortBy('distance_km')
+                ->take($limit)
+                ->values();
+        }
+
+        return $candidates
+            ->where('voivodeship', $shootingRange->voivodeship)
+            ->take($limit)
+            ->values();
+    }
+
+    private function distanceKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthRadius = 6371;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+
+        $a = sin($dLat / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+
+        return $earthRadius * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 
     /**
